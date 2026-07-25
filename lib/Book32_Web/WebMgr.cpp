@@ -48,7 +48,14 @@ static bool requireAuth(AsyncWebServerRequest* request) {
     if (request->authenticate(BOOK32_AUTH_USER, WebMgr::devicePassword())) {
         return true;
     }
-    request->requestAuthentication();
+    // v1.6.3 (fix): requestAuthentication()'s isDigest parameter defaults to
+    // true, so the bare call announced `WWW-Authenticate: Digest`. The browser
+    // obeyed the challenge and answered in Digest, which this library fails to
+    // validate — correct credentials were rejected and the login prompt kept
+    // reappearing. Everything else here (and in script.js) assumes Basic, so
+    // ask for Basic explicitly: with isDigest false, authenticate() above
+    // routes to checkBasicAuthentication().
+    request->requestAuthentication(nullptr, false);
     return false;
 }
 

@@ -147,9 +147,9 @@ void AppMainMenu::startHotspot() {
     Serial.println("Main menu: starting Book32 management hotspot (offline)");
     WiFi.mode(WIFI_AP_STA);  // AP serves the web UI; STA stays available for joining a network
     // v1.5.0 (security): the hotspot was previously open, giving anyone in
-    // radio range full access to the API. WPA2 needs >= 8 characters; the
-    // derived credential is always 10. The passphrase is shown in the footer
-    // while the hotspot is up so it can be read off the e-ink screen.
+    // radio range full access to the API. WPA2 needs >= 8 characters, which
+    // DeviceCred.h's fixed credential satisfies. The passphrase is still shown
+    // in the footer while the hotspot is up, as a reminder.
     WiFi.softAP(AP_SSID, WebMgr::devicePassword());
     delay(100);  // Let the AP interface come up before binding the server
     WebMgr::getInstance().init();

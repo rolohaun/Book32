@@ -34,14 +34,12 @@ static const char* READER_PROGRESS_PATH = "/reader_progress.json";
 //
 // Caveat: Basic Auth is base64, not encryption, and this server is plain HTTP.
 // This stops casual access; it is not confidential against a LAN sniffer.
+//
+// v1.6.2: the password is a fixed literal (see DeviceCred.h) instead of being
+// derived from the MAC, so it no longer has to be read off the device before
+// the web interface can be used.
 const char* WebMgr::devicePassword() {
-    static char pw[BOOK32_CRED_LEN] = {0};
-    if (pw[0] == '\0') {
-        uint8_t mac[6];
-        WiFi.macAddress(mac);
-        deriveDevicePassword(mac, pw, sizeof(pw));
-    }
-    return pw;
+    return BOOK32_DEVICE_PASSWORD;
 }
 
 // Returns true when the request is authorised. On failure it has already sent

@@ -1,0 +1,16 @@
+{
+  "name": "Book32",
+  "version": "1.1",
+  "new_install_prompt_erase": true,
+  "new_install_improv_wait_time": 0,
+  "builds": [
+    {
+      "chipFamily": "ESP32-S3",
+      "improv": false,
+      "parts": [
+        { "path": "firmware/firmware-v1.1.bin", "offset": 65536 },
+        { "path": "firmware/littlefs-v1.1.bin", "offset": 5308416 }
+      ]
+    }
+  ]
+}

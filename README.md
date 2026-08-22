@@ -42,7 +42,7 @@ Battery sense:
 
 ## Install From A Browser
 
-The quickest installation method is the [Book32 Browser Installer](https://rolohaun.github.io/Book32/).
+The quickest installation method is the [Book32 Browser Installer](https://rolohaun.github.io/Book32/?v=1.1).
 It works in desktop Chrome or Edge with a data-capable USB cable and does not
 require PlatformIO or a local development environment.
 

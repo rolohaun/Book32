@@ -1,6 +1,6 @@
 {
   "name": "Book32",
-  "version": "1.0",
+  "version": "1.1",
   "new_install_prompt_erase": true,
   "new_install_improv_wait_time": 0,
   "builds": [

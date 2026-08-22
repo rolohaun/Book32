@@ -40,6 +40,21 @@ Battery sense:
 - Voltage ADC: GPIO 1
 - Measurement switch: GPIO 6, active high
 
+## Install From A Browser
+
+The quickest installation method is the [Book32 Browser Installer](https://rolohaun.github.io/Book32/).
+It works in desktop Chrome or Edge with a data-capable USB cable and does not
+require PlatformIO or a local development environment.
+
+- **Update existing Book32** flashes the firmware and web interface while
+  preserving Wi-Fi settings, ebooks, and reading progress.
+- **Set up new hardware** installs the bootloader, custom partition table,
+  firmware, and web interface on a blank XIAO ESP32-S3.
+
+The installer does not write to the dedicated ebook partition. If ESP Web Tools
+offers an **Erase device** option, leave it unchecked on a device that contains
+ebooks.
+
 ## Install PlatformIO
 
 The easiest path is Visual Studio Code plus the PlatformIO extension.

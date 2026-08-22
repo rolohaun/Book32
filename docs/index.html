@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#151817">
+  <title>Book32 Browser Installer</title>
+  <meta name="description" content="Install or update Book32 directly from a supported web browser.">
+  <link rel="icon" href="assets/book32-reader.png">
+  <link rel="stylesheet" href="installer.css">
+  <script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="./" aria-label="Book32 installer home">
+      <img src="assets/book32-reader.png" alt="" width="48" height="48">
+      <span>Book32</span>
+    </a>
+    <div class="header-actions">
+      <span class="version">Version 1.0</span>
+      <a href="https://github.com/rolohaun/Book32">Source</a>
+    </div>
+  </header>
+
+  <main>
+    <section class="intro" aria-labelledby="page-title">
+      <p class="eyebrow">XIAO ESP32-S3</p>
+      <h1 id="page-title">Flash Book32</h1>
+      <p>Install or update Book32 over USB. No PlatformIO, drivers, or command line required.</p>
+    </section>
+
+    <section class="installer" aria-labelledby="installer-title">
+      <div class="installer-heading">
+        <div>
+          <p class="step-label">Choose an install type</p>
+          <h2 id="installer-title">What are you flashing?</h2>
+        </div>
+        <div class="compatibility"><span aria-hidden="true"></span> Chrome or Edge on desktop</div>
+      </div>
+
+      <div class="mode-switch" role="tablist" aria-label="Install type">
+        <button id="update-tab" class="mode-button active" type="button" role="tab" aria-selected="true" aria-controls="update-panel" data-panel="update-panel">
+          Update existing Book32
+        </button>
+        <button id="factory-tab" class="mode-button" type="button" role="tab" aria-selected="false" aria-controls="factory-panel" data-panel="factory-panel">
+          Set up new hardware
+        </button>
+      </div>
+
+      <div id="update-panel" class="mode-panel active" role="tabpanel" aria-labelledby="update-tab">
+        <div class="mode-copy">
+          <p class="mode-kicker">Recommended for devices already running Book32</p>
+          <h3>Update firmware and web interface</h3>
+          <p>Keeps Wi-Fi settings, uploaded ebooks, and reading progress. Only the active firmware and web interface partitions are written.</p>
+        </div>
+        <esp-web-install-button manifest="manifest-update.json">
+          <button class="install-button" slot="activate" type="button">Connect and update</button>
+          <p class="browser-message" slot="unsupported">Open this page in desktop Chrome or Edge to use USB flashing.</p>
+          <p class="browser-message" slot="not-allowed">USB flashing requires this secure GitHub Pages address.</p>
+        </esp-web-install-button>
+      </div>
+
+      <div id="factory-panel" class="mode-panel" role="tabpanel" aria-labelledby="factory-tab" hidden>
+        <div class="mode-copy">
+          <p class="mode-kicker">For a blank or replacement XIAO ESP32-S3</p>
+          <h3>Install the complete Book32 system</h3>
+          <p>Writes the bootloader, Book32 partition table, firmware, and web interface. Wi-Fi will need to be configured after first boot.</p>
+        </div>
+        <esp-web-install-button manifest="manifest-factory.json">
+          <button class="install-button" slot="activate" type="button">Connect and install</button>
+          <p class="browser-message" slot="unsupported">Open this page in desktop Chrome or Edge to use USB flashing.</p>
+          <p class="browser-message" slot="not-allowed">USB flashing requires this secure GitHub Pages address.</p>
+        </esp-web-install-button>
+      </div>
+
+      <div class="erase-warning" role="note">
+        <strong>Protect your library.</strong>
+        If the installer offers an <q>Erase device</q> option, leave it unchecked on any Book32 containing ebooks. The normal Book32 install files do not write to ebook storage.
+      </div>
+    </section>
+
+    <section class="storage" aria-labelledby="storage-title">
+      <div class="section-heading">
+        <p class="step-label">Flash map</p>
+        <h2 id="storage-title">Your ebook partition stays separate</h2>
+      </div>
+      <div class="partition-map" aria-label="Book32 flash partition map">
+        <div class="partition system"><span>System</span><small>Boot + settings</small></div>
+        <div class="partition firmware"><span>Firmware</span><small>Book32 OS</small></div>
+        <div class="partition web"><span>Web UI</span><small>1 MB</small></div>
+        <div class="partition ebooks"><span>Ebooks</span><small>Protected 10 MB</small></div>
+      </div>
+    </section>
+
+    <section class="steps" aria-labelledby="steps-title">
+      <div class="section-heading">
+        <p class="step-label">Before you start</p>
+        <h2 id="steps-title">Three quick steps</h2>
+      </div>
+      <ol>
+        <li><span>1</span><div><strong>Connect USB</strong><p>Use a data-capable USB cable and switch Book32 on.</p></div></li>
+        <li><span>2</span><div><strong>Choose the device</strong><p>Select the XIAO ESP32-S3 serial port when the browser asks.</p></div></li>
+        <li><span>3</span><div><strong>Let it finish</strong><p>Keep the cable connected until installation completes and Book32 restarts.</p></div></li>
+      </ol>
+      <details>
+        <summary>Device does not appear?</summary>
+        <p>Hold the BOOT button, tap RESET, then release BOOT and try connecting again.</p>
+      </details>
+    </section>
+  </main>
+
+  <footer>
+    <span>Book32 by Rolohaun</span>
+    <a href="https://github.com/rolohaun/Book32/issues">Report a problem</a>
+  </footer>
+  <script src="installer.js"></script>
+</body>
+</html>

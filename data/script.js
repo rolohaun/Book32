@@ -281,6 +281,7 @@ function getReaderSettings() {
             if (data.fontSize) {
                 document.getElementById('font-size').value = data.fontSize;
             }
+            document.getElementById('font-family').value = data.fontFamily || 'native';
         })
         .catch(error => console.error('Error loading reader settings:', error));
 }
@@ -288,6 +289,7 @@ function getReaderSettings() {
 function saveReaderSettings() {
     const refreshRate = parseInt(document.getElementById('refresh-rate').value);
     const fontSize = parseInt(document.getElementById('font-size').value);
+    const fontFamily = document.getElementById('font-family').value;
     const statusDiv = document.getElementById('reader-settings-status');
 
     fetch('/api/settings/reader', {
@@ -295,7 +297,7 @@ function saveReaderSettings() {
         headers: {
             'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ refreshFrequency: refreshRate, fontSize: fontSize }),
+        body: JSON.stringify({ refreshFrequency: refreshRate, fontSize: fontSize, fontFamily: fontFamily }),
     })
         .then(response => response.json())
         .then(data => {

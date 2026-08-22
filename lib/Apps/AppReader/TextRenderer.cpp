@@ -1,16 +1,26 @@
 #include "TextRenderer.h"
+#include "fonts/OpenSansGFXFonts.h"
 
-TextRenderer::TextRenderer(int width, int height, int fontSize) {
+TextRenderer::TextRenderer(int width, int height, int fontSize, bool useOpenSans) {
     _width = width;
     _height = height;
     // Normalize to a supported body size (9/12/18); default to small.
     if (fontSize >= 18) _fontSize = 18;
     else if (fontSize >= 12) _fontSize = 12;
     else _fontSize = 9;
+    _useOpenSans = useOpenSans;
     _fontLoaded = true;
     _cachedPage = -1;
     _lastGFXFont = nullptr;
     memset(_gfxCharWidths, 0, sizeof(_gfxCharWidths));
+    calculateDimensions();
+}
+
+void TextRenderer::setFontFamily(bool useOpenSans) {
+    if (_useOpenSans == useOpenSans) return;
+    _useOpenSans = useOpenSans;
+    _lastGFXFont = nullptr;
+    clearCache();
     calculateDimensions();
 }
 
@@ -48,7 +58,26 @@ const GFXfont* TextRenderer::getGFXFont(TextStyle style, int& lineHeight) {
     const GFXfont* bold;
     const GFXfont* h4; const GFXfont* h3; const GFXfont* h2; const GFXfont* h1;
 
-    switch (_fontSize) {
+    if (_useOpenSans) {
+        switch (_fontSize) {
+            case 18:
+                normal = &OpenSansRegular18pt7b; bold = &OpenSansBold18pt7b;
+                h4 = &OpenSansBold18pt7b;        h3 = &OpenSansBold18pt7b;
+                h2 = &OpenSansBold24pt7b;        h1 = &OpenSansBold24pt7b;
+                break;
+            case 12:
+                normal = &OpenSansRegular12pt7b; bold = &OpenSansBold12pt7b;
+                h4 = &OpenSansBold12pt7b;        h3 = &OpenSansBold18pt7b;
+                h2 = &OpenSansBold18pt7b;        h1 = &OpenSansBold24pt7b;
+                break;
+            case 9:
+            default:
+                normal = &OpenSansRegular9pt7b;  bold = &OpenSansBold9pt7b;
+                h4 = &OpenSansBold9pt7b;         h3 = &OpenSansBold12pt7b;
+                h2 = &OpenSansBold18pt7b;        h1 = &OpenSansBold24pt7b;
+                break;
+        }
+    } else switch (_fontSize) {
         case 18:  // Large
             normal = &FreeSans18pt7b;       bold = &FreeSansBold18pt7b;
             h4 = &FreeSansBold18pt7b;        h3 = &FreeSansBold18pt7b;

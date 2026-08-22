@@ -118,6 +118,7 @@ AppReader::AppReader() {
     _totalBookPages = 0;
     _refreshEveryNPages = 10; // Default to full refresh every 10 pages
     _fontSizePt = 9;          // Default body size (small)
+    _useOpenSans = false;     // Preserve the original reader font by default
     _readingFirstDraw = true;
     loadSettings();
 }
@@ -139,6 +140,8 @@ void AppReader::loadSettings() {
                 int pt = doc["fontSize"];
                 _fontSizePt = (pt >= 18) ? 18 : (pt >= 12 ? 12 : 9);
             }
+            const char* fontFamily = doc["fontFamily"] | "native";
+            _useOpenSans = strcmp(fontFamily, "openSans") == 0;
         }
         file.close();
     }
@@ -183,7 +186,10 @@ void AppReader::start() {
     // Pick up any settings (font size, refresh interval) changed via the web UI
     // while we were away.
     loadSettings();
-    if (_textRenderer) _textRenderer->setFontSize(_fontSizePt);
+    if (_textRenderer) {
+        _textRenderer->setFontSize(_fontSizePt);
+        _textRenderer->setFontFamily(_useOpenSans);
+    }
 
     _state = VIEW_LIBRARY;
     _booksScanned = false;
@@ -313,12 +319,12 @@ bool AppReader::openBook(const String& path, bool restoreProgress) {
     if (!_textRenderer) {
         DisplayMgr& dispMgr = DisplayMgr::getInstance();
         Book32Display& display = dispMgr.getDisplay();
-        _textRenderer = new TextRenderer(display.width(), display.height(), _fontSizePt);
+        _textRenderer = new TextRenderer(display.width(), display.height(), _fontSizePt, _useOpenSans);
     }
     _textRenderer->setFontSize(_fontSizePt);  // Honor the current reading size
+    _textRenderer->setFontFamily(_useOpenSans);
 
-    // Using Adafruit GFX FreeSans bitmap fonts (same as main menu and all apps)
-    Serial.println("TextRenderer: Using Adafruit GFX FreeSans fonts");
+    Serial.printf("TextRenderer: Using %s fonts\n", _useOpenSans ? "Open Sans" : "native FreeSans");
 
     _textRenderer->calculateDimensions();
 
@@ -744,6 +750,15 @@ void AppReader::applyFontSize(int pt) {
     // begins, keeping word-wrap and page breaks consistent.
     _currentPageRenderValid = false;
     _readingFirstDraw = true;     // Full refresh to clear the old layout cleanly
+    _pageTurnsSinceRefresh = 0;
+    _needsRedraw = true;
+}
+
+void AppReader::applyFontFamily(bool useOpenSans) {
+    _useOpenSans = useOpenSans;
+    if (_textRenderer) _textRenderer->setFontFamily(useOpenSans);
+    _currentPageRenderValid = false;
+    _readingFirstDraw = true;
     _pageTurnsSinceRefresh = 0;
     _needsRedraw = true;
 }

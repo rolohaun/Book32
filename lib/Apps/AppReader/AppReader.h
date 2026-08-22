@@ -41,6 +41,7 @@ public:
     // Apply a new reading font size (9/12/18pt) live. Safe to call from the
     // main loop; re-paginates the current page from the saved position.
     void applyFontSize(int pt) override;
+    void applyFontFamily(bool useOpenSans) override;
 
 private:
     ReaderState _state;
@@ -67,6 +68,7 @@ private:
     int _refreshEveryNPages;
     int _pageTurnsSinceRefresh;
     int _fontSizePt;          // Reading body font size in points (9/12/18)
+    bool _useOpenSans;        // False uses the original FreeSans reader font
     bool _readingFirstDraw;   // Forces a full refresh on the next reading draw
     void loadSettings();
     

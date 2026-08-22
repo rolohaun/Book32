@@ -26,6 +26,9 @@ public:
     // interface without depending on reader internals.
     virtual void applyFontSize(int pt) {}
 
+    // Apply the reader font family. Only the reader acts on this hook.
+    virtual void applyFontFamily(bool useOpenSans) {}
+
     // Metadata
     virtual const char* getName() = 0;
     // Returns font icon char (if using font) or empty

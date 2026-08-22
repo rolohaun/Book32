@@ -3,3 +3,9 @@
 .idea
 *.log
 include/Secrets.h
+
+# Open Sans source faces used to generate the reader bitmap fonts
+Open_Sans/*.ttf
+Open_Sans/static/*.ttf
+!Open_Sans/static/OpenSans-Regular.ttf
+!Open_Sans/static/OpenSans-Bold.ttf

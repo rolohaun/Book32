@@ -337,6 +337,8 @@ void AppReader::start() {
     _librarySelectionOnlyRedraw = false;
     _needsRedraw = true;
     InputMgr::getInstance().setCallback(std::bind(&AppReader::handleInput, this, std::placeholders::_1));
+    InputMgr::getInstance().setTouchCallback(std::bind(&AppReader::handleTouch, this,
+                                                       std::placeholders::_1, std::placeholders::_2));
 
     if (_resumeSavedBookOnStart) {
         _resumeSavedBookOnStart = false;
@@ -350,6 +352,7 @@ void AppReader::stop() {
     BatteryMgr::getInstance().setReaderActive(false);
     closeBook();
     InputMgr::getInstance().clearCallback();
+    InputMgr::getInstance().clearTouchCallback();
 }
 
 const uint8_t* AppReader::getIconImage() { return icon_reader_160x160; }
@@ -459,6 +462,33 @@ void AppReader::handleInput(InputAction action) {
         if (action == INPUT_NEXT) nextPage();
         else if (action == INPUT_PREV) prevPage();
         else if (action == INPUT_SELECT) { closeBook(); _state = VIEW_LIBRARY; _librarySelectionOnlyRedraw = false; _needsRedraw = true; }
+    }
+}
+
+void AppReader::handleTouch(uint16_t x, uint16_t y) {
+    if (_state == VIEW_READING) {
+        // Invisible page-turn zones cover the outer thirds of the page.
+        if (x < SCREEN_WIDTH / 3) prevPage();
+        else if (x >= (SCREEN_WIDTH * 2) / 3) nextPage();
+        return;
+    }
+
+    constexpr int HEADER_H = 76;
+    constexpr int BACK_ITEM_HEIGHT = 48;
+    constexpr int ITEM_HEIGHT = 110;
+    constexpr int FOOTER_H = 70;
+    if (y >= HEADER_H && y < HEADER_H + BACK_ITEM_HEIGHT) {
+        markProgressInactive();
+        AppMgr::getInstance().switchTo(0);
+        return;
+    }
+    if (y < HEADER_H + BACK_ITEM_HEIGHT || y >= SCREEN_HEIGHT - FOOTER_H) return;
+
+    int visibleRow = (static_cast<int>(y) - HEADER_H - BACK_ITEM_HEIGHT) / ITEM_HEIGHT;
+    int bookIndex = _scrollOffset + visibleRow;
+    if (bookIndex >= 0 && bookIndex < static_cast<int>(_books.size())) {
+        _selectedBookIndex = bookIndex;
+        openBook(_books[bookIndex].path);
     }
 }
 
@@ -940,7 +970,11 @@ void AppReader::drawLibrary() {
             snprintf(pageStr, sizeof(pageStr), "%d/%d", _selectedBookIndex + 1, (int)_books.size());
         }
         display.drawFastHLine(20, display.height() - 42, display.width() - 40, GxEPD_BLACK);
+#if BOOK32_HAS_TOUCH
+        fontMgr.drawText(display, "Tap a book to open", 22, display.height() - 18, FONT_SIZE_SMALL, GxEPD_BLACK);
+#else
         fontMgr.drawText(display, "Next: Move  |  Hold: Open", 22, display.height() - 18, FONT_SIZE_SMALL, GxEPD_BLACK);
+#endif
         fontMgr.drawTextRight(display, pageStr, display.width() - 20, display.height() - 18, FONT_SIZE_SMALL, GxEPD_BLACK);
 
     } while (display.nextPage());

@@ -14,6 +14,7 @@ public:
     void forceRedraw() override;
 
     void handleInput(InputAction action);
+    void handleTouch(uint16_t x, uint16_t y);
 
     // Offline management hotspot (SoftAP). Public so the WiFi wake task can
     // trigger it when a station connection can't be established.

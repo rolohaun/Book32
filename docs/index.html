@@ -24,9 +24,9 @@
 
   <main>
     <section class="intro" aria-labelledby="page-title">
-      <p class="eyebrow">XIAO ESP32-S3</p>
+      <p class="eyebrow">ESP32-S3 e-paper</p>
       <h1 id="page-title">Flash Book32</h1>
-      <p>Install or update Book32 over USB. No PlatformIO, drivers, or command line required.</p>
+      <p id="intro-copy">Install or update the 7.5-inch Book32 over USB. No PlatformIO, drivers, or command line required.</p>
     </section>
 
     <section class="installer" aria-labelledby="installer-title">
@@ -36,6 +36,20 @@
           <h2 id="installer-title">What are you flashing?</h2>
         </div>
         <div class="compatibility"><span aria-hidden="true"></span> Chrome or Edge on desktop</div>
+      </div>
+
+      <div class="hardware-picker">
+        <label for="hardware-select">Hardware</label>
+        <select id="hardware-select" name="hardware">
+          <option value="book32">Book32 — 7.5 inch, single button</option>
+          <option value="sticky">Book32 Sticky — 3.97 inch, touch screen</option>
+        </select>
+        <p id="hardware-note">Seeed XIAO ESP32-S3 with the TRMNL 7.5-inch display.</p>
+        <dl class="device-details" aria-live="polite">
+          <div><dt>Display</dt><dd id="device-display">7.5-inch, 800 × 480 E-Ink</dd></div>
+          <div><dt>Controls</dt><dd id="device-controls">One multifunction button</dd></div>
+          <div><dt>Ebook storage</dt><dd id="device-storage">Protected 10 MB internal partition</dd></div>
+        </dl>
       </div>
 
       <div class="mode-switch" role="tablist" aria-label="Install type">
@@ -53,7 +67,7 @@
           <h3>Update firmware and web interface</h3>
           <p>Keeps Wi-Fi settings, uploaded ebooks, and reading progress. Only the active firmware and web interface partitions are written.</p>
         </div>
-        <esp-web-install-button manifest="manifest-update-v1.2.json">
+        <esp-web-install-button id="update-installer" manifest="manifest-update-v1.2.json">
           <button class="install-button" slot="activate" type="button">Connect and update</button>
           <p class="browser-message" slot="unsupported">Open this page in desktop Chrome or Edge to use USB flashing.</p>
           <p class="browser-message" slot="not-allowed">USB flashing requires this secure GitHub Pages address.</p>
@@ -62,11 +76,11 @@
 
       <div id="factory-panel" class="mode-panel" role="tabpanel" aria-labelledby="factory-tab" hidden>
         <div class="mode-copy">
-          <p class="mode-kicker">For a blank or replacement XIAO ESP32-S3</p>
+          <p id="factory-kicker" class="mode-kicker">For a blank or replacement XIAO ESP32-S3</p>
           <h3>Install the complete Book32 system</h3>
           <p>Writes the bootloader, Book32 partition table, firmware, and web interface. Wi-Fi will need to be configured after first boot.</p>
         </div>
-        <esp-web-install-button manifest="manifest-factory-v1.2.json">
+        <esp-web-install-button id="factory-installer" manifest="manifest-factory-v1.2.json">
           <button class="install-button" slot="activate" type="button">Connect and install</button>
           <p class="browser-message" slot="unsupported">Open this page in desktop Chrome or Edge to use USB flashing.</p>
           <p class="browser-message" slot="not-allowed">USB flashing requires this secure GitHub Pages address.</p>
@@ -88,7 +102,7 @@
         <div class="partition system"><span>System</span><small>Boot + settings</small></div>
         <div class="partition firmware"><span>Firmware</span><small>Book32 OS</small></div>
         <div class="partition web"><span>Web UI</span><small>1 MB</small></div>
-        <div class="partition ebooks"><span>Ebooks</span><small>Protected 10 MB</small></div>
+        <div class="partition ebooks"><span>Ebooks</span><small id="ebook-storage-label">Protected 10 MB</small></div>
       </div>
     </section>
 
@@ -99,7 +113,7 @@
       </div>
       <ol>
         <li><span>1</span><div><strong>Connect USB</strong><p>Use a data-capable USB cable and switch Book32 on.</p></div></li>
-        <li><span>2</span><div><strong>Choose the device</strong><p>Select the XIAO ESP32-S3 serial port when the browser asks.</p></div></li>
+        <li><span>2</span><div><strong>Choose the device</strong><p>Select the matching ESP32-S3 serial port when the browser asks.</p></div></li>
         <li><span>3</span><div><strong>Let it finish</strong><p>Keep the cable connected until installation completes and Book32 restarts.</p></div></li>
       </ol>
       <details>

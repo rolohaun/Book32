@@ -40,6 +40,7 @@ public:
     bool hasBootResume();
     void resumeSavedBookOnStart();
     void handleInput(InputAction action);
+    void handleTouch(uint16_t x, uint16_t y);
     void forceRedraw() override;
 
     // Apply a new reading font size (9/12/18pt) live. Safe to call from the

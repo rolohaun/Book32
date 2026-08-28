@@ -115,12 +115,12 @@ UpdateInfo GitHubMgr::checkUpdate(const char* currentVersion) {
 
                 String url = asset["browser_download_url"].as<String>();
 
-                if (name == "firmware.bin" || name.endsWith("_firmware.bin")) {
+                if (name == OTA_FIRMWARE_ASSET) {
                     info.firmwareUrl = url;
                     info.hasFirmware = true;
                     Serial.printf("Found firmware: %s\n", name.c_str());
                 }
-                else if (name == "littlefs.bin" || name == "filesystem.bin" || name.endsWith("_littlefs.bin")) {
+                else if (name == OTA_FILESYSTEM_ASSET) {
                     info.filesystemUrl = url;
                     info.hasFilesystem = true;
                     Serial.printf("Found filesystem: %s\n", name.c_str());

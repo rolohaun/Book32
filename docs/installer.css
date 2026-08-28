@@ -112,6 +112,49 @@ h3 { margin: 0 0 10px; font-size: 22px; }
 }
 .compatibility span { width: 9px; height: 9px; background: var(--teal); border-radius: 50%; }
 
+.hardware-picker {
+  display: grid;
+  grid-template-columns: 110px minmax(260px, 1fr);
+  align-items: center;
+  gap: 8px 16px;
+  margin-top: 26px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  background: #f7f8f5;
+}
+.hardware-picker label { font-weight: 800; }
+.hardware-picker select {
+  width: 100%;
+  min-height: 46px;
+  padding: 0 38px 0 12px;
+  border: 1px solid #9ca39e;
+  border-radius: 3px;
+  background: var(--surface);
+  color: var(--ink);
+}
+.hardware-picker p { grid-column: 2; margin: 0; color: var(--muted); font-size: 14px; }
+.hardware-picker select:focus-visible { outline: 3px solid var(--yellow); outline-offset: 2px; }
+.device-details {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px;
+  margin: 10px 0 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  background: var(--line);
+}
+.device-details div { padding: 14px; background: var(--surface); }
+.device-details dt {
+  margin-bottom: 5px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.device-details dd { margin: 0; font-weight: 700; line-height: 1.35; }
+
 .mode-switch {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -227,6 +270,9 @@ footer {
   h1 { font-size: 48px; }
   .installer { padding: 20px; }
   .installer-heading { align-items: flex-start; flex-direction: column; gap: 12px; }
+  .hardware-picker { grid-template-columns: 1fr; }
+  .hardware-picker p { grid-column: 1; }
+  .device-details { grid-template-columns: 1fr; }
   .mode-switch { grid-template-columns: 1fr; }
   .mode-panel { grid-template-columns: 1fr; gap: 22px; }
   esp-web-install-button { min-width: 0; }

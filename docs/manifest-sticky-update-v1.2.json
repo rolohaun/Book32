@@ -1,0 +1,16 @@
+{
+  "name": "Book32 Sticky",
+  "version": "1.2",
+  "new_install_prompt_erase": true,
+  "new_install_improv_wait_time": 0,
+  "builds": [
+    {
+      "chipFamily": "ESP32-S3",
+      "improv": false,
+      "parts": [
+        { "path": "firmware/book32-sticky-firmware-v1.2.bin", "offset": 65536 },
+        { "path": "firmware/book32-sticky-littlefs-v1.2.bin", "offset": 8454144 }
+      ]
+    }
+  ]
+}

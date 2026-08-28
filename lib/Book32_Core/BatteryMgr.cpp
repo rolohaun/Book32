@@ -7,6 +7,9 @@
 #include <ArduinoJson.h>
 #include <Fonts/FreeSans18pt7b.h>
 #include <esp32-hal-cpu.h>
+#if defined(BOARD_SEEED_STICKY)
+#include <Wire.h>
+#endif
 
 // Static constants
 const float BatteryMgr::CHARGE_THRESHOLD = 0.03f;  // 30mV increase = charging (avoid false positives from fluctuation)
@@ -21,6 +24,20 @@ static int voltageToPercentage(float voltage) {
     return (int)(((voltage - BATTERY_EMPTY_VOLTAGE) /
                  (BATTERY_FULL_VOLTAGE - BATTERY_EMPTY_VOLTAGE)) * 100.0f + 0.5f);
 }
+
+#if defined(BOARD_SEEED_STICKY)
+static bool readGaugeWord(uint8_t reg, uint16_t& value) {
+    constexpr uint8_t GAUGE_ADDRESS = 0x55;
+    Wire1.beginTransmission(GAUGE_ADDRESS);
+    Wire1.write(reg);
+    if (Wire1.endTransmission(false) != 0) return false;
+    if (Wire1.requestFrom(GAUGE_ADDRESS, static_cast<uint8_t>(2), static_cast<uint8_t>(true)) != 2) return false;
+    uint8_t low = Wire1.read();
+    uint8_t high = Wire1.read();
+    value = static_cast<uint16_t>(low) | (static_cast<uint16_t>(high) << 8);
+    return true;
+}
+#endif
 
 BatteryMgr::BatteryMgr() : _lastReadTime(0), _historyIndex(0), _lastHistoryUpdate(0),
                            _previousVoltage(0.0f), _lastValidVoltage(0.0f),
@@ -42,6 +59,12 @@ BatteryMgr& BatteryMgr::getInstance() {
 }
 
 void BatteryMgr::init() {
+#if defined(BOARD_SEEED_STICKY)
+    pinMode(PIN_CHARGE_STATUS, INPUT_PULLUP);
+    Wire1.begin(BATTERY_I2C_SDA, BATTERY_I2C_SCL, 400000);
+    Wire1.setTimeOut(10);
+    _cachedStatus = {3.7f, 50, digitalRead(PIN_CHARGE_STATUS) == LOW};
+#else
     pinMode(PIN_BAT_VOLT, INPUT);
 #ifdef PIN_VBAT_SWITCH
     pinMode(PIN_VBAT_SWITCH, OUTPUT);
@@ -49,6 +72,7 @@ void BatteryMgr::init() {
 #endif
     // ADC calibration/attentuation might be needed for S3
     analogSetAttenuation(ADC_11db);
+#endif
 
     // Perform initial read to populate cache
     updateCache();
@@ -80,7 +104,9 @@ void BatteryMgr::update() {
         }
     }
 
-    // Update voltage history periodically for trend analysis
+    // Update voltage history periodically for trend analysis on the XIAO
+    // hardware. Sticky reports charge state directly through its gauge/charger.
+#if !defined(BOARD_SEEED_STICKY)
     if (now - _lastHistoryUpdate >= HISTORY_INTERVAL_MS) {
         // Make sure cache is fresh
         if (now - _lastReadTime >= CACHE_DURATION_MS) {
@@ -121,6 +147,9 @@ void BatteryMgr::update() {
             }
         }
     }
+#else
+    if (now - _lastReadTime >= CACHE_DURATION_MS) updateCache();
+#endif
 
     // Check for critical low battery
     if (isCriticallyLow()) {
@@ -140,6 +169,34 @@ void BatteryMgr::update() {
 }
 
 void BatteryMgr::updateCache(bool clearStaleCharging) {
+#if defined(BOARD_SEEED_STICKY)
+    (void)clearStaleCharging;
+    uint16_t millivolts = 0;
+    uint16_t stateOfCharge = 0;
+    uint16_t rawCurrent = 0;
+    bool voltageOK = readGaugeWord(0x08, millivolts);
+    bool socOK = readGaugeWord(0x2C, stateOfCharge);
+    bool currentOK = readGaugeWord(0x0C, rawCurrent);
+
+    if (voltageOK && millivolts >= 2500 && millivolts <= 5000) {
+        float voltage = millivolts / 1000.0f;
+        int percentage = socOK ? constrain(static_cast<int>(stateOfCharge), 0, 100)
+                               : voltageToPercentage(voltage);
+        int16_t current = currentOK ? static_cast<int16_t>(rawCurrent) : 0;
+        bool charging = digitalRead(PIN_CHARGE_STATUS) == LOW || current > 0;
+        _cachedStatus = {voltage, percentage, charging};
+        _lastValidVoltage = voltage;
+        _previousVoltage = voltage;
+        if (charging) _lastChargingTime = millis();
+    } else {
+        // Keep the last plausible value through a transient I2C failure. This
+        // also prevents a missing gauge from triggering an immediate shutdown.
+        _cachedStatus.charging = digitalRead(PIN_CHARGE_STATUS) == LOW;
+        Serial.println("Battery: BQ27220 read failed; retaining cached status");
+    }
+    _lastReadTime = millis();
+    return;
+#else
 #ifdef PIN_VBAT_SWITCH
     digitalWrite(PIN_VBAT_SWITCH, VBAT_SWITCH_LEVEL); // Turn on measurement
     delay(5); // Wait for stabilization
@@ -209,6 +266,7 @@ void BatteryMgr::updateCache(bool clearStaleCharging) {
     // Update cache
     _cachedStatus = {voltage, percentage, currentCharging};
     _lastReadTime = millis();
+#endif
 }
 
 bool BatteryMgr::isCriticallyLow() {

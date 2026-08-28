@@ -42,8 +42,11 @@ static void drawBootProgress(Book32Display& display, uint8_t progress, const cha
 
 // Constructor with Pin mapping
 // GxEPD2_420(int16_t cs, int16_t dc, int16_t rst, int16_t busy)
-DisplayMgr::DisplayMgr() : display(GxEPD2_750_T7(EPD_CS, EPD_DC, EPD_RST, EPD_BUSY)) {
-}
+#if defined(BOARD_SEEED_STICKY)
+DisplayMgr::DisplayMgr() : display() {}
+#else
+DisplayMgr::DisplayMgr() : display(GxEPD2_750_T7(EPD_CS, EPD_DC, EPD_RST, EPD_BUSY)) {}
+#endif
 
 DisplayMgr& DisplayMgr::getInstance() {
     static DisplayMgr instance;
@@ -76,6 +79,21 @@ void DisplayMgr::setRotation(int rotation) {
     Serial.printf("Display rotation set to %d (changed=%d)\n", _rotation, changed);
 }
 
+bool DisplayMgr::mapNativeTouchToScreen(uint16_t nativeX, uint16_t nativeY,
+                                        uint16_t& screenX, uint16_t& screenY) const {
+    // Native panel coordinates are 800x480. These transformations mirror
+    // Adafruit_GFX's rotation mapping into Book32's 480x800 portrait space.
+    if (nativeX >= 800 || nativeY >= 480) return false;
+    if (_rotation == 1) {
+        screenX = nativeY;
+        screenY = 799 - nativeX;
+    } else {
+        screenX = 479 - nativeY;
+        screenY = nativeX;
+    }
+    return screenX < SCREEN_WIDTH && screenY < SCREEN_HEIGHT;
+}
+
 void DisplayMgr::loadDisplaySettings() {
     int rotation = 3;  // Default: button on the left
     if (EbookFS.exists("/display_config.json")) {
@@ -97,7 +115,7 @@ void DisplayMgr::clear() {
 }
 
 void DisplayMgr::fullRefresh() {
-    display.refresh(true); // Full update
+    display.refresh(false); // Full update
 }
 
 void DisplayMgr::showBootScreen(uint8_t progress, const char* status) {

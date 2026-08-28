@@ -1,5 +1,6 @@
 #pragma once
 #include <LittleFS.h>
+#include <FS.h>
 
 // =============================================================================
 // Book32 Filesystem Configuration
@@ -31,6 +32,13 @@
 // Mounted at /littlefs, partition label "spiffs"
 #define SystemFS LittleFS
 
-// Ebook Filesystem - separate LittleFSFS instance
-// Mounted at /ebooks, partition label "ebooks"
-extern fs::LittleFSFS EbookFS;
+// Ebook storage is a separate LittleFS instance on the original Book32. On
+// Sticky it points to MicroSD when a card is present, otherwise to the internal
+// fallback LittleFS partition. Both are mounted at /ebooks for unzipLIB.
+extern fs::FS* EbookFSPtr;
+#define EbookFS (*EbookFSPtr)
+
+bool beginEbookStorage(bool internalPartitionBlank);
+uint64_t ebookStorageTotalBytes();
+uint64_t ebookStorageUsedBytes();
+bool ebookStorageUsesSD();

@@ -26,3 +26,12 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+## bb_epaper
+
+The Book32 Sticky display adapter uses Larry Bank's `bb_epaper` library:
+https://github.com/bitbank2/bb_epaper
+
+Copyright (c) 2024 BitBank Software, Inc. `bb_epaper` is distributed under the
+GNU General Public License, version 3 or later. Its complete license text and
+corresponding source are available in the linked upstream repository.

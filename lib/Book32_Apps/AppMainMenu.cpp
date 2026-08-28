@@ -198,6 +198,8 @@ void AppMainMenu::start() {
     _lastBatteryPoll = millis();
     _lastBatteryStatus = BatteryMgr::getInstance().refreshNow();
     InputMgr::getInstance().setCallback(std::bind(&AppMainMenu::handleInput, this, std::placeholders::_1));
+    InputMgr::getInstance().setTouchCallback(std::bind(&AppMainMenu::handleTouch, this,
+                                                       std::placeholders::_1, std::placeholders::_2));
     ensureWifiAwake();
     
     // Spawn update check task if not already found
@@ -211,6 +213,26 @@ void AppMainMenu::stop() {
     // it doesn't keep the radio (and battery) busy inside other apps. Normal
     // station connections are left untouched (Klipper still needs WiFi).
     stopHotspot();
+    InputMgr::getInstance().clearCallback();
+    InputMgr::getInstance().clearTouchCallback();
+}
+
+void AppMainMenu::handleTouch(uint16_t x, uint16_t y) {
+    AppMgr& appMgr = AppMgr::getInstance();
+    std::vector<App*>& apps = appMgr.getApps();
+    int maxSelectable = static_cast<int>(apps.size()) - 1 + (_updateAvailable ? 1 : 0);
+    for (int index = 1; index <= maxSelectable; ++index) {
+        MenuDirtyRect rect = menuItemRect(index, SCREEN_WIDTH);
+        if (x >= rect.x && x < rect.x + rect.w && y >= rect.y && y < rect.y + rect.h) {
+            selectedIndex = index;
+            if (_updateAvailable && index == static_cast<int>(apps.size())) {
+                GitHubMgr::getInstance().triggerUpdate(SYSTEM_VERSION);
+            } else if (index < static_cast<int>(apps.size())) {
+                appMgr.switchTo(index);
+            }
+            return;
+        }
+    }
 }
 
 void AppMainMenu::forceRedraw() {
@@ -428,7 +450,11 @@ void AppMainMenu::draw() {
         }
 
         // === Footer ===
+#if BOOK32_HAS_TOUCH
+        fontMgr.drawTextCentered(display, "Tap an icon to open", screenH - 45, FONT_SIZE_SMALL, GxEPD_BLACK);
+#else
         fontMgr.drawTextCentered(display, "Press: Next  |  Hold: Select", screenH - 45, FONT_SIZE_SMALL, GxEPD_BLACK);
+#endif
         String ipStr = getWifiFooterText();
         fontMgr.drawTextCentered(display, ipStr.c_str(), screenH - 20, FONT_SIZE_SMALL, GxEPD_BLACK);
         _lastWifiFooterText = ipStr;

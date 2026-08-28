@@ -66,6 +66,16 @@ static void networkStartupTask(void* parameter) {
 }
 
 void setup() {
+#if defined(BOARD_SEEED_STICKY)
+    // Sticky's power-hold rails must be asserted before any slow startup work.
+    pinMode(PIN_POWER_HOLD, OUTPUT);
+    digitalWrite(PIN_POWER_HOLD, HIGH);
+    pinMode(PIN_POWER_LOCK, OUTPUT);
+    digitalWrite(PIN_POWER_LOCK, HIGH);
+    pinMode(PIN_CHARGE_ENABLE, OUTPUT);
+    digitalWrite(PIN_CHARGE_ENABLE, LOW);
+#endif
+
     Serial.begin(115200);
     delay(250);
 

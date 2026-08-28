@@ -3,6 +3,7 @@
 #include "InputMgr.h"
 #include "FontMgr.h"
 #include "AppMgr.h"
+#include "BatteryMgr.h"
 #include "icon_reader.h"
 #include "Book32FS.h"
 #include "WebMgr.h"
@@ -13,8 +14,36 @@
 #include <Fonts/FreeSans12pt7b.h>
 #include <Fonts/FreeSansBold12pt7b.h>
 #include <map>
+#include <utility>
 
 static const char* READER_PROGRESS_PATH = "/reader_progress.json";
+static const uint32_t READER_LAYOUT_VERSION = 5;
+
+static uint32_t fingerprintBook(const String& path, uint32_t& sizeOut) {
+    sizeOut = 0;
+    File file = EbookFS.open(path, FILE_READ);
+    if (!file) return 0;
+
+    sizeOut = static_cast<uint32_t>(file.size());
+    uint32_t hash = 2166136261u;
+    auto mix = [&hash](uint8_t value) {
+        hash ^= value;
+        hash *= 16777619u;
+    };
+    for (int shift = 0; shift < 32; shift += 8) mix(static_cast<uint8_t>((sizeOut >> shift) & 0xFF));
+
+    uint8_t buffer[256];
+    size_t read = file.read(buffer, sizeof(buffer));
+    for (size_t i = 0; i < read; i++) mix(buffer[i]);
+
+    if (sizeOut > sizeof(buffer)) {
+        file.seek(sizeOut - sizeof(buffer));
+        read = file.read(buffer, sizeof(buffer));
+        for (size_t i = 0; i < read; i++) mix(buffer[i]);
+    }
+    file.close();
+    return hash;
+}
 
 static String normalizedBookName(const String& path) {
     String name = path;
@@ -42,10 +71,109 @@ static void drawTextWithFont(Book32Display& display, const char* text, int x, in
     display.print(text);
 }
 
+static int nextUtf8Boundary(const String& text, int offset) {
+    if (offset >= static_cast<int>(text.length())) return text.length();
+    int next = offset + 1;
+    while (next < static_cast<int>(text.length()) &&
+           (static_cast<uint8_t>(text[next]) & 0xC0) == 0x80) next++;
+    return next;
+}
+
+static void removeLastUtf8Codepoint(String& text) {
+    if (text.length() == 0) return;
+    int start = text.length() - 1;
+    while (start > 0 && (static_cast<uint8_t>(text[start]) & 0xC0) == 0x80) start--;
+    text.remove(start);
+}
+
+static int fittingPrefix(Book32Display& display, const String& text, const GFXfont* font, int maxWidth) {
+    int offset = 0;
+    int fitted = 0;
+    while (offset < static_cast<int>(text.length())) {
+        int next = nextUtf8Boundary(text, offset);
+        if (textWidthForFont(display, text.substring(0, next).c_str(), font) > maxWidth) break;
+        fitted = next;
+        offset = next;
+    }
+    return fitted;
+}
+
+static std::vector<String> wrapLibraryTitle(Book32Display& display, String title, const GFXfont* font,
+                                            int maxWidth, int maxLines) {
+    std::vector<String> lines;
+    lines.reserve(maxLines);
+    title.trim();
+    String line;
+    int position = 0;
+    bool truncated = false;
+
+    while (position < static_cast<int>(title.length())) {
+        while (position < static_cast<int>(title.length()) &&
+               isspace(static_cast<unsigned char>(title[position]))) position++;
+        if (position >= static_cast<int>(title.length())) break;
+
+        int wordEnd = position;
+        while (wordEnd < static_cast<int>(title.length()) &&
+               !isspace(static_cast<unsigned char>(title[wordEnd]))) wordEnd++;
+        String word = title.substring(position, wordEnd);
+        position = wordEnd;
+
+        String candidate = line.length() > 0 ? line + " " + word : word;
+        if (textWidthForFont(display, candidate.c_str(), font) <= maxWidth) {
+            line = candidate;
+            continue;
+        }
+
+        if (line.length() > 0) {
+            lines.push_back(line);
+            line = "";
+            if (static_cast<int>(lines.size()) >= maxLines) {
+                truncated = true;
+                break;
+            }
+        }
+
+        while (word.length() > 0) {
+            int fitted = fittingPrefix(display, word, font, maxWidth);
+            if (fitted <= 0) fitted = nextUtf8Boundary(word, 0);
+            line = word.substring(0, fitted);
+            word.remove(0, fitted);
+            if (word.length() == 0) break;
+
+            lines.push_back(line);
+            line = "";
+            if (static_cast<int>(lines.size()) >= maxLines) {
+                truncated = true;
+                break;
+            }
+        }
+        if (truncated) break;
+    }
+
+    if (!truncated && line.length() > 0) lines.push_back(line);
+    if (lines.empty()) lines.push_back("");
+    if (static_cast<int>(lines.size()) > maxLines) {
+        lines.resize(maxLines);
+        truncated = true;
+    }
+    if (position < static_cast<int>(title.length())) truncated = true;
+
+    if (truncated) {
+        String& last = lines.back();
+        last.trim();
+        while (last.length() > 0 && textWidthForFont(display, (last + "...").c_str(), font) > maxWidth) {
+            removeLastUtf8Codepoint(last);
+            last.trim();
+        }
+        last += "...";
+    }
+    return lines;
+}
+
 static String titleFromFilename(String name) {
-    name = normalizedBookName(name);
-    int dot = name.lastIndexOf('.');
-    if (dot > 0) name = name.substring(0, dot);
+    String lower = name;
+    lower.toLowerCase();
+    if (lower.endsWith(".epub")) name.remove(name.length() - 5);
     name.replace('_', ' ');
     name.trim();
     return name;
@@ -72,6 +200,16 @@ static void loadBookMetadata(std::map<String, String>& metadata) {
     for (JsonPair pair : obj) {
         metadata[String(pair.key().c_str())] = pair.value().as<String>();
     }
+}
+
+static void saveBookMetadata(const std::map<String, String>& metadata) {
+    DynamicJsonDocument doc(4096);
+    for (const auto& item : metadata) doc[item.first] = item.second;
+
+    File file = SystemFS.open("/books_meta.json", FILE_WRITE);
+    if (!file) return;
+    serializeJson(doc, file);
+    file.close();
 }
 
 struct LibraryDirtyRect {
@@ -110,6 +248,8 @@ AppReader::AppReader() {
     _epubLoader = nullptr;
     _textRenderer = nullptr;
     _currentChapter = 0;
+    _currentBookSize = 0;
+    _currentBookFingerprint = 0;
     _currentPage = 0;
     _needsRedraw = true;
     _currentPageRender = {0, 0, false, 0, 0};
@@ -182,6 +322,7 @@ void AppReader::start() {
         WiFi.mode(WIFI_OFF);
         Serial.println("AppReader: WiFi powered down");
     }
+    BatteryMgr::getInstance().setReaderActive(true);
 
     // Pick up any settings (font size, refresh interval) changed via the web UI
     // while we were away.
@@ -206,6 +347,7 @@ void AppReader::start() {
 }
 
 void AppReader::stop() {
+    BatteryMgr::getInstance().setReaderActive(false);
     closeBook();
     InputMgr::getInstance().clearCallback();
 }
@@ -216,6 +358,7 @@ void AppReader::scanBooks() {
     _books.clear();
     std::map<String, String> metadata;
     loadBookMetadata(metadata);
+    bool metadataChanged = false;
 
     File root = EbookFS.open("/");
     if(!root || !root.isDirectory()) return;
@@ -228,13 +371,28 @@ void AppReader::scanBooks() {
             BookEntry entry;
             entry.path = "/" + fileName;
             auto meta = metadata.find(fileName);
-            entry.title = titleFromFilename(meta != metadata.end() ? meta->second : fileName);
+            String displayTitle = meta != metadata.end() ? meta->second : "";
+            if (displayTitle.length() == 0) {
+                EpubLoader loader;
+                String fullPath = "/ebooks/" + fileName;
+                if (loader.open(fullPath.c_str())) {
+                    displayTitle = loader.getTitle();
+                    displayTitle.trim();
+                    loader.close();
+                }
+                if (displayTitle.length() > 0) {
+                    metadata[fileName] = displayTitle;
+                    metadataChanged = true;
+                }
+            }
+            entry.title = titleFromFilename(displayTitle.length() > 0 ? displayTitle : fileName);
             _books.push_back(entry);
         }
         file.close();
         file = root.openNextFile();
     }
     root.close();
+    if (metadataChanged) saveBookMetadata(metadata);
 }
 
 void AppReader::drawBookTile(Book32Display& display, int x, int y, int w, int h, bool selected) {
@@ -254,6 +412,21 @@ void AppReader::drawBookTile(Book32Display& display, int x, int y, int w, int h,
     if (selected) {
         display.fillRect(x + w - 9, y + 8, 4, h - 16, GxEPD_BLACK);
     }
+}
+
+void AppReader::loadBookCover(BookEntry& book, int width, int height) {
+    if (book.coverAttempted) return;
+    book.coverAttempted = true;
+
+    EpubLoader loader;
+    String fullPath = "/ebooks" + book.path;
+    if (!loader.open(fullPath.c_str())) return;
+    String coverHref = loader.getCoverHref();
+    if (coverHref.length() > 0) {
+        std::shared_ptr<EpubBitmap> cover(new (std::nothrow) EpubBitmap());
+        if (cover && loader.decodeImage(coverHref, width, height, *cover)) book.cover = cover;
+    }
+    loader.close();
 }
 
 void AppReader::handleInput(InputAction action) {
@@ -313,20 +486,30 @@ int AppReader::getGlobalPageNumber() {
 bool AppReader::openBook(const String& path, bool restoreProgress) {
     String fullPath = "/ebooks" + path;
     closeBook(false);
-    _epubLoader = new EpubLoader();
-    if (!_epubLoader->open(fullPath.c_str())) { delete _epubLoader; _epubLoader = nullptr; return false; }
     _currentBookPath = path;
+    _currentBookFingerprint = fingerprintBook(path, _currentBookSize);
+    _epubLoader = new EpubLoader();
+    if (!_epubLoader->open(fullPath.c_str())) {
+        delete _epubLoader;
+        _epubLoader = nullptr;
+        _currentBookPath = "";
+        _currentBookSize = 0;
+        _currentBookFingerprint = 0;
+        return false;
+    }
     if (!_textRenderer) {
         DisplayMgr& dispMgr = DisplayMgr::getInstance();
         Book32Display& display = dispMgr.getDisplay();
         _textRenderer = new TextRenderer(display.width(), display.height(), _fontSizePt, _useOpenSans);
     }
+    _textRenderer->setImageSource(_epubLoader);
     _textRenderer->setFontSize(_fontSizePt);  // Honor the current reading size
     _textRenderer->setFontFamily(_useOpenSans);
 
     Serial.printf("TextRenderer: Using %s fonts\n", _useOpenSans ? "Open Sans" : "native FreeSans");
 
     _textRenderer->calculateDimensions();
+    resetPageCacheForLayout();
 
     // calculateTotalPages(); // DISABLING: This takes forever on large books
     _totalBookPages = 0; // Show simplified pagination for now
@@ -336,16 +519,27 @@ bool AppReader::openBook(const String& path, bool restoreProgress) {
     int restoreChapter = 0;
     PagePointer restorePointer = {0, 0};
     int restorePage = 1;
-    bool restored = restoreProgress && loadBookProgress(path, restoreChapter, restorePointer, restorePage);
+    uint32_t restoreVisibleOffset = 0;
+    bool hasVisibleOffset = false;
+    bool restored = restoreProgress && loadBookProgress(path, restoreChapter, restorePointer, restorePage,
+                                                        restoreVisibleOffset, hasVisibleOffset);
 
     loadChapter(restored ? restoreChapter : 0);
     if (restored && restoreChapter == _currentChapter) {
-        int maxNode = (int)_currentRichContent.size();
-        if (restorePointer.nodeIndex >= 0 && restorePointer.nodeIndex <= maxNode && restorePointer.charOffset >= 0) {
-            _currentPagePointer = restorePointer;
+        if (hasVisibleOffset) {
+            _currentPagePointer = ReaderPosition::fromVisibleOffset(_currentRichContent, restoreVisibleOffset);
             _globalPageNumber = max(1, restorePage);
             _currentPageRenderValid = false;
+        } else {
+            int maxNode = (int)_currentRichContent.size();
+            if (restorePointer.nodeIndex >= 0 && restorePointer.nodeIndex <= maxNode && restorePointer.charOffset >= 0) {
+                _currentPagePointer = restorePointer;
+                _globalPageNumber = max(1, restorePage);
+                _currentPageRenderValid = false;
+            }
         }
+        rebuildPageHistory();
+        rememberCurrentPage();
     }
 
     _state = VIEW_READING;
@@ -371,7 +565,8 @@ bool AppReader::openSavedProgress() {
     return openBook(lastBook, true);
 }
 
-bool AppReader::loadBookProgress(const String& path, int& chapter, PagePointer& pointer, int& globalPage) {
+bool AppReader::loadBookProgress(const String& path, int& chapter, PagePointer& pointer, int& globalPage,
+                                 uint32_t& visibleOffset, bool& hasVisibleOffset) {
     if (!EbookFS.exists(READER_PROGRESS_PATH)) return false;
 
     File file = EbookFS.open(READER_PROGRESS_PATH, "r");
@@ -386,10 +581,15 @@ bool AppReader::loadBookProgress(const String& path, int& chapter, PagePointer& 
     if (books.isNull() || !books.containsKey(path)) return false;
 
     JsonObject saved = books[path];
+    if (saved.containsKey("bookFingerprint") && saved["bookFingerprint"].as<uint32_t>() != _currentBookFingerprint) {
+        return false;
+    }
     chapter = saved["chapter"] | 0;
     pointer.nodeIndex = saved["nodeIndex"] | 0;
     pointer.charOffset = saved["charOffset"] | 0;
     globalPage = saved["globalPage"] | 1;
+    hasVisibleOffset = saved.containsKey("visibleOffset") && (saved["positionVersion"] | 0) >= 3;
+    visibleOffset = saved["visibleOffset"] | 0;
     return true;
 }
 
@@ -412,6 +612,9 @@ void AppReader::saveReadingProgress(bool resumeOnBoot) {
     saved["chapter"] = _currentChapter;
     saved["nodeIndex"] = _currentPagePointer.nodeIndex;
     saved["charOffset"] = _currentPagePointer.charOffset;
+    saved["visibleOffset"] = currentVisibleOffset();
+    saved["positionVersion"] = 3;
+    saved["bookFingerprint"] = _currentBookFingerprint;
     saved["globalPage"] = _globalPageNumber;
     saved["updatedAt"] = millis();
 
@@ -450,6 +653,11 @@ void AppReader::closeBook(bool markInactive) {
     if (_epubLoader) { _epubLoader->close(); delete _epubLoader; _epubLoader = nullptr; }
     if (_textRenderer) { delete _textRenderer; _textRenderer = nullptr; }
     _pageHistory.clear(); _chapterPageCounts.clear(); _totalBookPages = 0;
+    _currentRichContent.clear();
+    _currentBookPath = "";
+    _currentBookSize = 0;
+    _currentBookFingerprint = 0;
+    _pageCache.clearMemory();
     _currentPageRenderValid = false;
 }
 
@@ -467,6 +675,8 @@ void AppReader::loadChapter(int chapterIndex) {
         _currentRichContent = _epubLoader->getChapterContentRich(chapterIndex);
         if (_currentRichContent.size() > 0) {
             if (_textRenderer) _textRenderer->clearCache();
+            rememberCurrentPage();
+            rebuildPageHistory();
             _needsRedraw = true;
             return;
         }
@@ -494,11 +704,13 @@ void AppReader::nextPage() {
     
     if (result.pageFull) {
         // Save current position to history before advancing
+        rememberCurrentPage();
         _pageHistory.push_back(_currentPagePointer);
         
         // Continue from the exact node/character where rendering stopped.
         _currentPagePointer.nodeIndex = result.nextNodeIndex;
         _currentPagePointer.charOffset = result.nextCharOffset;
+        rememberCurrentPage();
         
         // Increment global page counter
         _globalPageNumber++;
@@ -511,6 +723,8 @@ void AppReader::nextPage() {
     } else {
         // End of chapter - advance to next
         if (_currentChapter < _epubLoader->getChapterCount() - 1) {
+            rememberCurrentPage();
+            _pageCache.markChapterComplete(static_cast<uint16_t>(_currentChapter));
             // Save current chapter state to history
             _pageHistory.push_back(_currentPagePointer);
             _globalPageNumber++; // Next page in next chapter
@@ -554,8 +768,26 @@ void AppReader::prevChapter() {
     if (_currentChapter > 0) {
         int tryChapter = _currentChapter - 1;
         while (tryChapter >= 0) {
-            String chapterText = _epubLoader->getChapterContent(tryChapter);
-            if (chapterText.length() > 0) { loadChapter(tryChapter); return; }
+            std::vector<ContentNode> content = _epubLoader->getChapterContentRich(tryChapter);
+            if (!content.empty()) {
+                _currentChapter = tryChapter;
+                _currentRichContent = std::move(content);
+                _currentPagePointer = {0, 0};
+                _pageHistory.clear();
+                if (_textRenderer) _textRenderer->clearCache();
+
+                if (_pageCache.isChapterComplete(static_cast<uint16_t>(tryChapter))) {
+                    std::vector<uint32_t> pages = _pageCache.pagesForChapter(static_cast<uint16_t>(tryChapter));
+                    if (!pages.empty()) {
+                        _currentPagePointer = ReaderPosition::fromVisibleOffset(_currentRichContent, pages.back());
+                    }
+                }
+                rebuildPageHistory();
+                rememberCurrentPage();
+                _currentPageRenderValid = false;
+                _needsRedraw = true;
+                return;
+            }
             tryChapter--;
         }
     }
@@ -580,11 +812,30 @@ void AppReader::drawLibrary() {
     const int COVER_HEIGHT = 80;
     const int ITEM_HEIGHT = 110;
     const int ITEM_PADDING = 24;
+    const int visibleBookCount = max(1, (display.height() - HEADER_H - BACK_ITEM_HEIGHT - 70) / ITEM_HEIGHT);
+
+    int previousScrollOffset = _scrollOffset;
+    if (_selectedBookIndex >= 0) {
+        if (_selectedBookIndex < _scrollOffset) _scrollOffset = _selectedBookIndex;
+        if (_selectedBookIndex >= _scrollOffset + visibleBookCount) {
+            _scrollOffset = _selectedBookIndex - visibleBookCount + 1;
+        }
+    }
+    int maximumScroll = max(0, static_cast<int>(_books.size()) - visibleBookCount);
+    _scrollOffset = constrain(_scrollOffset, 0, maximumScroll);
+    if (_scrollOffset != previousScrollOffset) _librarySelectionOnlyRedraw = false;
+
+    int lastVisibleBook = min(static_cast<int>(_books.size()), _scrollOffset + visibleBookCount);
+    for (int index = _scrollOffset; index < lastVisibleBook; index++) {
+        loadBookCover(_books[index], COVER_WIDTH, COVER_HEIGHT);
+    }
 
     // Use Partial Refresh for Library interactions
     if (_librarySelectionOnlyRedraw) {
-        LibraryDirtyRect dirty = unionLibraryRect(libraryItemRect(_previousBookIndex, display.width()),
-                                                 libraryItemRect(_selectedBookIndex, display.width()));
+        int previousVisibleIndex = _previousBookIndex < 0 ? -1 : _previousBookIndex - _scrollOffset;
+        int selectedVisibleIndex = _selectedBookIndex < 0 ? -1 : _selectedBookIndex - _scrollOffset;
+        LibraryDirtyRect dirty = unionLibraryRect(libraryItemRect(previousVisibleIndex, display.width()),
+                                                 libraryItemRect(selectedVisibleIndex, display.width()));
         LibraryDirtyRect footer = {18, display.height() - 48, display.width() - 36, 46};
         dirty = unionLibraryRect(dirty, footer);
         dirty.x = max(0, dirty.x);
@@ -626,9 +877,10 @@ void AppReader::drawLibrary() {
             drawTextWithFont(display, "No books found.", 28, y + 54, &FreeSansBold12pt7b, GxEPD_BLACK);
             fontMgr.drawText(display, "Upload EPUBs via web.", 28, y + 88, FONT_SIZE_BODY, GxEPD_BLACK);
         } else {
-            int idx = 0;
-            for (const auto& book : _books) {
+            int idx = _scrollOffset;
+            for (; idx < lastVisibleBook; idx++) {
                 if (y > display.height() - 70) break;
+                const BookEntry& book = _books[idx];
 
                 bool isSelected = (idx == _selectedBookIndex);
                 if (isSelected) {
@@ -642,7 +894,15 @@ void AppReader::drawLibrary() {
                 int coverH = COVER_HEIGHT;
                 int coverX = ITEM_PADDING + 12;
                 int coverY = y + (ITEM_HEIGHT - coverH) / 2;
-                drawBookTile(display, coverX, coverY, coverW, coverH, isSelected);
+                if (book.cover && book.cover->valid()) {
+                    display.fillRect(coverX, coverY, coverW, coverH, GxEPD_WHITE);
+                    int bitmapX = coverX + (coverW - book.cover->width) / 2;
+                    int bitmapY = coverY + (coverH - book.cover->height) / 2;
+                    book.cover->draw(display, bitmapX, bitmapY);
+                    display.drawRect(coverX, coverY, coverW, coverH, GxEPD_BLACK);
+                } else {
+                    drawBookTile(display, coverX, coverY, coverW, coverH, isSelected);
+                }
                 if (isSelected) {
                     display.drawRect(coverX - 3, coverY - 3, coverW + 6, coverH + 6, GxEPD_BLACK);
                     display.drawRect(coverX - 2, coverY - 2, coverW + 4, coverH + 4, GxEPD_BLACK);
@@ -650,38 +910,25 @@ void AppReader::drawLibrary() {
 
                 uint16_t textColor = GxEPD_BLACK;
 
-                // Draw book title with word wrapping
-                String title = book.title;
                 const GFXfont* titleFont = isSelected ? &FreeSansBold12pt7b : &FreeSans12pt7b;
                 int textX = ITEM_PADDING + COVER_WIDTH + 44;
-                int textY = y + (isSelected ? 36 : 34);
-                int lineCount = 0;
-                const int MAX_LINES = isSelected ? 3 : 2;
-                const int LINE_HEIGHT = isSelected ? 27 : 25;
                 const int MAX_WIDTH = display.width() - textX - 28;
-
-                int pos = 0;
-                while (pos < (int)title.length() && lineCount < MAX_LINES) {
-                    String line = "";
-                    while (pos < (int)title.length()) {
-                        int nextSpace = title.indexOf(' ', pos);
-                        if (nextSpace == -1) nextSpace = title.length();
-                        String word = title.substring(pos, nextSpace);
-                        String testLine = line.length() > 0 ? line + " " + word : word;
-                        if (textWidthForFont(display, testLine.c_str(), titleFont) > MAX_WIDTH && line.length() > 0) break;
-                        line = testLine;
-                        pos = nextSpace + 1;
-                    }
-                    if (lineCount == MAX_LINES - 1 && pos < (int)title.length() && line.length() > 3) {
-                        line = line.substring(0, line.length() - 3) + "...";
-                    }
+                const int MAX_LINES = 3;
+                std::vector<String> titleLines = wrapLibraryTitle(display, book.title, titleFont,
+                                                                  MAX_WIDTH, MAX_LINES);
+                int lineHeight = titleFont->yAdvance;
+                int16_t boundsX, boundsY;
+                uint16_t boundsWidth, boundsHeight;
+                display.setFont(titleFont);
+                display.getTextBounds("Ag", 0, 0, &boundsX, &boundsY, &boundsWidth, &boundsHeight);
+                int totalHeight = boundsHeight + (static_cast<int>(titleLines.size()) - 1) * lineHeight;
+                int textY = y + ((ITEM_HEIGHT - totalHeight) / 2) - boundsY;
+                for (const String& line : titleLines) {
                     drawTextWithFont(display, line.c_str(), textX, textY, titleFont, textColor);
-                    textY += LINE_HEIGHT;
-                    lineCount++;
+                    textY += lineHeight;
                 }
 
                 y += ITEM_HEIGHT;
-                idx++;
             }
         }
 
@@ -743,6 +990,7 @@ void AppReader::applyFontSize(int pt) {
     int normalized = (pt >= 18) ? 18 : (pt >= 12 ? 12 : 9);
     _fontSizePt = normalized;
     if (_textRenderer) _textRenderer->setFontSize(normalized);
+    if (_epubLoader) resetPageCacheForLayout();
 
     // Re-render the current page from its saved start pointer at the new size.
     // The pointer is a content position (node + char offset), so it's font-size
@@ -757,6 +1005,7 @@ void AppReader::applyFontSize(int pt) {
 void AppReader::applyFontFamily(bool useOpenSans) {
     _useOpenSans = useOpenSans;
     if (_textRenderer) _textRenderer->setFontFamily(useOpenSans);
+    if (_epubLoader) resetPageCacheForLayout();
     _currentPageRenderValid = false;
     _readingFirstDraw = true;
     _pageTurnsSinceRefresh = 0;
@@ -768,4 +1017,51 @@ void AppReader::forceRedraw() {
     _currentPageRenderValid = false;
     _readingFirstDraw = true;             // Repaint the whole reading view
     _needsRedraw = true;
+}
+
+uint32_t AppReader::currentVisibleOffset() const {
+    return ReaderPosition::toVisibleOffset(_currentRichContent, _currentPagePointer);
+}
+
+uint32_t AppReader::readerLayoutKey() const {
+    const Book32Display& display = DisplayMgr::getInstance().getDisplay();
+    uint32_t hash = 2166136261u;
+    const uint32_t values[] = {
+        READER_LAYOUT_VERSION,
+        static_cast<uint32_t>(_fontSizePt),
+        static_cast<uint32_t>(_useOpenSans ? 1 : 0),
+        static_cast<uint32_t>(display.width()),
+        static_cast<uint32_t>(display.height())
+    };
+    for (uint32_t value : values) {
+        for (int shift = 0; shift < 32; shift += 8) {
+            hash ^= static_cast<uint8_t>((value >> shift) & 0xFF);
+            hash *= 16777619u;
+        }
+    }
+    return hash;
+}
+
+void AppReader::resetPageCacheForLayout() {
+    if (_currentBookPath.length() == 0) return;
+    _pageCache.begin(_currentBookPath, _currentBookSize, _currentBookFingerprint, readerLayoutKey());
+    _pageHistory.clear();
+    if (!_currentRichContent.empty()) rememberCurrentPage();
+}
+
+void AppReader::rememberCurrentPage() {
+    if (_currentRichContent.empty() || _currentChapter < 0) return;
+    _pageCache.rememberPage(static_cast<uint16_t>(_currentChapter), currentVisibleOffset());
+}
+
+void AppReader::rebuildPageHistory() {
+    _pageHistory.clear();
+    if (_currentRichContent.empty() || _currentChapter < 0) return;
+
+    uint32_t currentOffset = currentVisibleOffset();
+    std::vector<uint32_t> pages = _pageCache.pagesForChapter(static_cast<uint16_t>(_currentChapter));
+    for (uint32_t offset : pages) {
+        if (offset >= currentOffset) break;
+        _pageHistory.push_back(ReaderPosition::fromVisibleOffset(_currentRichContent, offset));
+    }
 }

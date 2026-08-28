@@ -4,9 +4,11 @@
 #include "BaseApp.h"
 #include "EpubLoader.h"
 #include "TextRenderer.h"
+#include "ReaderPageCache.h"
 #include "../../Book32_Core/InputMgr.h"
 #include <vector>
 #include <map>
+#include <memory>
 
 enum ReaderState {
     VIEW_LIBRARY,
@@ -16,6 +18,8 @@ enum ReaderState {
 struct BookEntry {
     String path;  // Full path to file
     String title; // Display title
+    bool coverAttempted = false;
+    std::shared_ptr<EpubBitmap> cover;
 };
 
 class AppReader : public App {
@@ -57,6 +61,7 @@ private:
     void scanBooks();
     void drawLibrary();
     void drawBookTile(Book32Display& display, int x, int y, int w, int h, bool selected);
+    void loadBookCover(BookEntry& book, int width, int height);
     
     // Global Pagination
     int _totalBookPages;
@@ -76,6 +81,8 @@ private:
     EpubLoader* _epubLoader;
     TextRenderer* _textRenderer;
     String _currentBookPath;
+    uint32_t _currentBookSize;
+    uint32_t _currentBookFingerprint;
     int _currentChapter;
     int _currentPage; // Current page number within the whole book
     int _globalPageNumber; // Runtime tracking of global page (1-indexed)
@@ -85,12 +92,14 @@ private:
     std::vector<ContentNode> _currentRichContent;
     PagePointer _currentPagePointer;
     std::vector<PagePointer> _pageHistory; // Stores start of each page for current chapter
+    ReaderPageCache _pageCache;
     RenderResult _currentPageRender;
     bool _currentPageRenderValid;
     
     bool openBook(const String& path, bool restoreProgress = true);
     bool openSavedProgress();
-    bool loadBookProgress(const String& path, int& chapter, PagePointer& pointer, int& globalPage);
+    bool loadBookProgress(const String& path, int& chapter, PagePointer& pointer, int& globalPage,
+                          uint32_t& visibleOffset, bool& hasVisibleOffset);
     void saveReadingProgress(bool resumeOnBoot);
     void markProgressInactive();
     void closeBook(bool markInactive = true);
@@ -100,6 +109,11 @@ private:
     void nextChapter();
     void prevChapter();
     void drawReading();
+    uint32_t currentVisibleOffset() const;
+    uint32_t readerLayoutKey() const;
+    void rememberCurrentPage();
+    void rebuildPageHistory();
+    void resetPageCacheForLayout();
 };
 
 #endif

@@ -47,8 +47,77 @@ void TextRenderer::calculateDimensions() {
 
 void TextRenderer::clearCache() {
     _lineCache.clear();
+    _renderedImages.clear();
+    _decodedImages.clear();
     _cachedPage = -1;
     _hasCachedResult = false;
+}
+
+void TextRenderer::imageDimensions(const ImageNode& image, int maxWidth, int maxHeight,
+                                   int& width, int& height) const {
+    int sourceWidth = max(1, image.sourceWidth);
+    int sourceHeight = max(1, image.sourceHeight);
+    int requestedWidth = image.widthPercent > 0
+                             ? max(1, (maxWidth * image.widthPercent) / 100)
+                             : image.requestedWidth;
+    int requestedHeight = image.heightPercent > 0
+                              ? max(1, (maxHeight * image.heightPercent) / 100)
+                              : image.requestedHeight;
+
+    if (requestedWidth > 0 && requestedHeight > 0) {
+        width = requestedWidth;
+        height = requestedHeight;
+    } else if (requestedWidth > 0) {
+        width = requestedWidth;
+        height = max(1, static_cast<int>((static_cast<int64_t>(sourceHeight) * width) / sourceWidth));
+    } else if (requestedHeight > 0) {
+        height = requestedHeight;
+        width = max(1, static_cast<int>((static_cast<int64_t>(sourceWidth) * height) / sourceHeight));
+    } else {
+        width = sourceWidth;
+        height = sourceHeight;
+    }
+
+    if (width > maxWidth) {
+        height = static_cast<int>((static_cast<int64_t>(height) * maxWidth) / width);
+        width = maxWidth;
+    }
+    if (height > maxHeight) {
+        width = static_cast<int>((static_cast<int64_t>(width) * maxHeight) / height);
+        height = maxHeight;
+    }
+    width = max(1, width);
+    height = max(1, height);
+}
+
+void TextRenderer::drawImage(Book32Display& display, const RenderedImage& image) {
+    std::shared_ptr<EpubBitmap> bitmap;
+    for (const auto& cached : _decodedImages) {
+        if (cached.href == image.href && cached.maxWidth == image.width && cached.maxHeight == image.height) {
+            bitmap = cached.bitmap;
+            break;
+        }
+    }
+
+    if (!bitmap && _imageSource) {
+        std::shared_ptr<EpubBitmap> decoded(new (std::nothrow) EpubBitmap());
+        if (decoded && _imageSource->decodeImage(image.href, image.width, image.height, *decoded)) {
+            bitmap = decoded;
+            if (_decodedImages.size() >= 3) _decodedImages.erase(_decodedImages.begin());
+            _decodedImages.push_back({image.href, image.width, image.height, bitmap});
+        }
+    }
+
+    if (bitmap && bitmap->valid()) {
+        int drawX = image.x + (image.width - bitmap->width) / 2;
+        int drawY = image.y + (image.height - bitmap->height) / 2;
+        bitmap->draw(display, drawX, drawY);
+        return;
+    }
+
+    display.drawRect(image.x, image.y, image.width, image.height, GxEPD_BLACK);
+    display.drawLine(image.x, image.y, image.x + image.width - 1, image.y + image.height - 1, GxEPD_BLACK);
+    display.drawLine(image.x + image.width - 1, image.y, image.x, image.y + image.height - 1, GxEPD_BLACK);
 }
 
 const GFXfont* TextRenderer::getGFXFont(TextStyle style, int& lineHeight) {
@@ -126,11 +195,13 @@ RenderResult TextRenderer::renderRichPageDynamic(Book32Display& display, const s
             display.setCursor(line.x, line.y);
             display.print(line.text);
         }
+        for (const auto& image : _renderedImages) drawImage(display, image);
         // Page number drawing moved to AppReader for consistency
         return _cachedResult;
     }
 
     _lineCache.clear();
+    _renderedImages.clear();
     _cachedPage = pageNum;
 
     int y = 40; 
@@ -139,7 +210,6 @@ RenderResult TextRenderer::renderRichPageDynamic(Book32Display& display, const s
     int currentNode = startNode;
     int currentOffset = startOffset;
     
-    char lineBuf[256];
     int line_width = 0;
     int x_margin = 35;
     int currentX = x_margin;
@@ -184,11 +254,12 @@ RenderResult TextRenderer::renderRichPageDynamic(Book32Display& display, const s
 
             while (pos < textLen && y < maxY) {
                 int line_chars = 0;
-                lineBuf[0] = '\0';
+                String lineText;
+                lineText.reserve(128);
                 int segment_width = 0;
                 
                 if (node.textNode.isListItem && pos == currentOffset) {
-                    strcpy(lineBuf, "- ");
+                    lineText = "- ";
                     segment_width = _gfxCharWidths['-'] + _gfxCharWidths[' '];
                 }
 
@@ -212,13 +283,13 @@ RenderResult TextRenderer::renderRichPageDynamic(Book32Display& display, const s
                     if (currentX + line_width + segment_width + spaceWidth + wordWidth > usableWidth && (line_width + segment_width) > 0) {
                         // Word doesn't fit on this line
                         if (y + nodeLineHeight > maxY) {
-                            if (strlen(lineBuf) > 0) {
+                            if (lineText.length() > 0) {
                                 int drawX = currentX + line_width;
                                 if (node.textNode.style == STYLE_HEADER1 || node.textNode.style == STYLE_HEADER2) {
                                     drawX = (_width - segment_width) / 2;
                                 }
-                                _lineCache.push_back({drawX, y, (int)node.textNode.style, false, String(lineBuf)});
-                                if (draw) { display.setCursor(drawX, y); display.print(lineBuf); }
+                                _lineCache.push_back({drawX, y, (int)node.textNode.style, false, lineText});
+                                if (draw) { display.setCursor(drawX, y); display.print(lineText); }
                             }
 
                             int nextOffset = pos + line_chars;
@@ -233,37 +304,37 @@ RenderResult TextRenderer::renderRichPageDynamic(Book32Display& display, const s
                         
                         // Commit current segment before starting new line
                         if (segment_width > 0) {
-                            _lineCache.push_back({currentX + line_width, y, (int)node.textNode.style, false, String(lineBuf)});
-                            if (draw) { display.setCursor(currentX + line_width, y); display.print(lineBuf); }
+                            _lineCache.push_back({currentX + line_width, y, (int)node.textNode.style, false, lineText});
+                            if (draw) { display.setCursor(currentX + line_width, y); display.print(lineText); }
                         }
                         
                         y += nodeLineHeight;
                         line_width = 0;
                         currentX = x_margin;
                         segment_width = 0;
-                        lineBuf[0] = '\0';
+                        lineText = "";
                         
                         // Retest the word on the new line
                         spaceWidth = 0; 
                     }
 
                     if (segment_width > 0 || line_width > 0) {
-                        strcat(lineBuf, " ");
+                        lineText += ' ';
                         segment_width += spaceWidth;
                     }
-                    strncat(lineBuf, text + wordStart, wordEnd - wordStart);
+                    lineText += node.textNode.text.substring(wordStart, wordEnd);
                     segment_width += wordWidth;
                     line_chars = wordEnd - pos;
                 }
 
-                if (strlen(lineBuf) > 0) {
+                if (lineText.length() > 0) {
                     int drawX = currentX + line_width;
                     // Center headers (H1, H2)
                     if (node.textNode.style == STYLE_HEADER1 || node.textNode.style == STYLE_HEADER2) {
                         drawX = (_width - segment_width) / 2;
                     }
-                    _lineCache.push_back({drawX, y, (int)node.textNode.style, false, String(lineBuf)});
-                    if (draw) { display.setCursor(drawX, y); display.print(lineBuf); }
+                    _lineCache.push_back({drawX, y, (int)node.textNode.style, false, lineText});
+                    if (draw) { display.setCursor(drawX, y); display.print(lineText); }
                     line_width += segment_width;
                 }
                 
@@ -290,7 +361,9 @@ RenderResult TextRenderer::renderRichPageDynamic(Book32Display& display, const s
                 return result;
             }
             
-            if (node.textNode.isBlockStart && currentNode < (int)content.size() - 1 && content[currentNode+1].textNode.isBlockStart) {
+            if (node.textNode.isBlockStart && currentNode < (int)content.size() - 1 &&
+                content[currentNode + 1].type == CONTENT_TEXT &&
+                content[currentNode + 1].textNode.isBlockStart) {
                 y += 8; // Paragraph gap
             }
             // Add extra spacing after headers
@@ -301,6 +374,43 @@ RenderResult TextRenderer::renderRichPageDynamic(Book32Display& display, const s
             } else if (node.textNode.style == STYLE_HEADER3) {
                 y += 10;
             }
+        } else if (node.type == CONTENT_IMAGE) {
+            if (line_width > 0) {
+                y += _lineHeight;
+                line_width = 0;
+                currentX = x_margin;
+            }
+
+            const int horizontalMargin = 35;
+            const int imagePadding = 10;
+            const int maximumImageWidth = _width - horizontalMargin * 2;
+            const int maximumImageHeight = maxY - 40 - imagePadding * 2;
+            int imageWidth = 0;
+            int imageHeight = 0;
+            imageDimensions(node.imageNode, maximumImageWidth, maximumImageHeight, imageWidth, imageHeight);
+            int requiredHeight = imageHeight + imagePadding * 2;
+
+            if (y > 40 && y + requiredHeight > maxY) {
+                result.pageFull = true;
+                result.nextNodeIndex = currentNode;
+                result.nextCharOffset = 0;
+                _cachedResult = result;
+                _hasCachedResult = true;
+                return result;
+            }
+
+            RenderedImage rendered = {
+                node.imageNode.href,
+                node.imageNode.alt,
+                (_width - imageWidth) / 2,
+                y + imagePadding,
+                imageWidth,
+                imageHeight
+            };
+            _renderedImages.push_back(rendered);
+            if (draw) drawImage(display, rendered);
+            y += requiredHeight;
+            currentX = x_margin;
         }
         currentNode++;
         currentOffset = 0;

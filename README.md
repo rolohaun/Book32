@@ -42,7 +42,7 @@ Battery sense:
 
 ## Install From A Browser
 
-The quickest installation method is the [Book32 Browser Installer](https://rolohaun.github.io/Book32/?v=1.1).
+The quickest installation method is the [Book32 Browser Installer](https://rolohaun.github.io/Book32/?v=1.2).
 It works in desktop Chrome or Edge with a data-capable USB cable and does not
 require PlatformIO or a local development environment.
 
@@ -168,13 +168,21 @@ python -m platformio device monitor
 ## Features
 
 - Polished boot screen with E-Ink progress feedback
-- EPUB reader with saved reading progress and boot resume
+- EPUB reader with streamed chapter parsing, Unicode-stable progress, and boot resume
+- PSRAM-backed JPEG/PNG illustrations with high-quality monochrome dithering
+- EPUB cover thumbnails decoded on demand without writing extracted cover files
+- Bounded 16 KB page index for fast backward navigation without unbounded cache growth
+- Reader-only idle CPU scaling for improved battery life
 - Library menu optimized for E-Ink
 - Local web interface for uploading and deleting books
 - Todo app
 - Klipper printer monitor
 - Battery indicator and charging status
 - Public GitHub OTA firmware and web UI updates
+
+The EPUB image pipeline is inspired by the MIT-licensed CrossPoint Reader. It
+scales images before applying Atkinson-style 1-bit dithering, preserving useful
+detail on the E-Ink panel while keeping temporary working data in PSRAM.
 
 ## Partition Notes
 

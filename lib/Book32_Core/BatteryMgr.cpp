@@ -6,6 +6,7 @@
 #include "DisplayMgr.h"
 #include <ArduinoJson.h>
 #include <Fonts/FreeSans18pt7b.h>
+#include <esp32-hal-cpu.h>
 
 // Static constants
 const float BatteryMgr::CHARGE_THRESHOLD = 0.03f;  // 30mV increase = charging (avoid false positives from fluctuation)
@@ -22,10 +23,11 @@ static int voltageToPercentage(float voltage) {
 }
 
 BatteryMgr::BatteryMgr() : _lastReadTime(0), _historyIndex(0), _lastHistoryUpdate(0),
-                           _previousVoltage(0.0f), _sleepTimeoutMinutes(0),
+                           _previousVoltage(0.0f), _lastValidVoltage(0.0f),
+                           _criticalCount(0), _lastChargingTime(0), _sleepTimeoutMinutes(0),
                            _sleepMessage("Press button to wake"), _lastActivityTime(0),
-                           _lastDisplayedCharging(false), _lastIndicatorUpdate(0),
-                           _lastValidVoltage(0.0f), _criticalCount(0), _lastChargingTime(0) {
+                           _readerActive(false), _cpuReduced(false),
+                           _lastDisplayedCharging(false), _lastIndicatorUpdate(0) {
     _cachedStatus = {0.0f, 0, false};
     // Initialize history
     for (int i = 0; i < 5; i++) {
@@ -70,6 +72,13 @@ void BatteryMgr::init() {
 
 void BatteryMgr::update() {
     unsigned long now = millis();
+
+    if (_readerActive && !_cpuReduced && now - _lastActivityTime >= 1500) {
+        if (setCpuFrequencyMhz(80)) {
+            _cpuReduced = true;
+            Serial.println("AppReader: CPU idling at 80 MHz");
+        }
+    }
 
     // Update voltage history periodically for trend analysis
     if (now - _lastHistoryUpdate >= HISTORY_INTERVAL_MS) {
@@ -293,6 +302,19 @@ void BatteryMgr::loadSleepSettings() {
 }
 
 void BatteryMgr::resetIdleTimer() {
+    _lastActivityTime = millis();
+    if (_cpuReduced) {
+        setCpuFrequencyMhz(240);
+        _cpuReduced = false;
+    }
+}
+
+void BatteryMgr::setReaderActive(bool active) {
+    if (!active && _cpuReduced) {
+        setCpuFrequencyMhz(240);
+        _cpuReduced = false;
+    }
+    _readerActive = active;
     _lastActivityTime = millis();
 }
 

@@ -1,4 +1,5 @@
 #include "GitHubMgr.h"
+#include "VersionUtils.h"
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include <Update.h>
@@ -101,12 +102,9 @@ UpdateInfo GitHubMgr::checkUpdate(const char* currentVersion) {
 
         Serial.printf("Latest version: %s, Current: %s\n", info.version.c_str(), currentVersion);
 
-        // Check if version is different (handle both "1.0.5" and "v1.0.5" formats)
-        String currentV = currentVersion;
-        String latestV = info.version;
-        latestV.replace("v", "");  // Remove 'v' prefix if present
-
-        if (latestV.length() > 0 && latestV != currentV) {
+        // Only offer true upgrades. Older, equal, and malformed release tags
+        // are ignored so a stale GitHub release can never prompt a downgrade.
+        if (VersionUtils::isNewer(info.version, String(currentVersion))) {
             info.available = true;
             Serial.println("Update IS available");
 
@@ -129,7 +127,7 @@ UpdateInfo GitHubMgr::checkUpdate(const char* currentVersion) {
                 }
             }
         } else {
-            Serial.println("Already up to date");
+            Serial.println("No newer release available");
         }
     } else if (httpCode == 404) {
         Serial.println("No releases found on GitHub");

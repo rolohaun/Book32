@@ -3,6 +3,7 @@
 
 #include <Arduino.h>
 #include <vector>
+#include <memory>
 #include <Adafruit_GFX.h>
 #include <Fonts/FreeSans9pt7b.h>
 #include <Fonts/FreeSans12pt7b.h>
@@ -13,11 +14,7 @@
 #include <Fonts/FreeSansBold24pt7b.h>
 #include "DisplayMgr.h"
 #include "EpubLoader.h"
-
-struct PagePointer {
-    int nodeIndex;
-    int charOffset;
-};
+#include "ReaderPosition.h"
 
 struct RenderResult {
     int nodesConsumed;
@@ -33,6 +30,18 @@ struct RenderedLine {
     String text;
 };
 
+struct RenderedImage {
+    String href;
+    String alt;
+    int x, y, width, height;
+};
+
+struct DecodedImageCacheEntry {
+    String href;
+    int maxWidth, maxHeight;
+    std::shared_ptr<EpubBitmap> bitmap;
+};
+
 class TextRenderer {
 public:
     TextRenderer(int width, int height, int fontSize = 9, bool useOpenSans = false);
@@ -43,6 +52,7 @@ public:
     void setFontSize(int size);
     int getFontSize() const { return _fontSize; }
     void setFontFamily(bool useOpenSans);
+    void setImageSource(EpubLoader* source) { _imageSource = source; }
     bool isUsingOpenSans() const { return _useOpenSans; }
 
     void calculateDimensions();
@@ -71,6 +81,8 @@ private:
     
     bool _fontLoaded = true; // GFX fonts are always "loaded"
     std::vector<RenderedLine> _lineCache;
+    std::vector<RenderedImage> _renderedImages;
+    std::vector<DecodedImageCacheEntry> _decodedImages;
     int _cachedPage = -1;
     RenderResult _cachedResult = {0, 0, false, 0, 0};
     bool _hasCachedResult = false;
@@ -80,10 +92,13 @@ private:
     const GFXfont* _lastGFXFont = nullptr;
 
     const GFXfont* getGFXFont(TextStyle style, int& lineHeight);
+    void drawImage(Book32Display& display, const RenderedImage& image);
+    void imageDimensions(const ImageNode& image, int maxWidth, int maxHeight, int& width, int& height) const;
 
     std::vector<String> wrapText(const String& text);
     void renderTextNode(Book32Display& display, RichTextNode& node, int& y, int maxY);
     void renderTable(Book32Display& display, Table& table, int& y, int maxY);
+    EpubLoader* _imageSource = nullptr;
 };
 
 #endif

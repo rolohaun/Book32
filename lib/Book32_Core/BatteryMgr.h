@@ -36,6 +36,7 @@ public:
     void loadSleepSettings();             // Load from EbookFS
     void resetIdleTimer();                // Call when user interacts
     void enterIdleSleep();                // Display message and sleep
+    void setReaderActive(bool active);    // Enables reader-only idle CPU scaling
 
     // Status indicator on e-ink display (partial update)
     void drawStatusIndicator();           // Draw charging indicator if state changed
@@ -76,6 +77,8 @@ private:
     int _sleepTimeoutMinutes;          // 0 = disabled
     String _sleepMessage;
     unsigned long _lastActivityTime;   // Last user interaction
+    bool _readerActive;
+    bool _cpuReduced;
 
     // Status indicator tracking
     bool _lastDisplayedCharging;       // Last charging state shown on display

@@ -5,6 +5,7 @@
 #include <vector>
 #include <map>
 #include <unzipLIB.h>
+#include "EpubImage.h"
 
 // Text formatting enums
 enum TextStyle {
@@ -66,15 +67,33 @@ struct FontInfo {
     String format; // ttf, otf, woff, woff2
 };
 
-// Content node - can be text or table
+struct ImageNode {
+    String href;
+    String alt;
+    int sourceWidth;
+    int sourceHeight;
+    int requestedWidth;
+    int requestedHeight;
+    int widthPercent;
+    int heightPercent;
+    bool fromSvg;
+
+    ImageNode()
+        : sourceWidth(0), sourceHeight(0), requestedWidth(0), requestedHeight(0),
+          widthPercent(0), heightPercent(0), fromSvg(false) {}
+};
+
+// Content node - can be text, an inline EPUB image, or a table.
 enum ContentType {
     CONTENT_TEXT,
+    CONTENT_IMAGE,
     CONTENT_TABLE
 };
 
 struct ContentNode {
     ContentType type;
     RichTextNode textNode;
+    ImageNode imageNode;
     Table table;
     
     ContentNode() : type(CONTENT_TEXT) {}
@@ -99,6 +118,9 @@ public:
     int getChapterCount();
     String getChapterContent(int index);  // Legacy plain text
     std::vector<ContentNode> getChapterContentRich(int index);  // Rich formatted content
+    String getCoverHref() const { return coverHref; }
+    bool getImageDimensions(const String& href, EpubImageInfo& info);
+    bool decodeImage(const String& href, int maxWidth, int maxHeight, EpubBitmap& bitmap);
     
     // Font support
     std::vector<FontInfo> getFonts();
@@ -117,9 +139,11 @@ private:
     String epubPath;
     String opfPath;
     String rootDir; // Directory of the OPF file
+    String coverHref;
     
     // Fonts
     std::vector<FontInfo> fonts;
+    std::vector<String> hiddenCssClasses;
 
     struct SpineItem {
         String id;
@@ -141,6 +165,9 @@ private:
 
     // Helper to read file from zip
     String readFileFromZip(const char* path);
+    std::vector<ContentNode> readRichContentFromZip(const char* path);
+    uint8_t* readItemBytes(const String& path, size_t& size, size_t maximumBytes = 6 * 1024 * 1024);
+    uint8_t* readItemPrefix(const String& path, size_t& size, size_t maximumBytes = 128 * 1024);
     
     // Rich content parsing
     std::vector<ContentNode> parseHtmlToRichContent(const String& html);

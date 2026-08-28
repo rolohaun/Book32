@@ -57,10 +57,12 @@ void AppMainMenu::updateCheckTask(void* parameter) {
     
     if (WiFi.status() == WL_CONNECTED) {
         UpdateInfo info = GitHubMgr::getInstance().checkUpdate(SYSTEM_VERSION);
+        self->_updateAvailable = info.available;
         if (info.available) {
-            self->_updateAvailable = true;
             self->_updateVersion = info.version;
             self->_needsRedraw = true; // Trigger redraw to show icon
+        } else {
+            self->_updateVersion = "";
         }
     }
     

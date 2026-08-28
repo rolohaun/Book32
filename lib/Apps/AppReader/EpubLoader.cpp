@@ -6,12 +6,620 @@
 #include <unistd.h>
 #include <errno.h>
 #include <algorithm>
+#include <esp_heap_caps.h>
+#include <new>
 
 #ifndef ZIP_SUCCESS
 #define ZIP_SUCCESS 0
 #endif
 
 static int zipFd = -1;
+
+namespace {
+
+String decodeUriEscapes(String value) {
+    value.replace("&amp;", "&");
+    String decoded;
+    decoded.reserve(value.length());
+    for (int i = 0; i < static_cast<int>(value.length()); i++) {
+        if (value[i] == '%' && i + 2 < static_cast<int>(value.length()) &&
+            isxdigit(static_cast<unsigned char>(value[i + 1])) &&
+            isxdigit(static_cast<unsigned char>(value[i + 2]))) {
+            char hex[3] = {value[i + 1], value[i + 2], '\0'};
+            decoded += static_cast<char>(strtoul(hex, nullptr, 16));
+            i += 2;
+        } else {
+            decoded += value[i];
+        }
+    }
+    return decoded;
+}
+
+String normalizeZipPath(String path) {
+    path.replace('\\', '/');
+    while (path.startsWith("/")) path.remove(0, 1);
+
+    std::vector<String> segments;
+    int start = 0;
+    while (start <= static_cast<int>(path.length())) {
+        int slash = path.indexOf('/', start);
+        if (slash < 0) slash = path.length();
+        String segment = path.substring(start, slash);
+        if (segment.length() == 0 || segment == ".") {
+            // Nothing to add.
+        } else if (segment == "..") {
+            if (!segments.empty()) segments.pop_back();
+        } else {
+            segments.push_back(segment);
+        }
+        if (slash >= static_cast<int>(path.length())) break;
+        start = slash + 1;
+    }
+
+    String normalized;
+    for (size_t i = 0; i < segments.size(); i++) {
+        if (i > 0) normalized += '/';
+        normalized += segments[i];
+    }
+    return normalized;
+}
+
+String resolveZipHref(const String& documentPath, String href) {
+    href = decodeUriEscapes(href);
+    int fragment = href.indexOf('#');
+    if (fragment >= 0) href = href.substring(0, fragment);
+    int query = href.indexOf('?');
+    if (query >= 0) href = href.substring(0, query);
+    href.trim();
+    String lower = href;
+    lower.toLowerCase();
+    if (href.length() == 0 || lower.startsWith("data:") || lower.startsWith("http:") ||
+        lower.startsWith("https:")) return "";
+    if (href.startsWith("/")) return normalizeZipPath(href);
+
+    int slash = documentPath.lastIndexOf('/');
+    String base = slash >= 0 ? documentPath.substring(0, slash + 1) : "";
+    return normalizeZipPath(base + href);
+}
+
+void appendUtf8(String& out, uint32_t codepoint) {
+    if (codepoint <= 0x7F) {
+        out += static_cast<char>(codepoint);
+    } else if (codepoint <= 0x7FF) {
+        out += static_cast<char>(0xC0 | (codepoint >> 6));
+        out += static_cast<char>(0x80 | (codepoint & 0x3F));
+    } else if (codepoint <= 0xFFFF) {
+        out += static_cast<char>(0xE0 | (codepoint >> 12));
+        out += static_cast<char>(0x80 | ((codepoint >> 6) & 0x3F));
+        out += static_cast<char>(0x80 | (codepoint & 0x3F));
+    } else if (codepoint <= 0x10FFFF) {
+        out += static_cast<char>(0xF0 | (codepoint >> 18));
+        out += static_cast<char>(0x80 | ((codepoint >> 12) & 0x3F));
+        out += static_cast<char>(0x80 | ((codepoint >> 6) & 0x3F));
+        out += static_cast<char>(0x80 | (codepoint & 0x3F));
+    }
+}
+
+String decodeHtmlEntities(const String& input) {
+    String output;
+    output.reserve(input.length());
+    for (int i = 0; i < static_cast<int>(input.length()); i++) {
+        if (input[i] != '&') {
+            output += input[i];
+            continue;
+        }
+
+        int end = input.indexOf(';', i + 1);
+        if (end < 0 || end - i > 12) {
+            output += input[i];
+            continue;
+        }
+
+        String entity = input.substring(i + 1, end);
+        if (entity == "amp") output += '&';
+        else if (entity == "lt") output += '<';
+        else if (entity == "gt") output += '>';
+        else if (entity == "quot") output += '"';
+        else if (entity == "apos") output += '\'';
+        else if (entity == "nbsp" || entity == "ensp" || entity == "emsp") output += ' ';
+        else if (entity == "mdash") output += " -- ";
+        else if (entity == "ndash") output += " - ";
+        else if (entity == "hellip") output += "...";
+        else if (entity == "lsquo" || entity == "rsquo") output += '\'';
+        else if (entity == "ldquo" || entity == "rdquo") output += '"';
+        else if (entity.startsWith("#")) {
+            bool hex = entity.length() > 2 && (entity[1] == 'x' || entity[1] == 'X');
+            const char* digits = entity.c_str() + (hex ? 2 : 1);
+            char* parseEnd = nullptr;
+            uint32_t value = strtoul(digits, &parseEnd, hex ? 16 : 10);
+            if (parseEnd && *parseEnd == '\0' && value > 0 && value <= 0x10FFFF) appendUtf8(output, value);
+            else output += input.substring(i, end + 1);
+        } else {
+            output += input.substring(i, end + 1);
+        }
+        i = end;
+    }
+    return output;
+}
+
+String attributeValue(const String& tag, const char* attribute) {
+    String lower = tag;
+    lower.toLowerCase();
+    String key = String(attribute);
+    key.toLowerCase();
+    int pos = lower.indexOf(key);
+    while (pos >= 0) {
+        int cursor = pos + key.length();
+        while (cursor < static_cast<int>(tag.length()) && isspace(static_cast<unsigned char>(tag[cursor]))) cursor++;
+        if (cursor < static_cast<int>(tag.length()) && tag[cursor] == '=') {
+            cursor++;
+            while (cursor < static_cast<int>(tag.length()) && isspace(static_cast<unsigned char>(tag[cursor]))) cursor++;
+            if (cursor >= static_cast<int>(tag.length())) return "";
+            char quote = tag[cursor];
+            if (quote == '"' || quote == '\'') {
+                int end = tag.indexOf(quote, cursor + 1);
+                return end >= 0 ? tag.substring(cursor + 1, end) : "";
+            }
+            int end = cursor;
+            while (end < static_cast<int>(tag.length()) && !isspace(static_cast<unsigned char>(tag[end])) && tag[end] != '>') end++;
+            return tag.substring(cursor, end);
+        }
+        pos = lower.indexOf(key, pos + key.length());
+    }
+    return "";
+}
+
+String styleValue(const String& style, const char* property) {
+    int start = 0;
+    while (start < static_cast<int>(style.length())) {
+        int end = style.indexOf(';', start);
+        if (end < 0) end = style.length();
+        int colon = style.indexOf(':', start);
+        if (colon >= start && colon < end) {
+            String name = style.substring(start, colon);
+            name.trim();
+            name.toLowerCase();
+            if (name == property) {
+                String value = style.substring(colon + 1, end);
+                value.trim();
+                return value;
+            }
+        }
+        start = end + 1;
+    }
+    return "";
+}
+
+bool cssDeclarationIsHidden(String declaration) {
+    declaration.toLowerCase();
+    for (int i = static_cast<int>(declaration.length()) - 1; i >= 0; i--) {
+        if (isspace(static_cast<unsigned char>(declaration[i]))) declaration.remove(i, 1);
+    }
+    return declaration.indexOf("display:none") >= 0 || declaration.indexOf("visibility:hidden") >= 0;
+}
+
+bool simpleClassSelector(String selector, String& className) {
+    selector.trim();
+    selector.toLowerCase();
+    if (selector.length() == 0 || selector.indexOf(' ') >= 0 || selector.indexOf('>') >= 0 ||
+        selector.indexOf('+') >= 0 || selector.indexOf('~') >= 0 || selector.indexOf('#') >= 0 ||
+        selector.indexOf('[') >= 0 || selector.indexOf(':') >= 0) return false;
+
+    int dot = selector.indexOf('.');
+    if (dot < 0 || selector.indexOf('.', dot + 1) >= 0) return false;
+    className = selector.substring(dot + 1);
+    if (className.length() == 0) return false;
+    for (size_t i = 0; i < className.length(); i++) {
+        char c = className[i];
+        if (!isalnum(static_cast<unsigned char>(c)) && c != '-' && c != '_') return false;
+    }
+    return true;
+}
+
+void collectHiddenCssClasses(String css, std::vector<String>& hiddenClasses) {
+    int comment = css.indexOf("/*");
+    while (comment >= 0) {
+        int end = css.indexOf("*/", comment + 2);
+        if (end < 0) {
+            css.remove(comment);
+            break;
+        }
+        css.remove(comment, end + 2 - comment);
+        comment = css.indexOf("/*", comment);
+    }
+
+    int cursor = 0;
+    while (cursor < static_cast<int>(css.length())) {
+        int open = css.indexOf('{', cursor);
+        if (open < 0) break;
+        int close = css.indexOf('}', open + 1);
+        if (close < 0) break;
+        if (cssDeclarationIsHidden(css.substring(open + 1, close))) {
+            String selectors = css.substring(cursor, open);
+            int selectorStart = 0;
+            while (selectorStart <= static_cast<int>(selectors.length())) {
+                int comma = selectors.indexOf(',', selectorStart);
+                if (comma < 0) comma = selectors.length();
+                String className;
+                if (simpleClassSelector(selectors.substring(selectorStart, comma), className)) {
+                    bool duplicate = false;
+                    for (const String& existing : hiddenClasses) {
+                        if (existing == className) {
+                            duplicate = true;
+                            break;
+                        }
+                    }
+                    if (!duplicate) hiddenClasses.push_back(className);
+                }
+                if (comma >= static_cast<int>(selectors.length())) break;
+                selectorStart = comma + 1;
+            }
+        }
+        cursor = close + 1;
+    }
+}
+
+void parseImageLength(String value, int& pixels, int& percent) {
+    value.trim();
+    value.toLowerCase();
+    if (value.length() == 0 || value == "auto") return;
+    if (value.endsWith("%")) {
+        percent = constrain(static_cast<int>(value.toFloat() + 0.5f), 1, 100);
+        pixels = 0;
+        return;
+    }
+    if (value.endsWith("px")) value.remove(value.length() - 2);
+    for (size_t i = 0; i < value.length(); i++) {
+        if (!isdigit(static_cast<unsigned char>(value[i])) && value[i] != '.') return;
+    }
+    int parsed = static_cast<int>(value.toFloat() + 0.5f);
+    if (parsed > 0) {
+        pixels = parsed;
+        percent = 0;
+    }
+}
+
+int indentFromStyle(String style) {
+    style.toLowerCase();
+    int pos = style.indexOf("text-indent");
+    if (pos < 0) return 0;
+    int colon = style.indexOf(':', pos);
+    if (colon < 0) return 0;
+    int end = style.indexOf(';', colon + 1);
+    if (end < 0) end = style.length();
+    String value = style.substring(colon + 1, end);
+    value.trim();
+    if (value.endsWith("em")) return static_cast<int>(value.toFloat() * 20.0f);
+    return value.toInt();
+}
+
+TextAlign alignmentFromStyle(String style) {
+    style.toLowerCase();
+    int pos = style.indexOf("text-align");
+    if (pos < 0) return ALIGN_LEFT;
+    int colon = style.indexOf(':', pos);
+    if (colon < 0) return ALIGN_LEFT;
+    int end = style.indexOf(';', colon + 1);
+    if (end < 0) end = style.length();
+    String value = style.substring(colon + 1, end);
+    value.trim();
+    if (value.startsWith("center")) return ALIGN_CENTER;
+    if (value.startsWith("right")) return ALIGN_RIGHT;
+    if (value.startsWith("justify")) return ALIGN_JUSTIFY;
+    return ALIGN_LEFT;
+}
+
+class RichHtmlStreamParser {
+public:
+    RichHtmlStreamParser(const String& documentPath, const std::vector<String>& hiddenClasses)
+        : _documentPath(documentPath), _hiddenClasses(hiddenClasses) {
+        _styles.push_back(STYLE_NORMAL);
+        _nodes.reserve(64);
+    }
+
+    void feed(const uint8_t* data, size_t length) {
+        for (size_t i = 0; i < length; i++) {
+            char c = static_cast<char>(data[i]);
+            if (_inTag) {
+                if (c == '>') {
+                    _inTag = false;
+                    processTag(_tag);
+                    _tag = "";
+                } else if (_tag.length() < 1024) {
+                    _tag += c;
+                }
+                continue;
+            }
+
+            if (c == '<') {
+                flushText();
+                _inTag = true;
+                _tag = "";
+            } else if (_skipDepth == 0 && _svgDepth == 0) {
+                appendText(c);
+            }
+        }
+    }
+
+    std::vector<ContentNode> finish() {
+        flushText();
+        removeSvgFallbackDuplicates();
+        return std::move(_nodes);
+    }
+
+private:
+    std::vector<ContentNode> _nodes;
+    std::vector<TextStyle> _styles;
+    std::vector<bool> _blockStylePushed;
+    String _text;
+    String _tag;
+    bool _inTag = false;
+    bool _nextBlockStart = true;
+    bool _listItem = false;
+    int _indent = 0;
+    TextAlign _align = ALIGN_LEFT;
+    int _skipDepth = 0;
+    int _svgDepth = 0;
+    int _hiddenDepth = 0;
+    String _documentPath;
+    const std::vector<String>& _hiddenClasses;
+
+    void removeSvgFallbackDuplicates() {
+        if (_nodes.size() < 2) return;
+        std::vector<ContentNode> filtered;
+        filtered.reserve(_nodes.size());
+        for (ContentNode& node : _nodes) {
+            if (node.type == CONTENT_IMAGE && !filtered.empty() && filtered.back().type == CONTENT_IMAGE &&
+                filtered.back().imageNode.fromSvg && !node.imageNode.fromSvg) {
+                filtered.back() = std::move(node);
+                continue;
+            }
+            filtered.push_back(std::move(node));
+        }
+        _nodes = std::move(filtered);
+    }
+
+    void appendText(char c) {
+        if (isspace(static_cast<unsigned char>(c))) {
+            if (_text.length() > 0 && _text[_text.length() - 1] != ' ') _text += ' ';
+            return;
+        }
+        _text += c;
+    }
+
+    void flushText() {
+        if (_skipDepth > 0 || _text.length() == 0) {
+            _text = "";
+            return;
+        }
+
+        String clean = decodeHtmlEntities(_text);
+        clean.replace("¶Ç8", " -- ");
+        clean.replace("¶ÇÖ", "'");
+        clean.replace("¶Çö", "'");
+        clean.replace("¶Ç£", "\"");
+        clean.replace("¶Ç¥", "\"");
+        clean.replace("¶Ç", " ");
+        clean.replace("\xE2\x80\x9C", "\"");
+        clean.replace("\xE2\x80\x9D", "\"");
+        clean.replace("\xE2\x80\x98", "'");
+        clean.replace("\xE2\x80\x99", "'");
+        clean.replace("\xE2\x80\x94", " -- ");
+        clean.replace("\xE2\x80\x93", " - ");
+        clean.replace("\xE2\x80\xA6", "...");
+        clean.trim();
+        _text = "";
+        if (clean.length() == 0 || clean == "Unknown" || clean == "image" || clean == "Image" || clean == "[image]") return;
+
+        ContentNode node;
+        node.type = CONTENT_TEXT;
+        node.textNode.text = clean;
+        node.textNode.style = _styles.back();
+        if (_nextBlockStart && clean.length() <= 3) {
+            bool numeric = true;
+            for (size_t i = 0; i < clean.length(); i++) {
+                if (!isdigit(static_cast<unsigned char>(clean[i]))) {
+                    numeric = false;
+                    break;
+                }
+            }
+            if (numeric) node.textNode.style = STYLE_HEADER1;
+        }
+        node.textNode.align = _align;
+        node.textNode.isListItem = _listItem;
+        node.textNode.isBlockStart = _nextBlockStart;
+        node.textNode.indent = _indent;
+        _nodes.push_back(std::move(node));
+        _nextBlockStart = false;
+        _listItem = false;
+    }
+
+    void pushStyle(TextStyle style) { _styles.push_back(style); }
+    void popStyle() { if (_styles.size() > 1) _styles.pop_back(); }
+
+    static bool isSkippedTag(const String& name) {
+        return name == "script" || name == "style" || name == "head";
+    }
+
+    static bool isVoidTag(const String& name) {
+        return name == "area" || name == "base" || name == "br" || name == "col" || name == "embed" ||
+               name == "hr" || name == "img" || name == "image" || name == "input" || name == "link" ||
+               name == "meta" || name == "param" || name == "source" || name == "track" || name == "wbr";
+    }
+
+    bool classIsHidden(String classes) const {
+        classes.toLowerCase();
+        int start = 0;
+        while (start < static_cast<int>(classes.length())) {
+            while (start < static_cast<int>(classes.length()) &&
+                   isspace(static_cast<unsigned char>(classes[start]))) start++;
+            int end = start;
+            while (end < static_cast<int>(classes.length()) &&
+                   !isspace(static_cast<unsigned char>(classes[end]))) end++;
+            String token = classes.substring(start, end);
+            for (const String& hiddenClass : _hiddenClasses) {
+                if (token == hiddenClass) return true;
+            }
+            start = end + 1;
+        }
+        return false;
+    }
+
+    bool tagIsHidden(const String& raw) const {
+        if (cssDeclarationIsHidden(attributeValue(raw, "style"))) return true;
+        if (classIsHidden(attributeValue(raw, "class"))) return true;
+        String ariaHidden = attributeValue(raw, "aria-hidden");
+        ariaHidden.trim();
+        ariaHidden.toLowerCase();
+        return ariaHidden == "true";
+    }
+
+    void processTag(String raw) {
+        raw.trim();
+        if (raw.length() == 0 || raw.startsWith("!") || raw.startsWith("?")) return;
+
+        bool closing = raw.startsWith("/");
+        if (closing) {
+            raw.remove(0, 1);
+            raw.trim();
+        }
+        bool selfClosing = raw.endsWith("/");
+
+        int nameEnd = 0;
+        while (nameEnd < static_cast<int>(raw.length()) && !isspace(static_cast<unsigned char>(raw[nameEnd])) && raw[nameEnd] != '/') nameEnd++;
+        String name = raw.substring(0, nameEnd);
+        name.toLowerCase();
+        if (name.length() == 0) return;
+
+        if (_hiddenDepth > 0) {
+            if (closing) _hiddenDepth = max(0, _hiddenDepth - 1);
+            else if (!selfClosing && !isVoidTag(name)) _hiddenDepth++;
+            return;
+        }
+        if (!closing && tagIsHidden(raw)) {
+            if (!selfClosing && !isVoidTag(name)) _hiddenDepth = 1;
+            return;
+        }
+
+        if (_skipDepth > 0) {
+            if (!closing && isSkippedTag(name) && !selfClosing) _skipDepth++;
+            else if (closing && isSkippedTag(name)) _skipDepth--;
+            return;
+        }
+        if (!closing && isSkippedTag(name)) {
+            if (!selfClosing) _skipDepth = 1;
+            return;
+        }
+
+        if (name == "svg") {
+            if (closing) _svgDepth = max(0, _svgDepth - 1);
+            else if (!selfClosing) _svgDepth++;
+            _nextBlockStart = true;
+            return;
+        }
+
+        if (name == "img" || name == "image") {
+            if (closing) return;
+            String source = attributeValue(raw, "src");
+            if (source.length() == 0) source = attributeValue(raw, "xlink:href");
+            if (source.length() == 0) source = attributeValue(raw, "href");
+            source = resolveZipHref(_documentPath, source);
+            if (source.length() == 0) return;
+
+            ContentNode node;
+            node.type = CONTENT_IMAGE;
+            node.imageNode.href = source;
+            node.imageNode.alt = decodeHtmlEntities(attributeValue(raw, "alt"));
+            node.imageNode.fromSvg = _svgDepth > 0;
+            parseImageLength(attributeValue(raw, "width"), node.imageNode.requestedWidth,
+                             node.imageNode.widthPercent);
+            parseImageLength(attributeValue(raw, "height"), node.imageNode.requestedHeight,
+                             node.imageNode.heightPercent);
+            String style = attributeValue(raw, "style");
+            String styleWidth = styleValue(style, "width");
+            String styleHeight = styleValue(style, "height");
+            if (styleWidth.length() > 0) {
+                node.imageNode.requestedWidth = 0;
+                node.imageNode.widthPercent = 0;
+                parseImageLength(styleWidth, node.imageNode.requestedWidth, node.imageNode.widthPercent);
+            }
+            if (styleHeight.length() > 0) {
+                node.imageNode.requestedHeight = 0;
+                node.imageNode.heightPercent = 0;
+                parseImageLength(styleHeight, node.imageNode.requestedHeight, node.imageNode.heightPercent);
+            }
+            _nodes.push_back(std::move(node));
+            _nextBlockStart = true;
+            _listItem = false;
+            return;
+        }
+
+        if (name == "br") {
+            _nextBlockStart = true;
+            return;
+        }
+        if (name == "b" || name == "strong") {
+            if (closing) popStyle(); else pushStyle(STYLE_BOLD);
+            return;
+        }
+        if (name == "i" || name == "em") {
+            if (closing) popStyle(); else pushStyle(STYLE_ITALIC);
+            return;
+        }
+
+        if (name.length() == 2 && name[0] == 'h' && name[1] >= '1' && name[1] <= '6') {
+            if (closing) {
+                popStyle();
+                _nextBlockStart = true;
+            } else {
+                int level = name[1] - '0';
+                pushStyle(level == 1 ? STYLE_HEADER1 : level == 2 ? STYLE_HEADER2 : level == 3 ? STYLE_HEADER3 : STYLE_HEADER4);
+                _nextBlockStart = true;
+            }
+            return;
+        }
+
+        bool block = name == "p" || name == "div" || name == "section" || name == "article" ||
+                     name == "blockquote" || name == "figure" || name == "figcaption";
+        if (block) {
+            if (closing) {
+                if (!_blockStylePushed.empty()) {
+                    if (_blockStylePushed.back()) popStyle();
+                    _blockStylePushed.pop_back();
+                }
+                _align = ALIGN_LEFT;
+                _indent = 0;
+                _nextBlockStart = true;
+            } else {
+                String style = attributeValue(raw, "style");
+                _align = alignmentFromStyle(style);
+                _indent = indentFromStyle(style);
+                if (name == "p" && _indent == 0 && _styles.back() == STYLE_NORMAL) _indent = 30;
+
+                String className = attributeValue(raw, "class");
+                className.toLowerCase();
+                bool titleClass = className.indexOf("chapter-title") >= 0 || className.indexOf("chap-title") >= 0 ||
+                                  className.indexOf("section-title") >= 0 || className.indexOf("part-title") >= 0;
+                _blockStylePushed.push_back(titleClass);
+                if (titleClass) pushStyle(STYLE_HEADER1);
+                _nextBlockStart = true;
+            }
+            return;
+        }
+
+        if (name == "li") {
+            _listItem = !closing;
+            _nextBlockStart = true;
+            return;
+        }
+        if (name == "tr") {
+            _nextBlockStart = true;
+            return;
+        }
+    }
+};
+
+}  // namespace
 
 void *myOpen(const char *filename, int32_t *size) {
     if (zipFd >= 0) { close(zipFd); zipFd = -1; }
@@ -36,15 +644,18 @@ int32_t mySeek(void *p, int32_t position, int iType) {
 }
 
 EpubLoader::EpubLoader() {
-    zip = (UNZIP*)ps_malloc(sizeof(UNZIP));
-    if (!zip) zip = new (std::nothrow) UNZIP();
-    else new (zip) UNZIP();
+    void* storage = ps_malloc(sizeof(UNZIP));
+    if (!storage) storage = malloc(sizeof(UNZIP));
+    zip = storage ? new (storage) UNZIP() : nullptr;
 }
 
 EpubLoader::~EpubLoader() { if (zip) { zip->~UNZIP(); free(zip); zip = nullptr; } }
 
 bool EpubLoader::open(const char* path) {
+    if (!zip || !path) return false;
     epubPath = String(path);
+    coverHref = "";
+    hiddenCssClasses.clear();
     if (zip->openZIP(path, myOpen, myClose, myRead, mySeek) != ZIP_SUCCESS) return false;
     if (!parseContainer()) { close(); return false; }
     if (!parseOpf()) { close(); return false; }
@@ -54,7 +665,7 @@ bool EpubLoader::open(const char* path) {
 void EpubLoader::close() {
     if (zip) zip->closeZIP();
     if (zipFd >= 0) { ::close(zipFd); zipFd = -1; }
-    spine.clear(); manifest.clear(); fonts.clear();
+    spine.clear(); manifest.clear(); fonts.clear(); hiddenCssClasses.clear(); coverHref = "";
 }
 
 String EpubLoader::getTitle() { return bookTitle; }
@@ -153,11 +764,31 @@ bool EpubLoader::parseOpf() {
     if(xml.length() == 0) return false;
     bookTitle = extractMetadata(xml, "dc:title");
     if(bookTitle.length() == 0) bookTitle = extractMetadata(xml, "title");
+
+    String coverId;
+    int metaPosition = 0;
+    while (true) {
+        int metaStart = xml.indexOf("<meta", metaPosition);
+        if (metaStart < 0) break;
+        int metaEnd = xml.indexOf('>', metaStart);
+        if (metaEnd < 0) break;
+        String metaTag = xml.substring(metaStart, metaEnd + 1);
+        String name = extractAttribute(metaTag, "meta", "name");
+        name.toLowerCase();
+        if (name == "cover") {
+            coverId = extractAttribute(metaTag, "meta", "content");
+            if (coverId.length() > 0) break;
+        }
+        metaPosition = metaEnd + 1;
+    }
     int manifestStart = xml.indexOf("<manifest");
     int manifestEnd = xml.indexOf("</manifest>");
     if(manifestStart == -1 || manifestEnd == -1) return false;
 
     String manifestBlock = xml.substring(manifestStart, manifestEnd);
+    String probableCoverHref;
+    String coverWrapperHref;
+    std::vector<String> stylesheetPaths;
     int pos = 0;
     while(true) {
         int itemStart = manifestBlock.indexOf("<item", pos);
@@ -167,9 +798,30 @@ bool EpubLoader::parseOpf() {
         String id = extractAttribute(itemTag, "item", "id");
         String href = extractAttribute(itemTag, "item", "href");
         String mediaType = extractAttribute(itemTag, "item", "media-type");
+        String properties = extractAttribute(itemTag, "item", "properties");
         if(id.length() > 0 && href.length() > 0) {
             manifest[id] = href;
             String hrefLower = href; hrefLower.toLowerCase();
+            String idLower = id; idLower.toLowerCase();
+            String mediaLower = mediaType; mediaLower.toLowerCase();
+            String propertiesLower = properties; propertiesLower.toLowerCase();
+            if (mediaLower == "text/css" || hrefLower.endsWith(".css")) {
+                stylesheetPaths.push_back(resolveZipHref(opfPath, href));
+            }
+            bool supportedRaster = mediaLower == "image/jpeg" || mediaLower == "image/png" ||
+                                   hrefLower.endsWith(".jpg") || hrefLower.endsWith(".jpeg") ||
+                                   hrefLower.endsWith(".png");
+            if (supportedRaster) {
+                String resolved = resolveZipHref(opfPath, href);
+                if (propertiesLower.indexOf("cover-image") >= 0 || id == coverId) {
+                    coverHref = resolved;
+                } else if (probableCoverHref.length() == 0 &&
+                           (idLower.indexOf("cover") >= 0 || hrefLower.indexOf("cover") >= 0)) {
+                    probableCoverHref = resolved;
+                }
+            } else if (id == coverId || propertiesLower.indexOf("cover-image") >= 0) {
+                coverWrapperHref = resolveZipHref(opfPath, href);
+            }
             if(hrefLower.endsWith(".ttf") || hrefLower.endsWith(".otf") || mediaType.indexOf("font") != -1) {
                 FontInfo font; font.path = rootDir + href;
                 if(hrefLower.endsWith(".ttf")) font.format = "ttf";
@@ -186,6 +838,49 @@ bool EpubLoader::parseOpf() {
             }
         }
         pos = itemEnd;
+    }
+    for (const String& stylesheetPath : stylesheetPaths) {
+        String css = readFileFromZip(stylesheetPath.c_str());
+        if (css.length() > 0) collectHiddenCssClasses(std::move(css), hiddenCssClasses);
+    }
+    if (coverHref.length() == 0 && coverWrapperHref.length() > 0) {
+        String wrapper = readFileFromZip(coverWrapperHref.c_str());
+        String source = extractAttribute(wrapper, "img", "src");
+        if (source.length() == 0) source = extractAttribute(wrapper, "image", "xlink:href");
+        if (source.length() == 0) source = extractAttribute(wrapper, "image", "href");
+        coverHref = resolveZipHref(coverWrapperHref, source);
+    }
+    if (coverHref.length() == 0) coverHref = probableCoverHref;
+
+    if (coverHref.length() == 0) {
+        int guideStart = xml.indexOf("<guide");
+        int guideEnd = guideStart >= 0 ? xml.indexOf("</guide>", guideStart) : -1;
+        int referencePosition = guideStart;
+        while (guideStart >= 0 && guideEnd > guideStart) {
+            int referenceStart = xml.indexOf("<reference", referencePosition);
+            if (referenceStart < 0 || referenceStart >= guideEnd) break;
+            int referenceEnd = xml.indexOf('>', referenceStart);
+            if (referenceEnd < 0 || referenceEnd >= guideEnd) break;
+            String reference = xml.substring(referenceStart, referenceEnd + 1);
+            String type = extractAttribute(reference, "reference", "type");
+            type.toLowerCase();
+            if (type == "cover") {
+                String wrapperHref = resolveZipHref(opfPath, extractAttribute(reference, "reference", "href"));
+                String lowerHref = wrapperHref;
+                lowerHref.toLowerCase();
+                if (lowerHref.endsWith(".jpg") || lowerHref.endsWith(".jpeg") || lowerHref.endsWith(".png")) {
+                    coverHref = wrapperHref;
+                } else if (wrapperHref.length() > 0) {
+                    String wrapper = readFileFromZip(wrapperHref.c_str());
+                    String source = extractAttribute(wrapper, "img", "src");
+                    if (source.length() == 0) source = extractAttribute(wrapper, "image", "xlink:href");
+                    if (source.length() == 0) source = extractAttribute(wrapper, "image", "href");
+                    coverHref = resolveZipHref(wrapperHref, source);
+                }
+                break;
+            }
+            referencePosition = referenceEnd + 1;
+        }
     }
     int spineStart = xml.indexOf("<spine"), spineEnd = xml.indexOf("</spine>");
     if(spineStart == -1 || spineEnd == -1) return false;
@@ -272,6 +967,135 @@ String EpubLoader::readFileFromZip(const char* path) {
 
     zip->closeCurrentFile();
     return str;
+}
+
+uint8_t* EpubLoader::readItemBytes(const String& path, size_t& size, size_t maximumBytes) {
+    size = 0;
+    if (!zip || path.length() == 0 || zip->locateFile(path.c_str()) != ZIP_SUCCESS) return nullptr;
+    if (zip->openCurrentFile() != ZIP_SUCCESS) return nullptr;
+
+    unz_file_info fileInfo = {};
+    char fileName[256];
+    if (zip->getFileInfo(&fileInfo, fileName, sizeof(fileName), nullptr, 0, nullptr, 0) != ZIP_SUCCESS ||
+        fileInfo.uncompressed_size == 0 || fileInfo.uncompressed_size > maximumBytes) {
+        zip->closeCurrentFile();
+        return nullptr;
+    }
+
+    size_t required = fileInfo.uncompressed_size;
+    size_t freePsram = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
+    if (required + (512 * 1024) > freePsram) {
+        Serial.printf("Epub image skipped: %u bytes needs more free PSRAM\n", static_cast<unsigned>(required));
+        zip->closeCurrentFile();
+        return nullptr;
+    }
+
+    uint8_t* data = static_cast<uint8_t*>(heap_caps_malloc(required, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    if (!data) {
+        zip->closeCurrentFile();
+        return nullptr;
+    }
+
+    size_t total = 0;
+    while (total < required) {
+        int chunk = static_cast<int>(min(static_cast<size_t>(4096), required - total));
+        int count = zip->readCurrentFile(data + total, chunk);
+        if (count <= 0) break;
+        total += count;
+        yield();
+    }
+    zip->closeCurrentFile();
+    if (total != required) {
+        free(data);
+        return nullptr;
+    }
+    size = total;
+    return data;
+}
+
+uint8_t* EpubLoader::readItemPrefix(const String& path, size_t& size, size_t maximumBytes) {
+    size = 0;
+    if (!zip || path.length() == 0 || zip->locateFile(path.c_str()) != ZIP_SUCCESS) return nullptr;
+    if (zip->openCurrentFile() != ZIP_SUCCESS) return nullptr;
+
+    unz_file_info fileInfo = {};
+    char fileName[256];
+    if (zip->getFileInfo(&fileInfo, fileName, sizeof(fileName), nullptr, 0, nullptr, 0) != ZIP_SUCCESS ||
+        fileInfo.uncompressed_size == 0) {
+        zip->closeCurrentFile();
+        return nullptr;
+    }
+
+    size_t requested = min(static_cast<size_t>(fileInfo.uncompressed_size), maximumBytes);
+    uint8_t* data = static_cast<uint8_t*>(heap_caps_malloc(requested, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    if (!data) data = static_cast<uint8_t*>(malloc(requested));
+    if (!data) {
+        zip->closeCurrentFile();
+        return nullptr;
+    }
+
+    size_t total = 0;
+    while (total < requested) {
+        int chunk = static_cast<int>(min(static_cast<size_t>(2048), requested - total));
+        int count = zip->readCurrentFile(data + total, chunk);
+        if (count <= 0) break;
+        total += count;
+    }
+    zip->closeCurrentFile();
+    if (total == 0) {
+        free(data);
+        return nullptr;
+    }
+    size = total;
+    return data;
+}
+
+bool EpubLoader::getImageDimensions(const String& href, EpubImageInfo& info) {
+    size_t size = 0;
+    uint8_t* prefix = readItemPrefix(href, size);
+    if (!prefix) return false;
+    bool valid = EpubImageDecoder::dimensions(prefix, size, info);
+    free(prefix);
+    return valid;
+}
+
+bool EpubLoader::decodeImage(const String& href, int maxWidth, int maxHeight, EpubBitmap& bitmap) {
+    size_t size = 0;
+    uint8_t* data = readItemBytes(href, size);
+    if (!data) return false;
+    unsigned long started = millis();
+    bool decoded = EpubImageDecoder::decode(data, size, maxWidth, maxHeight, bitmap);
+    free(data);
+    Serial.printf("EPUB image %s: %s in %lu ms (%dx%d)\n", href.c_str(), decoded ? "decoded" : "failed",
+                  millis() - started, bitmap.width, bitmap.height);
+    return decoded;
+}
+
+std::vector<ContentNode> EpubLoader::readRichContentFromZip(const char* path) {
+    if (zip->locateFile(path) != ZIP_SUCCESS) return {};
+    if (zip->openCurrentFile() != ZIP_SUCCESS) return {};
+
+    RichHtmlStreamParser parser(path, hiddenCssClasses);
+    uint8_t buffer[1024];
+    while (true) {
+        int bytesRead = zip->readCurrentFile(buffer, sizeof(buffer));
+        if (bytesRead <= 0) break;
+        parser.feed(buffer, static_cast<size_t>(bytesRead));
+        yield();
+    }
+    zip->closeCurrentFile();
+    std::vector<ContentNode> content = parser.finish();
+    for (ContentNode& node : content) {
+        if (node.type != CONTENT_IMAGE) continue;
+        EpubImageInfo info;
+        if (getImageDimensions(node.imageNode.href, info)) {
+            node.imageNode.sourceWidth = info.width;
+            node.imageNode.sourceHeight = info.height;
+        }
+        if (node.imageNode.sourceWidth <= 0) node.imageNode.sourceWidth = 320;
+        if (node.imageNode.sourceHeight <= 0) node.imageNode.sourceHeight = 240;
+    }
+    return content;
 }
 
 String EpubLoader::getAuthor() { return bookAuthor; }
@@ -561,6 +1385,5 @@ std::vector<ContentNode> EpubLoader::getChapterContentRich(int index) {
     String href = spine[index].href;
     String fullPath = rootDir + href;
     if(fullPath.startsWith("./")) fullPath = fullPath.substring(2);
-    String content = readFileFromZip(fullPath.c_str());
-    return parseHtmlToRichContent(content);
+    return readRichContentFromZip(fullPath.c_str());
 }

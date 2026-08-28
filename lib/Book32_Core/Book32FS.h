@@ -15,7 +15,7 @@
 // 2. Ebook Partition (label: "ebooks")  
 //    - VFS Mount: /ebooks
 //    - Size: 10MB
-//    - Stores: EPUB files, Cover thumbnails
+//    - Stores: EPUB files and reader state; covers are decoded from EPUBs on demand
 //    - Managed via Web UI upload
 //
 // POSIX file access (used by unzipLIB):

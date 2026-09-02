@@ -136,8 +136,10 @@ RESET, then run the upload command again.
 ## First Boot
 
 1. Power on Book32.
-2. If WiFi is not configured, connect to the `Book32-Setup` access point.
-3. Open `192.168.4.1` if the setup portal does not open automatically.
+2. If WiFi is not configured, scan the main-menu QR code to join the active
+   setup hotspot, or connect to `Book32-Setup` manually.
+3. Open `192.168.4.1` if the setup portal does not open automatically. If the
+   initial portal times out, scan the refreshed QR for the `Book32` hotspot.
 4. Choose your WiFi network and enter the password.
 5. After connection, Book32 shows its IP address on the main menu.
 6. Open `http://<BOOK32_IP>/` in a browser to manage books and settings.

@@ -8,6 +8,7 @@
 #include "../../include/Config.h"
 #include "../../include/NetworkState.h"
 #include <WiFi.h>
+#include <qrcode.h>
 #include "icon_update.h"
 #include "../Book32_Update/GitHubMgr.h"
 
@@ -45,6 +46,53 @@ static bool isReaderActive() {
     return current && strcmp(current->getName(), "eReader") == 0;
 }
 
+static String activeSetupApSsid() {
+    wifi_mode_t mode = WiFi.getMode();
+    if (mode != WIFI_AP && mode != WIFI_AP_STA) return "";
+    return WiFi.softAPSSID();
+}
+
+static String escapeWifiQrField(const String& value) {
+    String escaped;
+    escaped.reserve(value.length() + 4);
+    for (size_t i = 0; i < value.length(); ++i) {
+        char c = value.charAt(i);
+        if (c == '\\' || c == ';' || c == ',' || c == ':' || c == '"') escaped += '\\';
+        escaped += c;
+    }
+    return escaped;
+}
+
+static bool drawWifiSetupQr(Book32Display& display, const String& ssid,
+                            int tileX, int tileY, int tileWidth) {
+    constexpr uint8_t QR_VERSION = 3;
+    constexpr int QUIET_MODULES = 4;
+    constexpr int QR_BOX_SIZE = 185;
+    uint8_t modules[256];
+    QRCode qr;
+    String payload = String("WIFI:T:nopass;S:") + escapeWifiQrField(ssid) + ";;";
+    if (qrcode_initText(&qr, modules, QR_VERSION, ECC_LOW, payload.c_str()) != 0) return false;
+
+    int totalModules = qr.size + (QUIET_MODULES * 2);
+    int scale = max(1, QR_BOX_SIZE / totalModules);
+    int pixelSize = totalModules * scale;
+    int originX = tileX + (tileWidth - pixelSize) / 2;
+    int originY = tileY;
+    display.fillRect(originX, originY, pixelSize, pixelSize, GxEPD_WHITE);
+
+    int moduleX = originX + (QUIET_MODULES * scale);
+    int moduleY = originY + (QUIET_MODULES * scale);
+    for (uint8_t y = 0; y < qr.size; ++y) {
+        for (uint8_t x = 0; x < qr.size; ++x) {
+            if (qrcode_getModule(&qr, x, y)) {
+                display.fillRect(moduleX + (x * scale), moduleY + (y * scale),
+                                 scale, scale, GxEPD_BLACK);
+            }
+        }
+    }
+    return true;
+}
+
 #if BOOK32_HAS_BUZZER
 static constexpr uint8_t MENU_BUZZER_CHANNEL = 7;
 #endif
@@ -74,6 +122,7 @@ void AppMainMenu::updateCheckTask(void* parameter) {
         self->_updateAvailable = info.available;
         if (info.available) {
             self->_updateVersion = info.version;
+            self->_firstDraw = true; // Cleanly replace a possible Wi-Fi QR tile.
             self->_needsRedraw = true; // Trigger redraw to show icon
         } else {
             self->_updateVersion = "";
@@ -145,8 +194,9 @@ String AppMainMenu::getWifiFooterText() const {
             return ip.toString();
         }
     }
-    if (_hotspotActive) {
-        return String("Wi-Fi: ") + AP_SSID + "  ->  192.168.4.1";
+    String setupSsid = activeSetupApSsid();
+    if (setupSsid.length() > 0) {
+        return String("Wi-Fi: ") + setupSsid + "  ->  " + WiFi.softAPIP().toString();
     }
     return _wifiStarting ? "WiFi starting" : "WiFi offline";
 }
@@ -161,13 +211,15 @@ void AppMainMenu::startHotspot() {
     delay(100);  // Let the AP interface come up before binding the server
     WebMgr::getInstance().init();
     _hotspotActive = true;
+    _lastSetupApSsid = activeSetupApSsid();
 
     Serial.print("Hotspot ready at ");
     Serial.println(WiFi.softAPIP());
 
+    _firstDraw = true; // The QR tile and footer both changed.
     _selectionOnlyRedraw = false;
     _batteryOnlyRedraw = false;
-    _footerOnlyRedraw = !_firstDraw;
+    _footerOnlyRedraw = false;
     _needsRedraw = true;
 }
 
@@ -213,6 +265,7 @@ void AppMainMenu::start() {
     _previousSelectedIndex = selectedIndex;
     _lastWifiConnected = WiFi.status() == WL_CONNECTED;
     _lastIp = _lastWifiConnected ? WiFi.localIP().toString() : "";
+    _lastSetupApSsid = activeSetupApSsid();
     _lastWifiFooterText = "";
     _lastBatteryPoll = millis();
     _lastBatteryStatus = BatteryMgr::getInstance().refreshNow();
@@ -301,6 +354,7 @@ void AppMainMenu::update() {
 
         bool connected = WiFi.status() == WL_CONNECTED;
         String ip = connected ? WiFi.localIP().toString() : "";
+        String setupApSsid = activeSetupApSsid();
         if (connected) {
             _wifiStarting = false;
         } else if (!gNetworkStartupInProgress && !_wifiTaskHandle) {
@@ -309,16 +363,26 @@ void AppMainMenu::update() {
             // still reach the web interface without a router.
             if (!_hotspotActive && !isReaderActive()) {
                 startHotspot();
+                setupApSsid = activeSetupApSsid();
             }
         }
 
         String footerText = getWifiFooterText();
-        if (connected != _lastWifiConnected || ip != _lastIp || footerText != _lastWifiFooterText) {
+        if (connected != _lastWifiConnected || ip != _lastIp ||
+            setupApSsid != _lastSetupApSsid || footerText != _lastWifiFooterText) {
+            bool setupTileChanged = connected != _lastWifiConnected || setupApSsid != _lastSetupApSsid;
             _lastWifiConnected = connected;
             _lastIp = ip;
+            _lastSetupApSsid = setupApSsid;
             _selectionOnlyRedraw = false;
             _batteryOnlyRedraw = false;
-            _footerOnlyRedraw = !_firstDraw;
+            if (setupTileChanged) {
+                // QR codes need a clean waveform when appearing, changing, or disappearing.
+                _firstDraw = true;
+                _footerOnlyRedraw = false;
+            } else {
+                _footerOnlyRedraw = !_firstDraw;
+            }
             _needsRedraw = true;
         }
     }
@@ -445,7 +509,8 @@ void AppMainMenu::draw() {
             fontMgr.drawText(display, name, nameX, y + ICON_SIZE + 25, FONT_SIZE_MENU, GxEPD_BLACK);
         }
         
-        // Render Update Icon if available
+        // Update owns the fourth tile when available. Otherwise, while offline,
+        // show a QR that joins the active setup hotspot.
         if (_updateAvailable) {
             int i = apps.size(); // Index for update app (virtual index)
             int idx = i - 1;
@@ -467,11 +532,27 @@ void AppMainMenu::draw() {
             int nameWidth = fontMgr.getTextWidth(updateText.c_str(), FONT_SIZE_MENU);
             int nameX = x + (ICON_SIZE - nameWidth) / 2;
             fontMgr.drawText(display, updateText.c_str(), nameX, y + ICON_SIZE + 25, FONT_SIZE_MENU, GxEPD_BLACK);
+        } else {
+            String setupSsid = activeSetupApSsid();
+            if (WiFi.status() != WL_CONNECTED && setupSsid.length() > 0) {
+                int tileX = colWidth;
+                int tileY = START_Y + ROW_HEIGHT;
+                if (drawWifiSetupQr(display, setupSsid, tileX, tileY, colWidth)) {
+                    const char* setupText = "Scan for Wi-Fi";
+                    int nameWidth = fontMgr.getTextWidth(setupText, FONT_SIZE_MENU);
+                    int nameX = tileX + (colWidth - nameWidth) / 2;
+                    fontMgr.drawText(display, setupText, nameX, tileY + 210,
+                                     FONT_SIZE_MENU, GxEPD_BLACK);
+                }
+            }
         }
 
         // === Footer ===
 #if BOOK32_HAS_TOUCH
-        fontMgr.drawTextCentered(display, "Tap an icon to open", screenH - 45, FONT_SIZE_SMALL, GxEPD_BLACK);
+        const char* menuHint = (WiFi.status() != WL_CONNECTED && activeSetupApSsid().length() > 0 && !_updateAvailable)
+                                   ? "Scan QR to set up Wi-Fi"
+                                   : "Tap an icon to open";
+        fontMgr.drawTextCentered(display, menuHint, screenH - 45, FONT_SIZE_SMALL, GxEPD_BLACK);
 #else
         fontMgr.drawTextCentered(display, "Press: Next  |  Hold: Select", screenH - 45, FONT_SIZE_SMALL, GxEPD_BLACK);
 #endif

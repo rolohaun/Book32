@@ -32,6 +32,7 @@ private:
     bool _lastWifiConnected = false;
     bool _wifiStarting = false;
     String _lastIp = "";
+    String _lastSetupApSsid = "";
     String _lastWifiFooterText = "";
     bool _hotspotActive = false;
     unsigned long _lastNetworkPoll = 0;

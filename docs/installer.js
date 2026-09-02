@@ -20,9 +20,9 @@ const hardwareProfiles = {
     storageLabel: 'Protected 10 MB'
   },
   sticky: {
-    version: '1.2.2',
-    updateManifest: 'manifest-sticky-update-v1.2.2.json',
-    factoryManifest: 'manifest-sticky-factory-v1.2.2.json',
+    version: '1.2.3',
+    updateManifest: 'manifest-sticky-update-v1.2.3.json',
+    factoryManifest: 'manifest-sticky-factory-v1.2.3.json',
     pageTitle: 'Flash Book32 Sticky',
     intro: 'Install or update the 3.97-inch touch-screen Book32 Sticky over USB. No PlatformIO, drivers, or command line required.',
     note: 'Seeed reTerminal Sticky with 3.97-inch touch display.',

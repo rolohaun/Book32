@@ -42,11 +42,14 @@ void AppTodo::start() {
     _selectionOnlyRedraw = false;
     loadTodos();
     InputMgr::getInstance().setCallback(std::bind(&AppTodo::handleInput, this, std::placeholders::_1));
+    InputMgr::getInstance().setTouchCallback(std::bind(&AppTodo::handleTouch, this,
+                                                       std::placeholders::_1, std::placeholders::_2));
 }
 
 void AppTodo::stop() {
     saveTodos();
     InputMgr::getInstance().clearCallback();
+    InputMgr::getInstance().clearTouchCallback();
 }
 
 void AppTodo::loadTodos() {
@@ -176,6 +179,25 @@ void AppTodo::handleInput(InputAction action) {
             // Toggle the selected todo
             toggleTodo(_todos[_selectedIndex].id);
         }
+    }
+}
+
+void AppTodo::handleTouch(uint16_t, uint16_t y) {
+    constexpr int BACK_Y = 55;
+    constexpr int BACK_HEIGHT = 50;
+    constexpr int ITEM_HEIGHT = 70;
+
+    if (y >= BACK_Y && y < BACK_Y + BACK_HEIGHT) {
+        AppMgr::getInstance().switchTo(0);
+        return;
+    }
+
+    if (y < BACK_Y + BACK_HEIGHT) return;
+    int index = (static_cast<int>(y) - BACK_Y - BACK_HEIGHT) / ITEM_HEIGHT;
+    if (index >= 0 && index < static_cast<int>(_todos.size())) {
+        _previousSelectedIndex = _selectedIndex;
+        _selectedIndex = index;
+        toggleTodo(_todos[index].id);
     }
 }
 

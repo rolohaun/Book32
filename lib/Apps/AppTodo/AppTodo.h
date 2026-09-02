@@ -22,6 +22,7 @@ public:
     void forceRedraw() override;
 
     void handleInput(InputAction action);
+    void handleTouch(uint16_t x, uint16_t y);
 
     // Web API methods
     std::vector<TodoItem>& getTodos() { return _todos; }

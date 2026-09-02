@@ -56,6 +56,7 @@ private:
     int _selectedBookIndex;
     int _scrollOffset; // For list scrolling
     bool _booksScanned;
+    bool _libraryFirstDraw;
     bool _librarySelectionOnlyRedraw;
     bool _resumeSavedBookOnStart;
     int _previousBookIndex;

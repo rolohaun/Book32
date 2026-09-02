@@ -242,6 +242,7 @@ AppReader::AppReader() {
     _selectedBookIndex = 0;
     _scrollOffset = 0;
     _booksScanned = false;
+    _libraryFirstDraw = true;
     _librarySelectionOnlyRedraw = false;
     _resumeSavedBookOnStart = false;
     _previousBookIndex = 0;
@@ -337,6 +338,7 @@ void AppReader::start() {
     _selectedBookIndex = 0;
     _previousBookIndex = 0;
     _scrollOffset = 0;
+    _libraryFirstDraw = true;
     _librarySelectionOnlyRedraw = false;
     _needsRedraw = true;
     InputMgr::getInstance().setCallback(std::bind(&AppReader::handleInput, this, std::placeholders::_1));
@@ -471,7 +473,13 @@ void AppReader::handleInput(InputAction action) {
     } else if (_state == VIEW_READING) {
         if (action == INPUT_NEXT) nextPage();
         else if (action == INPUT_PREV) prevPage();
-        else if (action == INPUT_SELECT) { closeBook(); _state = VIEW_LIBRARY; _librarySelectionOnlyRedraw = false; _needsRedraw = true; }
+        else if (action == INPUT_SELECT) {
+            closeBook();
+            _state = VIEW_LIBRARY;
+            _libraryFirstDraw = true;
+            _librarySelectionOnlyRedraw = false;
+            _needsRedraw = true;
+        }
     }
 }
 
@@ -870,8 +878,12 @@ void AppReader::drawLibrary() {
         loadBookCover(_books[index], COVER_WIDTH, COVER_HEIGHT);
     }
 
-    // Use Partial Refresh for Library interactions
-    if (_librarySelectionOnlyRedraw) {
+    // Entering the library replaces an unrelated screen, so it needs the full
+    // waveform. Partial refresh is reserved for subsequent selection changes.
+    if (_libraryFirstDraw) {
+        display.setFullWindow();
+        _libraryFirstDraw = false;
+    } else if (_librarySelectionOnlyRedraw) {
         int previousVisibleIndex = _previousBookIndex < 0 ? -1 : _previousBookIndex - _scrollOffset;
         int selectedVisibleIndex = _selectedBookIndex < 0 ? -1 : _selectedBookIndex - _scrollOffset;
         LibraryDirtyRect dirty = unionLibraryRect(libraryItemRect(previousVisibleIndex, display.width()),
@@ -1057,6 +1069,7 @@ void AppReader::applyFontFamily(bool useOpenSans) {
 }
 
 void AppReader::forceRedraw() {
+    _libraryFirstDraw = true;
     _librarySelectionOnlyRedraw = false;  // Repaint the whole library view
     _currentPageRenderValid = false;
     _readingFirstDraw = true;             // Repaint the whole reading view

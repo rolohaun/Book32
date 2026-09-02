@@ -6,6 +6,7 @@ const factoryInstaller = document.querySelector('#factory-installer');
 
 const hardwareProfiles = {
   book32: {
+    version: '1.2',
     updateManifest: 'manifest-update-v1.2.json',
     factoryManifest: 'manifest-factory-v1.2.json',
     pageTitle: 'Flash Book32',
@@ -19,8 +20,9 @@ const hardwareProfiles = {
     storageLabel: 'Protected 10 MB'
   },
   sticky: {
-    updateManifest: 'manifest-sticky-update-v1.2.json',
-    factoryManifest: 'manifest-sticky-factory-v1.2.json',
+    version: '1.2.1',
+    updateManifest: 'manifest-sticky-update-v1.2.1.json',
+    factoryManifest: 'manifest-sticky-factory-v1.2.1.json',
     pageTitle: 'Flash Book32 Sticky',
     intro: 'Install or update the 3.97-inch touch-screen Book32 Sticky over USB. No PlatformIO, drivers, or command line required.',
     note: 'Seeed reTerminal E1002 / Sticky with 3.97-inch touch display.',
@@ -38,6 +40,7 @@ function applyHardwareProfile() {
   updateInstaller.setAttribute('manifest', profile.updateManifest);
   factoryInstaller.setAttribute('manifest', profile.factoryManifest);
   document.title = `${profile.pageTitle} — Browser Installer`;
+  document.querySelector('#version-label').textContent = `Version ${profile.version}`;
   document.querySelector('#page-title').textContent = profile.pageTitle;
   document.querySelector('#intro-copy').textContent = profile.intro;
   document.querySelector('#hardware-note').textContent = profile.note;

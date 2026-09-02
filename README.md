@@ -53,9 +53,14 @@ The Sticky is a complete device and does not need external display wiring. Its
 board profile uses E-Ink SPI on GPIO 13/14/15/16/17/18 (enable GPIO 47), GT911
 touch on GPIO 3/2/21/41 (enable GPIO 42), and MicroSD CS on GPIO 8.
 
+The Sticky build uses DIO flash with octal PSRAM. Do not change its flash mode
+to QIO: production Sticky hardware can watchdog-reset in the ESP32-S3 ROM before
+the second-stage bootloader finishes loading. Serial diagnostics use the
+device's CH343 UART bridge at 115200 baud.
+
 ## Install From A Browser
 
-The quickest installation method is the [Book32 Browser Installer](https://rolohaun.github.io/Book32/?v=1.2).
+The quickest installation method is the [Book32 Browser Installer](https://rolohaun.github.io/Book32/).
 It works in desktop Chrome or Edge with a data-capable USB cable and does not
 require PlatformIO or a local development environment.
 

@@ -334,6 +334,9 @@ void AppReader::start() {
 
     _state = VIEW_LIBRARY;
     _booksScanned = false;
+    _selectedBookIndex = 0;
+    _previousBookIndex = 0;
+    _scrollOffset = 0;
     _librarySelectionOnlyRedraw = false;
     _needsRedraw = true;
     InputMgr::getInstance().setCallback(std::bind(&AppReader::handleInput, this, std::placeholders::_1));
@@ -395,6 +398,13 @@ void AppReader::scanBooks() {
         file = root.openNextFile();
     }
     root.close();
+    if (_books.empty()) {
+        // With nothing to open, make the center button's only useful action Back.
+        _selectedBookIndex = -1;
+    } else if (_selectedBookIndex < 0 || _selectedBookIndex >= static_cast<int>(_books.size())) {
+        _selectedBookIndex = 0;
+    }
+    _previousBookIndex = _selectedBookIndex;
     if (metadataChanged) saveBookMetadata(metadata);
 }
 
@@ -454,7 +464,7 @@ void AppReader::handleInput(InputAction action) {
                 // Back to main menu
                 markProgressInactive();
                 AppMgr::getInstance().switchTo(0);
-            } else if (!_books.empty() && _selectedBookIndex >= 0) {
+            } else if (_selectedBookIndex >= 0 && _selectedBookIndex < static_cast<int>(_books.size())) {
                 openBook(_books[_selectedBookIndex].path.c_str());
             }
         }

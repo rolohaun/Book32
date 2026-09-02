@@ -1,7 +1,7 @@
 #pragma once
 
 #if defined(BOARD_SEEED_STICKY)
-#define SYSTEM_VERSION "1.2.1"
+#define SYSTEM_VERSION "1.2.2"
 #define DEVICE_NAME "Book32 Sticky"
 #else
 #define SYSTEM_VERSION "1.2"
@@ -46,6 +46,8 @@
 #define TOUCH_RST        41
 #define TOUCH_ENABLE     42
 
+#define PIN_BUZZER       48
+
 #define PIN_POWER_HOLD    45
 #define PIN_POWER_LOCK    46
 #define PIN_CHARGE_ENABLE 39
@@ -55,6 +57,7 @@
 
 #define BOOK32_HAS_TOUCH 1
 #define BOOK32_HAS_SD    1
+#define BOOK32_HAS_BUZZER 1
 
 #define OTA_FIRMWARE_ASSET "book32-sticky-firmware.bin"
 #define OTA_FILESYSTEM_ASSET "book32-sticky-littlefs.bin"
@@ -76,6 +79,7 @@
 
 #define BOOK32_HAS_TOUCH 0
 #define BOOK32_HAS_SD    0
+#define BOOK32_HAS_BUZZER 0
 
 #define OTA_FIRMWARE_ASSET "firmware.bin"
 #define OTA_FILESYSTEM_ASSET "littlefs.bin"

@@ -11,7 +11,7 @@ updates.
 | Target | MCU / flash | Display | Input | Ebook storage |
 | --- | --- | --- | --- | --- |
 | Book32 | XIAO ESP32-S3, 16 MB | 7.5 inch, 800 x 480 | One button | 10 MB internal LittleFS |
-| Book32 Sticky | ESP32-S3, 32 MB | 3.97 inch, 800 x 480 | GT911 touch + three buttons | MicroSD, with 23 MB internal fallback |
+| Book32 Sticky | ESP32-S3, 32 MB | 3.97 inch, 800 x 480 | GT911 touch + three buttons + buzzer | MicroSD, with 23 MB internal fallback |
 
 ## Controls
 
@@ -51,7 +51,9 @@ Battery sense:
 
 The Sticky is a complete device and does not need external display wiring. Its
 board profile uses E-Ink SPI on GPIO 13/14/15/16/17/18 (enable GPIO 47), GT911
-touch on GPIO 3/2/21/41 (enable GPIO 42), and MicroSD CS on GPIO 8.
+touch on GPIO 3/2/21/41 (enable GPIO 42), MicroSD CS on GPIO 8, and its PWM
+buzzer on GPIO 48. Book32 uses the buzzer only for main-menu touchscreen taps;
+the eReader remains silent.
 
 The Sticky build uses DIO flash with octal PSRAM. Do not change its flash mode
 to QIO: production Sticky hardware can watchdog-reset in the ESP32-S3 ROM before

@@ -20,14 +20,14 @@ const hardwareProfiles = {
     storageLabel: 'Protected 10 MB'
   },
   sticky: {
-    version: '1.2.4',
-    updateManifest: 'manifest-sticky-update-v1.2.4.json',
-    factoryManifest: 'manifest-sticky-factory-v1.2.4.json',
+    version: '1.2.5',
+    updateManifest: 'manifest-sticky-update-v1.2.5.json',
+    factoryManifest: 'manifest-sticky-factory-v1.2.5.json',
     pageTitle: 'Flash Book32 Sticky',
     intro: 'Install or update the 3.97-inch touch-screen Book32 Sticky over USB. No PlatformIO, drivers, or command line required.',
     note: 'Seeed reTerminal Sticky with 3.97-inch touch display.',
     display: '3.97-inch, 800 × 480 E-Ink',
-    controls: 'GT911 touch screen + three buttons + menu touch chirp',
+    controls: 'GT911 touch + three buttons + on-device Wi-Fi keyboard',
     storage: 'MicroSD card or 23 MB internal fallback',
     factoryKicker: 'For a blank or replacement Book32 Sticky',
     storageTitle: 'Your ebook storage stays separate',

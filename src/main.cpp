@@ -15,25 +15,50 @@
 #include "../Apps/AppReader/AppReader.h"
 #include "../Apps/AppKlipper/AppKlipper.h"
 #include "../Apps/AppTodo/AppTodo.h"
+#if defined(BOARD_SEEED_STICKY)
+#include "../Apps/AppWifi/AppWifi.h"
+#endif
 #include <WiFiManager.h>
 
 volatile bool gNetworkStartupInProgress = false;
+#if !defined(BOARD_SEEED_STICKY)
 static WiFiManager* gWifiManager = nullptr;
+#endif
 
 static void networkStartupTask(void* parameter) {
     (void)parameter;
 
     Serial.println("Network startup task started");
-    if (!gWifiManager) {
-        gWifiManager = new WiFiManager();
+#if defined(BOARD_SEEED_STICKY)
+    // Sticky performs all first-time setup on its own touch screen. At boot,
+    // only try credentials already saved by the Wi-Fi app.
+    WiFi.mode(WIFI_STA);
+    WiFi.begin();
+    int attempts = 0;
+    while (WiFi.status() != WL_CONNECTED && attempts < 40) {
+        App* current = AppMgr::getInstance().getCurrentApp();
+        if (current && strcmp(current->getName(), "Wi-Fi") == 0) {
+            // The interactive app now owns the radio and scan lifecycle.
+            break;
+        }
+        vTaskDelay(pdMS_TO_TICKS(250));
+        ++attempts;
     }
+    bool connected = WiFi.status() == WL_CONNECTED;
+#else
+    if (!gWifiManager) gWifiManager = new WiFiManager();
     // Don't let the setup portal block forever when no known network is in
     // range. On timeout autoConnect returns false and the main menu brings up
     // the Book32 management hotspot instead.
     gWifiManager->setConfigPortalTimeout(120);
     bool connected = gWifiManager->autoConnect("Book32-Setup");
+#endif
 
     if (!connected) {
+#if defined(BOARD_SEEED_STICKY)
+        WiFi.setAutoReconnect(false);
+        WiFi.disconnect(false, false);
+#endif
         Serial.println("WiFi setup did not connect; continuing offline");
         gNetworkStartupInProgress = false;
         vTaskDelete(nullptr);
@@ -121,6 +146,9 @@ void setup() {
     appMgr.registerApp(readerApp);
     appMgr.registerApp(new AppTodo());
     appMgr.registerApp(new AppKlipper());
+#if defined(BOARD_SEEED_STICKY)
+    appMgr.registerApp(new AppWifi());
+#endif
 
     displayMgr.showBootScreen(90, "Starting network");
     gNetworkStartupInProgress = true;

@@ -4,7 +4,7 @@
 #define SYSTEM_VERSION "1.2.5"
 #define DEVICE_NAME "Book32 Sticky"
 #else
-#define SYSTEM_VERSION "1.2"
+#define SYSTEM_VERSION "1.2.5"
 #define DEVICE_NAME "Book32"
 #endif
 

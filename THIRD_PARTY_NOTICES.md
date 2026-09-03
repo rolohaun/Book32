@@ -1,5 +1,14 @@
 # Third-Party Notices
 
+## esptool-js
+
+The Book32 browser installer uses Espressif's `esptool-js` Web Serial flasher:
+https://github.com/espressif/esptool-js
+
+Copyright (c) 2023 Espressif Systems (Shanghai) Co. Ltd. `esptool-js` is
+distributed under the Apache License 2.0. Its complete license text and source
+are available in the linked upstream repository.
+
 ## CrossPoint Reader
 
 Book32's EPUB image rendering is inspired by and contains adapted concepts from

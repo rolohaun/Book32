@@ -3,130 +3,171 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#151817">
-  <title>Book32 Browser Installer</title>
-  <meta name="description" content="Install or update Book32 directly from a supported web browser.">
+  <meta name="theme-color" content="#f7f7f4">
+  <title>Install Book32</title>
+  <meta name="description" content="Install Book32 1.2.5 on your ESP32-S3 e-paper reader directly from Chrome or Edge.">
   <link rel="icon" href="assets/book32-reader.png">
-  <link rel="stylesheet" href="installer.css?v=sticky-1.2.5">
-  <script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
+  <link rel="stylesheet" href="installer.css?v=web-2">
 </head>
 <body>
   <header class="site-header">
     <a class="brand" href="./" aria-label="Book32 installer home">
-      <img src="assets/book32-reader.png" alt="" width="48" height="48">
+      <img src="assets/book32-reader.png" alt="" width="44" height="44">
       <span>Book32</span>
     </a>
-    <div class="header-actions">
-      <span id="version-label" class="version">Version 1.2</span>
-      <a href="https://github.com/rolohaun/Book32">Source</a>
-    </div>
+    <a class="source-link" href="https://github.com/rolohaun/Book32">View on GitHub</a>
   </header>
 
   <main>
-    <section class="intro" aria-labelledby="page-title">
-      <p class="eyebrow">ESP32-S3 e-paper</p>
-      <h1 id="page-title">Flash Book32</h1>
-      <p id="intro-copy">Install or update the 7.5-inch Book32 over USB. No PlatformIO, drivers, or command line required.</p>
+    <section class="hero" aria-labelledby="page-title">
+      <p class="eyebrow">Browser installer</p>
+      <h1 id="page-title">Put Book32 on your reader.</h1>
+      <p>Choose your hardware, connect it over USB, and flash the latest firmware without installing any desktop tools.</p>
+      <div id="browser-support" class="support-pill" role="status">
+        <span aria-hidden="true"></span>
+        Checking browser compatibility…
+      </div>
     </section>
 
-    <section class="installer" aria-labelledby="installer-title">
-      <div class="installer-heading">
-        <div>
-          <p class="step-label">Choose an install type</p>
-          <h2 id="installer-title">What are you flashing?</h2>
+    <div class="installer-flow">
+      <section class="flow-step" aria-labelledby="device-title">
+        <div class="step-heading">
+          <span class="step-number" aria-hidden="true">1</span>
+          <div>
+            <p class="step-kicker">Select your device</p>
+            <h2 id="device-title">Which Book32 do you have?</h2>
+          </div>
         </div>
-        <div class="compatibility"><span aria-hidden="true"></span> Chrome or Edge on desktop</div>
-      </div>
 
-      <div class="hardware-picker">
-        <label for="hardware-select">Hardware</label>
-        <select id="hardware-select" name="hardware">
-          <option value="book32">Book32 — 7.5 inch, single button</option>
-          <option value="sticky">Book32 Sticky — 3.97 inch, touch screen</option>
-        </select>
-        <p id="hardware-note">Seeed XIAO ESP32-S3 with the TRMNL 7.5-inch display.</p>
-        <dl class="device-details" aria-live="polite">
-          <div><dt>Display</dt><dd id="device-display">7.5-inch, 800 × 480 E-Ink</dd></div>
-          <div><dt>Controls</dt><dd id="device-controls">One multifunction button</dd></div>
-          <div><dt>Ebook storage</dt><dd id="device-storage">Protected 10 MB internal partition</dd></div>
-        </dl>
-      </div>
+        <div class="device-grid" role="group" aria-label="Book32 hardware">
+          <button class="choice-card device-card" type="button" data-profile="book32" aria-pressed="false">
+            <span class="card-check" aria-hidden="true">✓</span>
+            <span class="device-art" aria-hidden="true">
+              <svg viewBox="0 0 180 118">
+                <rect x="14" y="14" width="152" height="90" rx="7"></rect>
+                <rect x="25" y="24" width="130" height="70" rx="2" class="screen"></rect>
+                <circle cx="90" cy="99" r="2.5" class="button-dot"></circle>
+                <path d="M47 48h62M47 58h78M47 68h68"></path>
+                <rect x="118" y="42" width="20" height="31" rx="2"></rect>
+              </svg>
+            </span>
+            <span class="card-copy">
+              <strong>Book32</strong>
+              <span>7.5-inch e-paper</span>
+              <small>Single button · 800 × 480</small>
+            </span>
+          </button>
 
-      <div class="mode-switch" role="tablist" aria-label="Install type">
-        <button id="update-tab" class="mode-button active" type="button" role="tab" aria-selected="true" aria-controls="update-panel" data-panel="update-panel">
-          Update existing Book32
+          <button class="choice-card device-card" type="button" data-profile="sticky" aria-pressed="false">
+            <span class="card-check" aria-hidden="true">✓</span>
+            <span class="device-art" aria-hidden="true">
+              <svg viewBox="0 0 180 118">
+                <rect x="58" y="5" width="64" height="108" rx="9"></rect>
+                <rect x="65" y="14" width="50" height="86" rx="3" class="screen"></rect>
+                <path d="M74 37h32M74 47h32M74 57h25"></path>
+                <circle cx="90" cy="106" r="2.5" class="button-dot"></circle>
+                <path d="M130 30v14M130 52v14M130 74v14" class="side-buttons"></path>
+              </svg>
+            </span>
+            <span class="card-copy">
+              <strong>Book32 Sticky</strong>
+              <span>3.97-inch touch e-paper</span>
+              <small>Touch + three buttons · 800 × 480</small>
+            </span>
+          </button>
+        </div>
+      </section>
+
+      <section class="flow-step" aria-labelledby="firmware-title">
+        <div class="step-heading">
+          <span class="step-number" aria-hidden="true">2</span>
+          <div>
+            <p class="step-kicker">Choose firmware</p>
+            <h2 id="firmware-title">Latest stable release</h2>
+          </div>
+        </div>
+
+        <button class="choice-card firmware-card selected" type="button" aria-pressed="true">
+          <span class="card-check" aria-hidden="true">✓</span>
+          <span class="release-icon" aria-hidden="true">B32</span>
+          <span class="card-copy">
+            <strong>Book32 1.2.5</strong>
+            <span>Stable release</span>
+            <small>Firmware + web interface · September 3, 2026</small>
+          </span>
+          <span class="latest-badge">Latest</span>
         </button>
-        <button id="factory-tab" class="mode-button" type="button" role="tab" aria-selected="false" aria-controls="factory-panel" data-panel="factory-panel">
-          Set up new hardware
-        </button>
-      </div>
+      </section>
 
-      <div id="update-panel" class="mode-panel active" role="tabpanel" aria-labelledby="update-tab">
-        <div class="mode-copy">
-          <p class="mode-kicker">Recommended for devices already running Book32</p>
-          <h3>Update firmware and web interface</h3>
-          <p>Keeps Wi-Fi settings, uploaded ebooks, and reading progress. Only the required system regions and web interface are written; ebook storage is not touched.</p>
+      <section class="flow-step" aria-labelledby="flash-title">
+        <div class="step-heading">
+          <span class="step-number" aria-hidden="true">3</span>
+          <div>
+            <p class="step-kicker">Flash</p>
+            <h2 id="flash-title">Connect and install</h2>
+          </div>
         </div>
-        <esp-web-install-button id="update-installer" manifest="manifest-update-v1.2.json">
-          <button class="install-button" slot="activate" type="button">Connect and update</button>
-          <p class="browser-message" slot="unsupported">Open this page in desktop Chrome or Edge to use USB flashing.</p>
-          <p class="browser-message" slot="not-allowed">USB flashing requires this secure GitHub Pages address.</p>
-        </esp-web-install-button>
-      </div>
 
-      <div id="factory-panel" class="mode-panel" role="tabpanel" aria-labelledby="factory-tab" hidden>
-        <div class="mode-copy">
-          <p id="factory-kicker" class="mode-kicker">For a blank or replacement XIAO ESP32-S3</p>
-          <h3>Install the complete Book32 system</h3>
-          <p>Writes the bootloader, Book32 partition table, firmware, and web interface. Wi-Fi will need to be configured after first boot.</p>
+        <div class="flash-card">
+          <div class="flash-summary">
+            <div>
+              <p class="summary-label">Ready to install</p>
+              <h3 id="flash-device-name">Select your device above</h3>
+              <p id="flash-description">Choose the matching hardware card to enable flashing.</p>
+            </div>
+            <button id="flash-button" class="flash-button" type="button" disabled>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13 2 5 14h6l-1 8 9-13h-6z"></path></svg>
+              Flash Book32 1.2.5
+            </button>
+          </div>
+          <p id="flash-note" class="flash-note">Chrome or Edge will ask you to choose the device's serial port.</p>
         </div>
-        <esp-web-install-button id="factory-installer" manifest="manifest-factory-v1.2.json">
-          <button class="install-button" slot="activate" type="button">Connect and install</button>
-          <p class="browser-message" slot="unsupported">Open this page in desktop Chrome or Edge to use USB flashing.</p>
-          <p class="browser-message" slot="not-allowed">USB flashing requires this secure GitHub Pages address.</p>
-        </esp-web-install-button>
-      </div>
+      </section>
 
-      <div class="erase-warning" role="note">
-        <strong>Protect your library.</strong>
-        If the installer offers an <q>Erase device</q> option, leave it unchecked on any Book32 containing ebooks. The normal Book32 install files do not write to ebook storage.
-      </div>
+      <section id="progress-panel" class="progress-panel" aria-labelledby="progress-title" aria-live="polite" hidden>
+        <div class="progress-header">
+          <div>
+            <p class="step-kicker">Installation status</p>
+            <h2 id="progress-title">Installing Book32 1.2.5…</h2>
+          </div>
+          <strong id="progress-percent">0%</strong>
+        </div>
+        <div class="progress-track" role="progressbar" aria-label="Firmware installation progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+          <span id="progress-bar"></span>
+        </div>
+        <ol class="progress-steps">
+          <li data-progress-step="connect"><span class="status-icon" aria-hidden="true"></span><div><strong>Connect to device</strong><small>Waiting for a serial port</small></div></li>
+          <li data-progress-step="download"><span class="status-icon" aria-hidden="true"></span><div><strong>Download Book32 files</strong><small>Waiting</small></div></li>
+          <li data-progress-step="write"><span class="status-icon" aria-hidden="true"></span><div><strong>Write system and web interface</strong><small>Waiting</small></div></li>
+          <li data-progress-step="verify"><span class="status-icon" aria-hidden="true"></span><div><strong>Verify partition table</strong><small>Waiting</small></div></li>
+          <li data-progress-step="reset"><span class="status-icon" aria-hidden="true"></span><div><strong>Restart device</strong><small>Waiting</small></div></li>
+        </ol>
+        <div id="result-message" class="result-message" role="status" hidden></div>
+      </section>
+    </div>
+
+    <section class="information-grid" aria-label="Installation information">
+      <article>
+        <span class="info-icon" aria-hidden="true">↻</span>
+        <div><h2>Safe to update</h2><p>The installer refreshes Book32 system files without erasing Wi-Fi credentials, reading progress, or ebook storage.</p></div>
+      </article>
+      <article>
+        <span class="info-icon" aria-hidden="true">✓</span>
+        <div><h2>After flashing</h2><p id="after-flashing">Select your hardware above to see its first-start instructions.</p></div>
+      </article>
     </section>
 
-    <section class="storage" aria-labelledby="storage-title">
-      <div class="section-heading">
-        <p class="step-label">Flash map</p>
-        <h2 id="storage-title">Your ebook partition stays separate</h2>
-      </div>
-      <div class="partition-map" aria-label="Book32 flash partition map">
-        <div class="partition system"><span>System</span><small>Boot + settings</small></div>
-        <div class="partition firmware"><span>Firmware</span><small>Book32 OS</small></div>
-        <div class="partition web"><span>Web UI</span><small>1 MB</small></div>
-        <div class="partition ebooks"><span>Ebooks</span><small id="ebook-storage-label">Protected 10 MB</small></div>
-      </div>
-    </section>
-
-    <section class="steps" aria-labelledby="steps-title">
-      <div class="section-heading">
-        <p class="step-label">Before you start</p>
-        <h2 id="steps-title">Three quick steps</h2>
-      </div>
-      <ol>
-        <li><span>1</span><div><strong>Connect USB</strong><p>Use a data-capable USB cable and switch Book32 on.</p></div></li>
-        <li><span>2</span><div><strong>Choose the device</strong><p>Select the matching ESP32-S3 serial port when the browser asks.</p></div></li>
-        <li><span>3</span><div><strong>Let it finish</strong><p>Keep the cable connected until installation completes and Book32 restarts.</p></div></li>
-      </ol>
-      <details>
-        <summary>Device does not appear?</summary>
-        <p>Hold the BOOT button, tap RESET, then release BOOT and try connecting again.</p>
-      </details>
-    </section>
+    <details>
+      <summary>Device does not appear in the serial-port list?</summary>
+      <p>Use a data-capable USB cable. If needed, hold BOOT, tap RESET, release BOOT, and then click Flash again.</p>
+    </details>
   </main>
 
   <footer>
     <span>Book32 by Rolohaun</span>
     <a href="https://github.com/rolohaun/Book32/issues">Report a problem</a>
   </footer>
-  <script src="installer.js?v=sticky-1.2.5"></script>
+
+  <script type="module" src="installer.js?v=web-2"></script>
 </body>
 </html>

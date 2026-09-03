@@ -13,6 +13,7 @@ const profiles = {
     name: 'Seeed Studio Sticky — 3.97 inch',
     manifest: 'manifest-sticky-update-v1.2.6.json',
     flashSize: '32MB',
+    resetMode: 'atomic-rts',
     description: 'Seeed Studio touch-screen reader with InkDeck installed.',
     after: 'After restart, tap the Wi-Fi icon and choose your network on the touch screen.'
   }
@@ -149,6 +150,26 @@ function friendlyError(error) {
   return message;
 }
 
+function wait(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+async function restartDevice(profile, loader, port) {
+  if (profile.resetMode !== 'atomic-rts') {
+    await loader.after('hard_reset');
+    return;
+  }
+
+  // The Sticky's CH343 bridge needs a real RTS low pulse. esptool-js 0.6.1's
+  // hard-reset path only releases RTS, which can leave the ESP32-S3 in the
+  // serial bootloader after an otherwise successful flash. Set DTR and RTS
+  // together so GPIO0 stays released while EN is pulsed.
+  await port.setSignals({ dataTerminalReady: false, requestToSend: true });
+  await wait(150);
+  await port.setSignals({ dataTerminalReady: false, requestToSend: false });
+  await wait(350);
+}
+
 async function flashSelectedDevice() {
   if (flashing || !selectedProfile || !setBrowserSupport()) return;
   const profile = profiles[selectedProfile];
@@ -225,7 +246,7 @@ async function flashSelectedDevice() {
     setProgress(97);
 
     setStep('reset', 'running', 'Restarting InkDeck');
-    await loader.after('hard_reset');
+    await restartDevice(profile, loader, port);
     setStep('reset', 'done', 'Device restarted');
     setProgress(100);
     showResult(`InkDeck ${RELEASE_VERSION} was installed successfully. ${profile.after}`);

@@ -26,7 +26,7 @@ void StickyDisplay::setFullWindow() {
 }
 
 void StickyDisplay::setPartialWindow(int16_t, int16_t, int16_t, int16_t) {
-    // Book32 draws a complete composited frame even for a partial update. Keep
+    // InkDeck draws a complete composited frame even for a partial update. Keep
     // the full buffer valid, but select the panel's low-flash partial waveform.
     _partialWindow = true;
 }
@@ -48,7 +48,14 @@ void StickyDisplay::flush() {
     digitalWrite(SD_CS, HIGH);
     _panel.setBuffer(getBuffer());
     SPI.beginTransaction(SPISettings(8000000, MSBFIRST, SPI_MODE0));
-    _panel.writePlane();
+    // The Sticky's controller compares two internal image planes during a
+    // partial refresh. With only the new plane populated, black pixels appear
+    // but old black pixels are not driven back to white. PLANE_FALSE_DIFF is
+    // the bb_epaper library's Sticky-specific one-buffer path: it writes the
+    // new frame and its inverse so every changed pixel is actively driven.
+    // Full refreshes duplicate the frame into both planes, leaving the
+    // controller in a synchronized state for the next update.
+    _panel.writePlane(_partialWindow ? PLANE_FALSE_DIFF : PLANE_DUPLICATE);
     _panel.refresh(_partialWindow ? REFRESH_PARTIAL : REFRESH_FULL, false);
     SPI.endTransaction();
     _panel.wait();

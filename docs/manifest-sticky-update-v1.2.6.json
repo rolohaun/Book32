@@ -1,0 +1,19 @@
+{
+  "name": "InkDeck for Seeed Studio Sticky",
+  "version": "1.2.6",
+  "new_install_prompt_erase": false,
+  "new_install_improv_wait_time": 0,
+  "builds": [
+    {
+      "chipFamily": "ESP32-S3",
+      "improv": false,
+      "parts": [
+        { "path": "firmware/book32-sticky-bootloader-v1.2.6.bin", "offset": 0 },
+        { "path": "firmware/book32-sticky-partitions-v1.2.6.bin", "offset": 32768 },
+        { "path": "firmware/book32-sticky-boot-app-v1.2.6.bin", "offset": 57344 },
+        { "path": "firmware/book32-sticky-firmware-v1.2.6.bin", "offset": 65536 },
+        { "path": "firmware/book32-sticky-littlefs-v1.2.6.bin", "offset": 8454144 }
+      ]
+    }
+  ]
+}

@@ -7,7 +7,7 @@
 #include <SPI.h>
 
 // GFX-compatible adapter for the Sticky's native-landscape SSD1677 panel.
-// Book32 keeps one 800x480 framebuffer, so existing GFX font and bitmap code
+// InkDeck keeps one 800x480 framebuffer, so existing GFX font and bitmap code
 // can run unchanged while bb_epaper handles the panel-specific waveform.
 class StickyDisplay : public GFXcanvas1 {
 public:

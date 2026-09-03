@@ -1,10 +1,10 @@
 #pragma once
 
 #if defined(BOARD_SEEED_STICKY)
-#define SYSTEM_VERSION "1.2.5"
+#define SYSTEM_VERSION "1.2.6"
 #define DEVICE_NAME "Seeed Studio Sticky"
 #else
-#define SYSTEM_VERSION "1.2.5"
+#define SYSTEM_VERSION "1.2.6"
 #define DEVICE_NAME "Book32"
 #endif
 
@@ -18,6 +18,7 @@
 #define SCREEN_WIDTH 480
 #define SCREEN_HEIGHT 800
 #define FONT_SIZE_DEFAULT 28
+#define READER_FULL_REFRESH_INTERVAL_DEFAULT 15
 
 #if defined(BOARD_SEEED_STICKY)
 // Seeed reTerminal E1002 / Sticky 3.97" (SSD1677)

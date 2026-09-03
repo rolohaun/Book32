@@ -8,8 +8,8 @@
       "chipFamily": "ESP32-S3",
       "improv": false,
       "parts": [
-        { "path": "firmware/firmware.bin", "offset": 65536 },
-        { "path": "firmware/littlefs.bin", "offset": 5308416 }
+        { "path": "firmware/book32-factory-v1.2.6.bin", "offset": 0 },
+        { "path": "firmware/littlefs-v1.2.6.bin", "offset": 5308416 }
       ]
     }
   ]

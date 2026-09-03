@@ -421,6 +421,15 @@ void BatteryMgr::drawStatusIndicator() {
     // Only update if charging state actually changed
     bool currentCharging = _cachedStatus.charging;
 
+#if defined(BOARD_SEEED_STICKY)
+    // Sticky uses a single full-frame canvas. Its active app redraws the
+    // battery as part of the complete composited frame; drawing only this
+    // indicator would replace the rest of that canvas with white before the
+    // forced-differential partial refresh.
+    _lastDisplayedCharging = currentCharging;
+    return;
+#endif
+
     // Only refresh display when charging state changes (plugged in or unplugged)
     if (currentCharging == _lastDisplayedCharging) {
         return;  // No change, no update needed

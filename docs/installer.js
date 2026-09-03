@@ -7,13 +7,13 @@ const profiles = {
     manifest: 'manifest-update-v1.2.5.json',
     flashSize: '16MB',
     description: 'Single-button Book32 with the 7.5-inch e-paper display.',
-    after: 'After restart, connect to the Book32-Setup Wi-Fi network to configure Wi-Fi.'
+    after: 'After restart, connect to the InkDeck-Setup Wi-Fi network to configure Wi-Fi.'
   },
   sticky: {
-    name: 'Book32 Sticky — 3.97 inch',
+    name: 'Seeed Studio Sticky — 3.97 inch',
     manifest: 'manifest-sticky-update-v1.2.5.json',
     flashSize: '32MB',
-    description: 'Touch-screen Book32 for the Seeed reTerminal Sticky.',
+    description: 'Seeed Studio touch-screen reader with InkDeck installed.',
     after: 'After restart, tap the Wi-Fi icon and choose your network on the touch screen.'
   }
 };
@@ -85,7 +85,7 @@ function setStep(stepId, state, detail) {
 
 function resetProgress(profile) {
   progressPanel.hidden = false;
-  progressTitle.textContent = `Installing Book32 ${RELEASE_VERSION} on ${profile.name}…`;
+  progressTitle.textContent = `Installing InkDeck ${RELEASE_VERSION} on ${profile.name}…`;
   document.querySelectorAll('[data-progress-step]').forEach((row) => {
     row.classList.remove('running', 'done', 'error');
     row.querySelector('small').textContent = row.dataset.progressStep === 'connect'
@@ -107,7 +107,7 @@ function showResult(message, isError = false) {
 async function loadFirmware(profile) {
   const manifestUrl = new URL(profile.manifest, window.location.href);
   const response = await fetch(manifestUrl, { cache: 'no-store' });
-  if (!response.ok) throw new Error(`Could not download the Book32 manifest (HTTP ${response.status}).`);
+  if (!response.ok) throw new Error(`Could not download the InkDeck manifest (HTTP ${response.status}).`);
 
   const manifest = await response.json();
   const build = manifest.builds?.find((item) => item.chipFamily === 'ESP32-S3');
@@ -181,11 +181,11 @@ async function flashSelectedDevice() {
     };
     const loader = new ESPLoader({ transport, baudrate: 460800, terminal, debugLogging: false });
     const chip = await loader.main();
-    if (!chip.includes('ESP32-S3')) throw new Error(`This is ${chip}, but Book32 requires an ESP32-S3.`);
+    if (!chip.includes('ESP32-S3')) throw new Error(`This is ${chip}, but InkDeck requires an ESP32-S3.`);
     setStep('connect', 'done', `Connected to ${chip}`);
     setProgress(8);
 
-    setStep('download', 'running', 'Downloading Book32 files');
+    setStep('download', 'running', 'Downloading InkDeck files');
     const parts = await loadFirmware(profile);
     setStep('download', 'done', `${parts.length} files ready`);
     setProgress(17);
@@ -224,11 +224,11 @@ async function flashSelectedDevice() {
     setStep('verify', 'done', 'Partition table verified');
     setProgress(97);
 
-    setStep('reset', 'running', 'Restarting Book32');
+    setStep('reset', 'running', 'Restarting InkDeck');
     await loader.after('hard_reset');
     setStep('reset', 'done', 'Device restarted');
     setProgress(100);
-    showResult(`Book32 ${RELEASE_VERSION} was installed successfully. ${profile.after}`);
+    showResult(`InkDeck ${RELEASE_VERSION} was installed successfully. ${profile.after}`);
     flashNote.textContent = 'Installation complete. You can disconnect the USB cable.';
   } catch (error) {
     console.error(error);
@@ -242,7 +242,7 @@ async function flashSelectedDevice() {
     flashing = false;
     deviceCards.forEach((card) => { card.disabled = false; });
     flashButton.disabled = !selectedProfile || !setBrowserSupport();
-    flashButton.lastChild.textContent = ' Flash Book32 1.2.5';
+    flashButton.lastChild.textContent = ' Flash InkDeck 1.2.5';
   }
 }
 

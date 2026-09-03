@@ -77,7 +77,7 @@ UpdateInfo GitHubMgr::checkUpdate(const char* currentVersion) {
     Serial.printf("Checking: %s\n", apiURL.c_str());
 
     http.begin(apiURL);
-    http.setUserAgent("Book32-ESP32");
+    http.setUserAgent("InkDeck-ESP32");
     http.setTimeout(10000);  // 10 second timeout
 
     Serial.println("Using public GitHub release API");
@@ -155,7 +155,7 @@ bool GitHubMgr::performFirmwareUpdate(const char* url, bool restartAfter, int st
 
     HTTPClient http;
     http.begin(url);
-    http.setUserAgent("Book32-ESP32");
+    http.setUserAgent("InkDeck-ESP32");
     http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
     http.setTimeout(30000);  // 30 second timeout for large downloads
 
@@ -255,7 +255,7 @@ bool GitHubMgr::performFilesystemUpdate(const char* url, bool restartAfter, int 
 
     HTTPClient http;
     http.begin(url);
-    http.setUserAgent("Book32-ESP32");
+    http.setUserAgent("InkDeck-ESP32");
     http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
     http.setTimeout(30000);  // 30 second timeout for large downloads
 

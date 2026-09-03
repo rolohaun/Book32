@@ -2,7 +2,7 @@
 
 ## esptool-js
 
-The Book32 browser installer uses Espressif's `esptool-js` Web Serial flasher:
+The InkDeck browser installer uses Espressif's `esptool-js` Web Serial flasher:
 https://github.com/espressif/esptool-js
 
 Copyright (c) 2023 Espressif Systems (Shanghai) Co. Ltd. `esptool-js` is
@@ -11,7 +11,7 @@ are available in the linked upstream repository.
 
 ## CrossPoint Reader
 
-Book32's EPUB image rendering is inspired by and contains adapted concepts from
+InkDeck's EPUB image rendering is inspired by and contains adapted concepts from
 CrossPoint Reader: https://github.com/crosspoint-reader/crosspoint-reader
 
 MIT License
@@ -38,7 +38,7 @@ SOFTWARE.
 
 ## bb_epaper
 
-The Book32 Sticky display adapter uses Larry Bank's `bb_epaper` library:
+The InkDeck Seeed Studio Sticky display adapter uses Larry Bank's `bb_epaper` library:
 https://github.com/bitbank2/bb_epaper
 
 Copyright (c) 2024 BitBank Software, Inc. `bb_epaper` is distributed under the

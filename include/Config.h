@@ -2,7 +2,7 @@
 
 #if defined(BOARD_SEEED_STICKY)
 #define SYSTEM_VERSION "1.2.5"
-#define DEVICE_NAME "Book32 Sticky"
+#define DEVICE_NAME "Seeed Studio Sticky"
 #else
 #define SYSTEM_VERSION "1.2.5"
 #define DEVICE_NAME "Book32"
@@ -11,9 +11,9 @@
 // Offline management hotspot (SoftAP). When the device can't reach a known
 // WiFi network, the main menu broadcasts this network so a phone can connect
 // directly and reach the web interface at 192.168.4.1 (no router needed).
-#define AP_SSID "Book32"
+#define AP_SSID "InkDeck"
 
-// Both supported panels are 800x480 natively and run the Book32 UI in
+// Both supported panels are 800x480 natively and run the InkDeck UI in
 // 480x800 portrait orientation.
 #define SCREEN_WIDTH 480
 #define SCREEN_HEIGHT 800

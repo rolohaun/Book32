@@ -1,8 +1,7 @@
-# Book32
+# InkDeck
 
-Book32 is a custom E-Ink application OS for two ESP32-S3 readers: the Seeed
-Studio XIAO ESP32-S3 TRMNL 7.5 inch OG DIY kit and the Seeed reTerminal E1002
-/ Sticky 3.97 inch touch device. It includes an EPUB reader, a Todo app, a
+InkDeck is a custom E-Ink application OS for two ESP32-S3 readers: the 7.5-inch
+Book32 and the 3.97-inch Seeed Studio Sticky. It includes an EPUB reader, a Todo app, a
 Klipper printer monitor, and a local web interface for books, settings, and OTA
 updates.
 
@@ -11,7 +10,7 @@ updates.
 | Target | MCU / flash | Display | Input | Ebook storage |
 | --- | --- | --- | --- | --- |
 | Book32 | XIAO ESP32-S3, 16 MB | 7.5 inch, 800 x 480 | One button | 10 MB internal LittleFS |
-| Book32 Sticky | ESP32-S3, 32 MB | 3.97 inch, 800 x 480 | GT911 touch + three buttons + buzzer | MicroSD, with 23 MB internal fallback |
+| Seeed Studio Sticky | ESP32-S3, 32 MB | 3.97 inch, 800 x 480 | GT911 touch + three buttons + buzzer | MicroSD, with 23 MB internal fallback |
 
 ## Controls
 
@@ -20,7 +19,7 @@ Original Book32:
 - Click: move to the next item or page.
 - Long press: select, open, or go back depending on the app.
 
-Book32 Sticky:
+Seeed Studio Sticky:
 
 - Tap a main-menu icon to open it and tap a library book to start reading.
 - Tap the invisible left or right third of a reading page to turn backward or forward.
@@ -52,7 +51,7 @@ Battery sense:
 The Sticky is a complete device and does not need external display wiring. Its
 board profile uses E-Ink SPI on GPIO 13/14/15/16/17/18 (enable GPIO 47), GT911
 touch on GPIO 3/2/21/41 (enable GPIO 42), MicroSD CS on GPIO 8, and its PWM
-buzzer on GPIO 48. Book32 uses the buzzer only for main-menu touchscreen taps;
+buzzer on GPIO 48. InkDeck uses the buzzer only for main-menu touchscreen taps;
 the eReader remains silent.
 
 The Sticky build uses DIO flash with octal PSRAM. Do not change its flash mode
@@ -62,16 +61,16 @@ device's CH343 UART bridge at 115200 baud.
 
 ## Install From A Browser
 
-The quickest installation method is the [Book32 Browser Installer](https://rolohaun.github.io/Book32/).
+The quickest installation method is the [InkDeck Browser Installer](https://rolohaun.github.io/Book32/).
 It works in desktop Chrome or Edge with a data-capable USB cable and does not
 require PlatformIO or a local development environment.
 
-- **Update existing Book32** flashes the firmware and web interface while
+- Updating InkDeck flashes the firmware and web interface while
   preserving Wi-Fi settings, ebooks, and reading progress.
 - **Set up new hardware** installs the bootloader, hardware-specific partition
   table, firmware, and web interface.
 
-Choose the exact hardware in the installer drop-down before connecting USB.
+Choose either the **Book32** or **Seeed Studio Sticky** hardware card before connecting USB.
 
 The installer does not write to the dedicated ebook partition. If ESP Web Tools
 offers an **Erase device** option, leave it unchecked on a device that contains
@@ -105,7 +104,7 @@ Choose the matching environment:
 # Original 7.5-inch Book32
 python -m platformio run -e seeed_xiao_esp32s3 --target upload
 
-# Book32 Sticky
+# Seeed Studio Sticky
 python -m platformio run -e seeed_reterminal_sticky --target upload
 ```
 
@@ -135,7 +134,7 @@ RESET, then run the upload command again.
 
 ## First Boot
 
-Book32 Sticky:
+Seeed Studio Sticky:
 
 1. Power on the Sticky and tap the **Wi-Fi** icon.
 2. Tap a network, enter its password on the touch keyboard, and tap **Connect**.
@@ -143,17 +142,17 @@ Book32 Sticky:
 
 Original Book32:
 
-1. Power on Book32 and connect to the `Book32-Setup` access point if WiFi is not configured.
+1. Power on Book32 and connect to the `InkDeck-Setup` access point if WiFi is not configured.
 2. Open `192.168.4.1` if the setup portal does not open automatically.
 3. Choose your WiFi network and enter the password.
-4. After connection, Book32 shows its IP address on the main menu.
+4. After connection, InkDeck shows its IP address on the main menu.
 
-Open `http://<BOOK32_IP>/` in a browser to manage books and settings after either
+Open `http://<INKDECK_IP>/` in a browser to manage books and settings after either
 device joins the network.
 
 ## OTA Updates
 
-Book32 now uses the public GitHub release feed:
+InkDeck uses the public GitHub release feed:
 
 ```text
 https://github.com/rolohaun/Book32/releases/latest
@@ -223,7 +222,7 @@ detail on the E-Ink panel while keeping temporary working data in PSRAM.
 
 ## Partition Notes
 
-Book32 uses a hardware-specific custom partition table. Ebook storage is mounted
+InkDeck uses a hardware-specific custom partition table. Ebook storage is mounted
 separately from firmware and the web UI, so normal firmware and `uploadfs`
 updates do not overwrite it. Sticky uses `partitions_32MB_sticky.csv`; its SD
 card and internal fallback share the same `/ebooks` path.
@@ -235,5 +234,5 @@ Fresh hardware setup uses three pieces:
 - `python -m platformio run --target uploadfs` flashes the 1 MB LittleFS web UI
   partition named `spiffs`.
 - The `ebooks` partition (10 MB original, 23 MB Sticky fallback) is not flashed
-  by PlatformIO. Book32 formats it automatically the first time it sees that
+  by PlatformIO. InkDeck formats it automatically the first time it sees that
   partition is blank.

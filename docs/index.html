@@ -4,16 +4,16 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#f7f7f4">
-  <title>Install Book32</title>
-  <meta name="description" content="Install Book32 1.2.5 on your ESP32-S3 e-paper reader directly from Chrome or Edge.">
+  <title>Install InkDeck</title>
+  <meta name="description" content="Install InkDeck 1.2.5 on Book32 or Seeed Studio Sticky directly from Chrome or Edge.">
   <link rel="icon" href="assets/book32-reader.png">
-  <link rel="stylesheet" href="installer.css?v=web-2">
+  <link rel="stylesheet" href="installer.css?v=inkdeck-1">
 </head>
 <body>
   <header class="site-header">
-    <a class="brand" href="./" aria-label="Book32 installer home">
+    <a class="brand" href="./" aria-label="InkDeck installer home">
       <img src="assets/book32-reader.png" alt="" width="44" height="44">
-      <span>Book32</span>
+      <span>InkDeck</span>
     </a>
     <a class="source-link" href="https://github.com/rolohaun/Book32">View on GitHub</a>
   </header>
@@ -21,8 +21,8 @@
   <main>
     <section class="hero" aria-labelledby="page-title">
       <p class="eyebrow">Browser installer</p>
-      <h1 id="page-title">Put Book32 on your reader.</h1>
-      <p>Choose your hardware, connect it over USB, and flash the latest firmware without installing any desktop tools.</p>
+      <h1 id="page-title">Put InkDeck on your reader.</h1>
+      <p>Choose your hardware, connect it over USB, and install InkDeck without any desktop tools.</p>
       <div id="browser-support" class="support-pill" role="status">
         <span aria-hidden="true"></span>
         Checking browser compatibility…
@@ -35,20 +35,23 @@
           <span class="step-number" aria-hidden="true">1</span>
           <div>
             <p class="step-kicker">Select your device</p>
-            <h2 id="device-title">Which Book32 do you have?</h2>
+            <h2 id="device-title">Choose your InkDeck device</h2>
           </div>
         </div>
 
-        <div class="device-grid" role="group" aria-label="Book32 hardware">
+        <div class="device-grid" role="group" aria-label="InkDeck-compatible hardware">
           <button class="choice-card device-card" type="button" data-profile="book32" aria-pressed="false">
             <span class="card-check" aria-hidden="true">✓</span>
             <span class="device-art" aria-hidden="true">
               <svg viewBox="0 0 180 118">
-                <rect x="14" y="14" width="152" height="90" rx="7"></rect>
-                <rect x="25" y="24" width="130" height="70" rx="2" class="screen"></rect>
-                <circle cx="90" cy="99" r="2.5" class="button-dot"></circle>
-                <path d="M47 48h62M47 58h78M47 68h68"></path>
-                <rect x="118" y="42" width="20" height="31" rx="2"></rect>
+                <g class="book32-device" transform="rotate(-4 90 59)">
+                  <rect x="51" y="4" width="78" height="110" rx="5"></rect>
+                  <rect x="72" y="11" width="50" height="96" rx="1" class="screen"></rect>
+                  <rect x="57" y="43" width="10" height="35" rx="1.5" class="device-button"></rect>
+                  <path d="M78 32h31M78 40h37M78 48h29"></path>
+                  <rect x="91" y="58" width="23" height="30" rx="2"></rect>
+                  <path d="M96 65h13M96 71h13M96 77h9"></path>
+                </g>
               </svg>
             </span>
             <span class="card-copy">
@@ -70,7 +73,7 @@
               </svg>
             </span>
             <span class="card-copy">
-              <strong>Book32 Sticky</strong>
+              <strong>Seeed Studio Sticky</strong>
               <span>3.97-inch touch e-paper</span>
               <small>Touch + three buttons · 800 × 480</small>
             </span>
@@ -89,9 +92,9 @@
 
         <button class="choice-card firmware-card selected" type="button" aria-pressed="true">
           <span class="card-check" aria-hidden="true">✓</span>
-          <span class="release-icon" aria-hidden="true">B32</span>
+          <span class="release-icon" aria-hidden="true">INK</span>
           <span class="card-copy">
-            <strong>Book32 1.2.5</strong>
+            <strong>InkDeck 1.2.5</strong>
             <span>Stable release</span>
             <small>Firmware + web interface · September 3, 2026</small>
           </span>
@@ -117,7 +120,7 @@
             </div>
             <button id="flash-button" class="flash-button" type="button" disabled>
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13 2 5 14h6l-1 8 9-13h-6z"></path></svg>
-              Flash Book32 1.2.5
+              Flash InkDeck 1.2.5
             </button>
           </div>
           <p id="flash-note" class="flash-note">Chrome or Edge will ask you to choose the device's serial port.</p>
@@ -128,7 +131,7 @@
         <div class="progress-header">
           <div>
             <p class="step-kicker">Installation status</p>
-            <h2 id="progress-title">Installing Book32 1.2.5…</h2>
+            <h2 id="progress-title">Installing InkDeck 1.2.5…</h2>
           </div>
           <strong id="progress-percent">0%</strong>
         </div>
@@ -137,7 +140,7 @@
         </div>
         <ol class="progress-steps">
           <li data-progress-step="connect"><span class="status-icon" aria-hidden="true"></span><div><strong>Connect to device</strong><small>Waiting for a serial port</small></div></li>
-          <li data-progress-step="download"><span class="status-icon" aria-hidden="true"></span><div><strong>Download Book32 files</strong><small>Waiting</small></div></li>
+          <li data-progress-step="download"><span class="status-icon" aria-hidden="true"></span><div><strong>Download InkDeck files</strong><small>Waiting</small></div></li>
           <li data-progress-step="write"><span class="status-icon" aria-hidden="true"></span><div><strong>Write system and web interface</strong><small>Waiting</small></div></li>
           <li data-progress-step="verify"><span class="status-icon" aria-hidden="true"></span><div><strong>Verify partition table</strong><small>Waiting</small></div></li>
           <li data-progress-step="reset"><span class="status-icon" aria-hidden="true"></span><div><strong>Restart device</strong><small>Waiting</small></div></li>
@@ -149,7 +152,7 @@
     <section class="information-grid" aria-label="Installation information">
       <article>
         <span class="info-icon" aria-hidden="true">↻</span>
-        <div><h2>Safe to update</h2><p>The installer refreshes Book32 system files without erasing Wi-Fi credentials, reading progress, or ebook storage.</p></div>
+        <div><h2>Safe to update</h2><p>The installer refreshes InkDeck system files without erasing Wi-Fi credentials, reading progress, or ebook storage.</p></div>
       </article>
       <article>
         <span class="info-icon" aria-hidden="true">✓</span>
@@ -164,10 +167,10 @@
   </main>
 
   <footer>
-    <span>Book32 by Rolohaun</span>
+    <span>InkDeck by Rolohaun</span>
     <a href="https://github.com/rolohaun/Book32/issues">Report a problem</a>
   </footer>
 
-  <script type="module" src="installer.js?v=web-2"></script>
+  <script type="module" src="installer.js?v=inkdeck-1"></script>
 </body>
 </html>

@@ -159,8 +159,8 @@ void DisplayMgr::showBootScreen(uint8_t progress, const char* status) {
             display.drawFastHLine(logoX + 72, logoY + 32, 34, GxEPD_BLACK);
             display.drawFastHLine(logoX + 72, logoY + 46, 28, GxEPD_BLACK);
 
-            drawCenteredText(display, DEVICE_NAME, &FreeSansBold24pt7b, titleY, GxEPD_BLACK);
-            drawCenteredText(display, "Starting Book32 OS", &FreeSans12pt7b, titleY + 42, GxEPD_BLACK);
+            drawCenteredText(display, "InkDeck", &FreeSansBold24pt7b, titleY, GxEPD_BLACK);
+            drawCenteredText(display, DEVICE_NAME, &FreeSans12pt7b, titleY + 42, GxEPD_BLACK);
 
             char versionText[20];
             snprintf(versionText, sizeof(versionText), "v%s", SYSTEM_VERSION);

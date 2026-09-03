@@ -196,7 +196,7 @@ void AppMainMenu::startHotspot() {
     if (_hotspotActive) return;
     if (isReaderActive()) return;
 
-    Serial.println("Main menu: starting Book32 management hotspot (offline)");
+    Serial.println("Main menu: starting InkDeck management hotspot (offline)");
     WiFi.mode(WIFI_AP_STA);  // AP serves the web UI; STA stays available for joining a network
     WiFi.softAP(AP_SSID);
     delay(100);  // Let the AP interface come up before binding the server
@@ -446,11 +446,11 @@ void AppMainMenu::draw() {
         display.setTextColor(GxEPD_BLACK);
 
         // === Title (only on full draw, persists on partial) ===
-        fontMgr.drawText(display, "Book32", 15, 35, FONT_SIZE_SUBTITLE, GxEPD_BLACK);
-        int book32Width = fontMgr.getTextWidth("Book32", FONT_SIZE_SUBTITLE);
+        fontMgr.drawText(display, "InkDeck", 15, 35, FONT_SIZE_SUBTITLE, GxEPD_BLACK);
+        int inkDeckWidth = fontMgr.getTextWidth("InkDeck", FONT_SIZE_SUBTITLE);
         char versionStr[16];
         snprintf(versionStr, sizeof(versionStr), " v%s", SYSTEM_VERSION);
-        fontMgr.drawText(display, versionStr, 15 + book32Width, 35, FONT_SIZE_SMALL, GxEPD_BLACK);
+        fontMgr.drawText(display, versionStr, 15 + inkDeckWidth, 35, FONT_SIZE_SMALL, GxEPD_BLACK);
 
         // === Battery Status (single cached read) ===
         BatteryStatus bat = BatteryMgr::getInstance().getStatus();

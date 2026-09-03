@@ -49,9 +49,9 @@ static void networkStartupTask(void* parameter) {
     if (!gWifiManager) gWifiManager = new WiFiManager();
     // Don't let the setup portal block forever when no known network is in
     // range. On timeout autoConnect returns false and the main menu brings up
-    // the Book32 management hotspot instead.
+    // the InkDeck management hotspot instead.
     gWifiManager->setConfigPortalTimeout(120);
-    bool connected = gWifiManager->autoConnect("Book32-Setup");
+    bool connected = gWifiManager->autoConnect("InkDeck-Setup");
 #endif
 
     if (!connected) {
@@ -111,7 +111,7 @@ void setup() {
 
     Serial.println("\n\n");
     Serial.println("╔═══════════════════════════════════════╗");
-    Serial.println("║         Book32 OS Starting...         ║");
+    Serial.println("║          InkDeck Starting...          ║");
     Serial.printf( "║  Build: %s %s  ║\n", __DATE__, __TIME__);
     Serial.println("╚═══════════════════════════════════════╝");
 

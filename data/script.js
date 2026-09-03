@@ -570,7 +570,7 @@ function connectWifi() {
                 .then(response => response.json())
                 .then(data => {
                     if (data.sta_connected) {
-                        status.textContent = `Connected! Book32 is online at ${data.sta_ip}. You can rejoin your home Wi-Fi on your phone.`;
+                        status.textContent = `Connected! InkDeck is online at ${data.sta_ip}. You can rejoin your home Wi-Fi on your phone.`;
                         status.style.color = 'var(--success)';
                         getWifiStatus();
                     } else if (tries++ < 15) {

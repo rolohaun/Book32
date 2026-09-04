@@ -542,17 +542,17 @@ void WebMgr::setupEndpoints() {
             DynamicJsonDocument savedDoc(256);
             if (!deserializeJson(savedDoc, file)) {
                 doc["refreshFrequency"] = savedDoc["refreshFrequency"] | READER_FULL_REFRESH_INTERVAL_DEFAULT;
-                doc["fontSize"] = savedDoc["fontSize"] | 9;
+                doc["fontSize"] = savedDoc["fontSize"] | READER_FONT_SIZE_DEFAULT;
                 doc["fontFamily"] = savedDoc["fontFamily"] | "native";
             } else {
                 doc["refreshFrequency"] = READER_FULL_REFRESH_INTERVAL_DEFAULT;
-                doc["fontSize"] = 9;           // Default (small)
+                doc["fontSize"] = READER_FONT_SIZE_DEFAULT;
                 doc["fontFamily"] = "native";
             }
             file.close();
         } else {
             doc["refreshFrequency"] = READER_FULL_REFRESH_INTERVAL_DEFAULT;
-            doc["fontSize"] = 9;           // Default (small)
+            doc["fontSize"] = READER_FONT_SIZE_DEFAULT;
             doc["fontFamily"] = "native";
         }
 
@@ -566,7 +566,7 @@ void WebMgr::setupEndpoints() {
             // Merge into the existing config so one setting doesn't wipe the other.
             DynamicJsonDocument doc(256);
             doc["refreshFrequency"] = READER_FULL_REFRESH_INTERVAL_DEFAULT;
-            doc["fontSize"] = 9;
+            doc["fontSize"] = READER_FONT_SIZE_DEFAULT;
             doc["fontFamily"] = "native";
             if (EbookFS.exists("/reader_config.json")) {
                 File existing = EbookFS.open("/reader_config.json", "r");
@@ -574,7 +574,7 @@ void WebMgr::setupEndpoints() {
                     DynamicJsonDocument savedDoc(256);
                     if (!deserializeJson(savedDoc, existing)) {
                         doc["refreshFrequency"] = savedDoc["refreshFrequency"] | READER_FULL_REFRESH_INTERVAL_DEFAULT;
-                        doc["fontSize"] = savedDoc["fontSize"] | 9;
+                        doc["fontSize"] = savedDoc["fontSize"] | READER_FONT_SIZE_DEFAULT;
                         doc["fontFamily"] = savedDoc["fontFamily"] | "native";
                     }
                     existing.close();

@@ -3,9 +3,12 @@
 #if defined(BOARD_SEEED_STICKY)
 
 #include "../../Book32_Core/AppMgr.h"
+#include "../../Book32_Core/BatteryMgr.h"
 #include "../../Book32_Core/DisplayMgr.h"
 #include "../../Book32_Core/FontMgr.h"
+#include "../../Book32_Core/Book32FS.h"
 #include "../../Book32_Web/WebMgr.h"
+#include <ArduinoJson.h>
 #include <WiFi.h>
 #include <esp_wifi.h>
 #include <algorithm>
@@ -18,6 +21,9 @@ constexpr int NETWORKS_PER_PAGE = 7;
 constexpr int KEYBOARD_TOP = 165;
 constexpr int KEY_HEIGHT = 55;
 constexpr int KEY_GAP = 5;
+constexpr int SETTINGS_TOP = 150;
+constexpr int SETTINGS_ROW_HEIGHT = 105;
+constexpr int SETTINGS_CARD_HEIGHT = 86;
 constexpr unsigned long CONNECT_TIMEOUT_MS = 20000;
 
 String fittedText(FontMgr& fontMgr, const String& value, int width, int fontSize) {
@@ -50,6 +56,16 @@ void drawSignalBars(Book32Display& display, int x, int y, int32_t rssi) {
     }
 }
 
+void drawSettingCard(Book32Display& display, FontMgr& fontMgr, int y,
+                     const char* label, const String& value) {
+    display.drawRoundRect(10, y, display.width() - 20, SETTINGS_CARD_HEIGHT, 8, GxEPD_BLACK);
+    fontMgr.drawText(display, label, 25, y + 33, FONT_SIZE_BODY, GxEPD_BLACK);
+    String clipped = fittedText(fontMgr, value, display.width() - 50, FONT_SIZE_SMALL);
+    fontMgr.drawText(display, clipped.c_str(), 25, y + 65, FONT_SIZE_SMALL, GxEPD_BLACK);
+    fontMgr.drawTextRight(display, ">", display.width() - 25, y + 51,
+                          FONT_SIZE_BODY, GxEPD_BLACK);
+}
+
 void drawKeyRow(Book32Display& display, FontMgr& fontMgr, const char* keys,
                 int y, bool uppercase) {
     int count = strlen(keys);
@@ -77,11 +93,9 @@ char keyAt(const char* keys, uint16_t x, bool uppercase) {
 }  // namespace
 
 void AppWifi::start() {
-    _view = NETWORK_LIST;
+    _view = SETTINGS_HOME;
     _page = 0;
-    _status = WiFi.status() == WL_CONNECTED
-                  ? String("Connected to ") + WiFi.SSID()
-                  : "Choose a network";
+    _status = "";
     _connecting = false;
     _uppercase = false;
     _symbols = false;
@@ -92,7 +106,7 @@ void AppWifi::start() {
     InputMgr::getInstance().setCallback(std::bind(&AppWifi::handleInput, this, std::placeholders::_1));
     InputMgr::getInstance().setTouchCallback(std::bind(&AppWifi::handleTouch, this,
                                                        std::placeholders::_1, std::placeholders::_2));
-    startScan();
+    loadDeviceSettings();
 }
 
 void AppWifi::stop() {
@@ -122,8 +136,112 @@ void AppWifi::handleInput(InputAction action) {
     if (action == INPUT_SELECT || action == INPUT_BACK) returnToMenu();
 }
 
+void AppWifi::loadDeviceSettings() {
+    _sleepTimeoutMinutes = 0;
+    _sleepMessage = "Press button to wake";
+    _fontSizePt = 18;
+    _rotation = DisplayMgr::getInstance().getRotation();
+
+    if (EbookFS.exists("/sleep_config.json")) {
+        File file = EbookFS.open("/sleep_config.json", "r");
+        if (file) {
+            DynamicJsonDocument doc(512);
+            if (!deserializeJson(doc, file)) {
+                _sleepTimeoutMinutes = doc["sleepTimeout"] | 0;
+                _sleepMessage = doc["sleepMessage"] | "Press button to wake";
+            }
+            file.close();
+        }
+    }
+
+    File readerFile;
+    if (EbookFS.exists("/reader_config.json")) readerFile = EbookFS.open("/reader_config.json", "r");
+    else if (SystemFS.exists("/reader_config.json")) readerFile = SystemFS.open("/reader_config.json", "r");
+    if (readerFile) {
+        DynamicJsonDocument doc(256);
+        if (!deserializeJson(doc, readerFile)) {
+            int size = doc["fontSize"] | 18;
+            _fontSizePt = size >= 18 ? 18 : (size >= 12 ? 12 : 9);
+        }
+        readerFile.close();
+    }
+}
+
+void AppWifi::showSettingsHome(const String& status) {
+    loadDeviceSettings();
+    _view = SETTINGS_HOME;
+    _status = status;
+    _fullRefresh = true;
+    _passwordOnlyRedraw = false;
+    _needsRedraw = true;
+}
+
+void AppWifi::saveSleepSettings() {
+    DynamicJsonDocument doc(512);
+    doc["sleepTimeout"] = _sleepTimeoutMinutes;
+    doc["sleepMessage"] = _sleepMessage;
+    File file = EbookFS.open("/sleep_config.json", FILE_WRITE);
+    if (!file) {
+        _status = "Could not save sleep settings";
+        return;
+    }
+    serializeJson(doc, file);
+    file.close();
+    BatteryMgr::getInstance().loadSleepSettings();
+    _status = "Sleep settings saved";
+}
+
+void AppWifi::saveReaderFontSize() {
+    DynamicJsonDocument doc(256);
+    doc["refreshFrequency"] = READER_FULL_REFRESH_INTERVAL_DEFAULT;
+    doc["fontSize"] = 18;
+    doc["fontFamily"] = "native";
+    if (EbookFS.exists("/reader_config.json")) {
+        File existing = EbookFS.open("/reader_config.json", "r");
+        if (existing) {
+            DynamicJsonDocument savedDoc(256);
+            if (!deserializeJson(savedDoc, existing)) {
+                doc["refreshFrequency"] = savedDoc["refreshFrequency"] | READER_FULL_REFRESH_INTERVAL_DEFAULT;
+                doc["fontSize"] = savedDoc["fontSize"] | READER_FONT_SIZE_DEFAULT;
+                doc["fontFamily"] = savedDoc["fontFamily"] | "native";
+            }
+            existing.close();
+        }
+    }
+    doc["fontSize"] = _fontSizePt;
+    File file = EbookFS.open("/reader_config.json", FILE_WRITE);
+    if (!file) {
+        _status = "Could not save reading size";
+        return;
+    }
+    serializeJson(doc, file);
+    file.close();
+    for (auto* app : AppMgr::getInstance().getApps()) {
+        if (strcmp(app->getName(), "eReader") == 0) {
+            app->applyFontSize(_fontSizePt);
+            break;
+        }
+    }
+    _status = "Reading size saved";
+}
+
+void AppWifi::saveDisplayRotation() {
+    DynamicJsonDocument doc(128);
+    doc["rotation"] = _rotation;
+    File file = EbookFS.open("/display_config.json", FILE_WRITE);
+    if (!file) {
+        _status = "Could not save orientation";
+        return;
+    }
+    serializeJson(doc, file);
+    file.close();
+    DisplayMgr::getInstance().setRotation(_rotation);
+    _status = "Orientation saved";
+}
+
 void AppWifi::startScan() {
     if (_connecting) return;
+    _view = NETWORK_LIST;
     esp_wifi_scan_stop();
     WiFi.scanDelete();
     if (WiFi.status() != WL_CONNECTED) {
@@ -210,8 +328,10 @@ void AppWifi::beginConnect() {
 }
 
 void AppWifi::appendKey(char key) {
-    if (!key || _password.length() >= 63 || _connecting) return;
-    _password += key;
+    String& value = _view == MESSAGE_KEYBOARD ? _messageDraft : _password;
+    size_t maxLength = _view == MESSAGE_KEYBOARD ? 80 : 63;
+    if (!key || value.length() >= maxLength || _connecting) return;
+    value += key;
     if (_uppercase && key >= 'A' && key <= 'Z') {
         // Shift is one-shot, like a phone keyboard.
         _uppercase = false;
@@ -224,10 +344,58 @@ void AppWifi::appendKey(char key) {
 }
 
 void AppWifi::handleTouch(uint16_t x, uint16_t y) {
+    if (_view == SETTINGS_HOME) {
+        if (y >= 55 && y < 112) {
+            returnToMenu();
+            return;
+        }
+        if (y < SETTINGS_TOP) return;
+        int row = (y - SETTINGS_TOP) / SETTINGS_ROW_HEIGHT;
+        int withinRow = (y - SETTINGS_TOP) % SETTINGS_ROW_HEIGHT;
+        if (row < 0 || row > 4 || withinRow >= SETTINGS_CARD_HEIGHT) return;
+
+        if (row == 0) {
+            startScan();
+        } else if (row == 1) {
+            const int choices[] = {0, 1, 5, 10, 15, 30, 60};
+            int next = choices[0];
+            for (size_t i = 0; i < sizeof(choices) / sizeof(choices[0]); ++i) {
+                if (_sleepTimeoutMinutes == choices[i]) {
+                    next = choices[(i + 1) % (sizeof(choices) / sizeof(choices[0]))];
+                    break;
+                }
+            }
+            _sleepTimeoutMinutes = next;
+            saveSleepSettings();
+            _fullRefresh = true;
+            _needsRedraw = true;
+        } else if (row == 2) {
+            _messageDraft = _sleepMessage;
+            _uppercase = false;
+            _symbols = false;
+            _view = MESSAGE_KEYBOARD;
+            _status = "Type the message shown during sleep";
+            _fullRefresh = true;
+            _passwordOnlyRedraw = false;
+            _needsRedraw = true;
+        } else if (row == 3) {
+            _fontSizePt = _fontSizePt == 9 ? 12 : (_fontSizePt == 12 ? 18 : 9);
+            saveReaderFontSize();
+            _fullRefresh = true;
+            _needsRedraw = true;
+        } else {
+            _rotation = _rotation == 3 ? 1 : 3;
+            saveDisplayRotation();
+            _fullRefresh = true;
+            _needsRedraw = true;
+        }
+        return;
+    }
+
     if (_view == NETWORK_LIST) {
         if (_connecting) return;
         if (y >= 55 && y < 112) {
-            if (x < SCREEN_WIDTH / 2) returnToMenu();
+            if (x < SCREEN_WIDTH / 2) showSettingsHome();
             else startScan();
             return;
         }
@@ -248,11 +416,11 @@ void AppWifi::handleTouch(uint16_t x, uint16_t y) {
     }
 
     if (_view == CONNECTION_RESULT) {
-        if (y >= 640) returnToMenu();
+        if (y >= 640) showSettingsHome();
         return;
     }
 
-    if (y >= 88 && y < 145 && x >= 355) {
+    if (_view == PASSWORD_KEYBOARD && y >= 88 && y < 145 && x >= 355) {
         _showPassword = !_showPassword;
         _fullRefresh = true;
         _passwordOnlyRedraw = false;
@@ -273,6 +441,7 @@ void AppWifi::handleTouch(uint16_t x, uint16_t y) {
     }
 
     if (y >= 410 && y < 470) {
+        String& value = _view == MESSAGE_KEYBOARD ? _messageDraft : _password;
         if (x < 90) {
             _symbols = !_symbols;
             _fullRefresh = true;
@@ -285,8 +454,8 @@ void AppWifi::handleTouch(uint16_t x, uint16_t y) {
             _needsRedraw = true;
         } else if (x < 360) {
             appendKey(' ');
-        } else if (_password.length() > 0) {
-            _password.remove(_password.length() - 1);
+        } else if (value.length() > 0) {
+            value.remove(value.length() - 1);
             _fullRefresh = true;
             _passwordOnlyRedraw = false;
             _needsRedraw = true;
@@ -296,16 +465,24 @@ void AppWifi::handleTouch(uint16_t x, uint16_t y) {
 
     if (y >= 490 && y < 555) {
         if (x < 150) {
-            _view = NETWORK_LIST;
-            _status = "Tap a network to connect";
-            _fullRefresh = true;
-            _passwordOnlyRedraw = false;
-            _needsRedraw = true;
+            if (_view == MESSAGE_KEYBOARD) showSettingsHome();
+            else {
+                _view = NETWORK_LIST;
+                _status = "Tap a network to connect";
+                _fullRefresh = true;
+                _passwordOnlyRedraw = false;
+                _needsRedraw = true;
+            }
         } else if (x < 270) {
-            _password = "";
+            if (_view == MESSAGE_KEYBOARD) _messageDraft = "";
+            else _password = "";
             _fullRefresh = true;
             _passwordOnlyRedraw = false;
             _needsRedraw = true;
+        } else if (_view == MESSAGE_KEYBOARD) {
+            _sleepMessage = _messageDraft;
+            saveSleepSettings();
+            showSettingsHome("Sleep message saved");
         } else {
             beginConnect();
         }
@@ -353,9 +530,52 @@ void AppWifi::update() {
 void AppWifi::draw() {
     if (!_needsRedraw) return;
     _needsRedraw = false;
-    if (_view == NETWORK_LIST) drawNetworkList();
-    else if (_view == PASSWORD_KEYBOARD) drawKeyboard();
+    if (_view == SETTINGS_HOME) drawSettingsHome();
+    else if (_view == NETWORK_LIST) drawNetworkList();
+    else if (_view == PASSWORD_KEYBOARD || _view == MESSAGE_KEYBOARD) drawKeyboard();
     else drawConnectionResult();
+}
+
+void AppWifi::drawSettingsHome() {
+    Book32Display& display = DisplayMgr::getInstance().getDisplay();
+    FontMgr& fontMgr = FontMgr::getInstance();
+    if (_fullRefresh) display.setFullWindow();
+    else display.setPartialWindow(0, 0, display.width(), display.height());
+    _fullRefresh = false;
+
+    String wifiValue = WiFi.status() == WL_CONNECTED
+                           ? String("Connected: ") + WiFi.SSID()
+                           : "Choose a wireless network";
+    String timeoutValue = _sleepTimeoutMinutes == 0
+                              ? "Off"
+                              : String(_sleepTimeoutMinutes) + (_sleepTimeoutMinutes == 1 ? " minute" : " minutes");
+    String fontValue = _fontSizePt == 18 ? "Large" : (_fontSizePt == 12 ? "Medium" : "Small");
+    String rotationValue = _rotation == 3 ? "Buttons on left" : "Buttons on right";
+
+    display.firstPage();
+    do {
+        display.fillScreen(GxEPD_WHITE);
+        fontMgr.drawText(display, "Settings", 15, 35, FONT_SIZE_SUBTITLE, GxEPD_BLACK);
+        display.drawLine(0, 50, display.width(), 50, GxEPD_BLACK);
+        drawCenteredButton(display, fontMgr, 10, 58, display.width() - 20, 52, "< Back to Menu");
+        if (_status.length()) {
+            String status = fittedText(fontMgr, _status, display.width() - 30, FONT_SIZE_SMALL);
+            fontMgr.drawTextCentered(display, status.c_str(), 132, FONT_SIZE_SMALL, GxEPD_BLACK);
+        }
+
+        drawSettingCard(display, fontMgr, SETTINGS_TOP + SETTINGS_ROW_HEIGHT * 0,
+                        "Wi-Fi", wifiValue);
+        drawSettingCard(display, fontMgr, SETTINGS_TOP + SETTINGS_ROW_HEIGHT * 1,
+                        "Sleep timeout", timeoutValue);
+        drawSettingCard(display, fontMgr, SETTINGS_TOP + SETTINGS_ROW_HEIGHT * 2,
+                        "Sleep message", _sleepMessage);
+        drawSettingCard(display, fontMgr, SETTINGS_TOP + SETTINGS_ROW_HEIGHT * 3,
+                        "Reading size", fontValue);
+        drawSettingCard(display, fontMgr, SETTINGS_TOP + SETTINGS_ROW_HEIGHT * 4,
+                        "Orientation", rotationValue);
+        fontMgr.drawTextCentered(display, "Tap a setting to change it", 760,
+                                 FONT_SIZE_SMALL, GxEPD_BLACK);
+    } while (display.nextPage());
 }
 
 void AppWifi::drawNetworkList() {
@@ -370,7 +590,7 @@ void AppWifi::drawNetworkList() {
         display.fillScreen(GxEPD_WHITE);
         fontMgr.drawText(display, "Wi-Fi Setup", 15, 35, FONT_SIZE_SUBTITLE, GxEPD_BLACK);
         display.drawLine(0, 50, display.width(), 50, GxEPD_BLACK);
-        drawCenteredButton(display, fontMgr, 10, 58, 220, 52, "< Back");
+        drawCenteredButton(display, fontMgr, 10, 58, 220, 52, "< Settings");
         drawCenteredButton(display, fontMgr, 250, 58, 220, 52, _scanning ? "Scanning..." : "Rescan");
         String status = fittedText(fontMgr, _status, display.width() - 30, FONT_SIZE_SMALL);
         fontMgr.drawTextCentered(display, status.c_str(), 145, FONT_SIZE_SMALL, GxEPD_BLACK);
@@ -418,19 +638,24 @@ void AppWifi::drawKeyboard() {
     display.firstPage();
     do {
         display.fillScreen(GxEPD_WHITE);
-        String title = fittedText(fontMgr, String("Join ") + _selectedSsid,
-                                  display.width() - 30, FONT_SIZE_SUBTITLE);
+        bool messageMode = _view == MESSAGE_KEYBOARD;
+        String title = messageMode ? "Sleep message" : String("Join ") + _selectedSsid;
+        title = fittedText(fontMgr, title, display.width() - 30, FONT_SIZE_SUBTITLE);
         fontMgr.drawText(display, title.c_str(), 15, 35, FONT_SIZE_SUBTITLE, GxEPD_BLACK);
         display.drawLine(0, 50, display.width(), 50, GxEPD_BLACK);
 
-        display.drawRect(10, 88, 335, 57, GxEPD_BLACK);
+        int inputWidth = messageMode ? display.width() - 20 : 335;
+        display.drawRect(10, 88, inputWidth, 57, GxEPD_BLACK);
         String shown;
-        if (_showPassword) shown = _password;
+        if (messageMode) shown = _messageDraft;
+        else if (_showPassword) shown = _password;
         else for (size_t i = 0; i < _password.length(); ++i) shown += '*';
-        shown = fittedText(fontMgr, shown, 310, FONT_SIZE_BODY);
+        shown = fittedText(fontMgr, shown, inputWidth - 25, FONT_SIZE_BODY);
         fontMgr.drawText(display, shown.c_str(), 22, 124, FONT_SIZE_BODY, GxEPD_BLACK);
-        drawCenteredButton(display, fontMgr, 355, 88, 115, 57,
-                           _showPassword ? "Hide" : "Show");
+        if (!messageMode) {
+            drawCenteredButton(display, fontMgr, 355, 88, 115, 57,
+                               _showPassword ? "Hide" : "Show");
+        }
 
         const char* letterRows[] = {"1234567890", "qwertyuiop", "asdfghjkl", "zxcvbnm"};
         const char* symbolRows[] = {"1234567890", "!@#$%^&*()", "-_=+[]{}\\|", "`~;:'\",.<>/?"};
@@ -447,7 +672,7 @@ void AppWifi::drawKeyboard() {
         drawCenteredButton(display, fontMgr, 10, 490, 130, 65, "Cancel");
         drawCenteredButton(display, fontMgr, 150, 490, 110, 65, "Clear");
         drawCenteredButton(display, fontMgr, 270, 490, 200, 65,
-                           _connecting ? "Connecting..." : "Connect", true);
+                           messageMode ? "Save" : (_connecting ? "Connecting..." : "Connect"), true);
         String status = fittedText(fontMgr, _status, display.width() - 30, FONT_SIZE_BODY);
         fontMgr.drawTextCentered(display, status.c_str(), 605, FONT_SIZE_BODY, GxEPD_BLACK);
         fontMgr.drawTextCentered(display, "Power button: back to menu", 770,
@@ -472,7 +697,7 @@ void AppWifi::drawConnectionResult() {
                                  FONT_SIZE_BODY, GxEPD_BLACK);
         fontMgr.drawTextCentered(display, "Password saved for future starts", 390,
                                  FONT_SIZE_SMALL, GxEPD_BLACK);
-        drawCenteredButton(display, fontMgr, 70, 640, 340, 75, "Back to Menu", true,
+        drawCenteredButton(display, fontMgr, 70, 640, 340, 75, "Back to Settings", true,
                            FONT_SIZE_BODY);
     } while (display.nextPage());
 }

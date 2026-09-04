@@ -47,25 +47,26 @@ static bool isReaderActive() {
 
 #if defined(BOARD_SEEED_STICKY)
 static void drawThickLine(Book32Display& display, int x1, int y1, int x2, int y2) {
-    for (int offset = -2; offset <= 2; ++offset) {
+    for (int offset = -2; offset <= 2; ++offset)
+        display.drawLine(x1 + offset, y1, x2 + offset, y2, GxEPD_BLACK);
+    for (int offset = -2; offset <= 2; ++offset)
         display.drawLine(x1, y1 + offset, x2, y2 + offset, GxEPD_BLACK);
-    }
 }
 
-static void drawWifiMenuIcon(Book32Display& display, int x, int y) {
-    // A bold, bitmap-free Wi-Fi glyph sized for the 160 px menu tile.
+static void drawSettingsMenuIcon(Book32Display& display, int x, int y) {
+    // Bold bitmap-free gear for the touch-only Settings tile.
     const int cx = x + 80;
-    drawThickLine(display, x + 18, y + 56, x + 42, y + 40);
-    drawThickLine(display, x + 42, y + 40, cx, y + 31);
-    drawThickLine(display, cx, y + 31, x + 118, y + 40);
-    drawThickLine(display, x + 118, y + 40, x + 142, y + 56);
-    drawThickLine(display, x + 42, y + 82, x + 60, y + 69);
-    drawThickLine(display, x + 60, y + 69, cx, y + 64);
-    drawThickLine(display, cx, y + 64, x + 100, y + 69);
-    drawThickLine(display, x + 100, y + 69, x + 118, y + 82);
-    drawThickLine(display, x + 65, y + 108, cx, y + 98);
-    drawThickLine(display, cx, y + 98, x + 95, y + 108);
-    display.fillCircle(cx, y + 128, 10, GxEPD_BLACK);
+    const int cy = y + 80;
+    for (int radius = 46; radius <= 50; ++radius) display.drawCircle(cx, cy, radius, GxEPD_BLACK);
+    for (int radius = 17; radius <= 21; ++radius) display.drawCircle(cx, cy, radius, GxEPD_BLACK);
+    drawThickLine(display, cx, y + 9, cx, y + 30);
+    drawThickLine(display, cx, y + 130, cx, y + 151);
+    drawThickLine(display, x + 9, cy, x + 30, cy);
+    drawThickLine(display, x + 130, cy, x + 151, cy);
+    drawThickLine(display, x + 29, y + 29, x + 44, y + 44);
+    drawThickLine(display, x + 116, y + 116, x + 131, y + 131);
+    drawThickLine(display, x + 116, y + 44, x + 131, y + 29);
+    drawThickLine(display, x + 29, y + 131, x + 44, y + 116);
 }
 #endif
 
@@ -98,9 +99,6 @@ void AppMainMenu::updateCheckTask(void* parameter) {
         self->_updateAvailable = info.available;
         if (info.available) {
             self->_updateVersion = info.version;
-#if defined(BOARD_SEEED_STICKY)
-            self->_firstDraw = true; // Cleanly replace the Wi-Fi tile.
-#endif
             self->_needsRedraw = true; // Trigger redraw to show icon
         } else {
             self->_updateVersion = "";
@@ -129,10 +127,10 @@ void AppMainMenu::wifiWakeTask(void* parameter) {
     while (WiFi.status() != WL_CONNECTED && attempts < 40) {
 #if defined(BOARD_SEEED_STICKY)
         App* current = AppMgr::getInstance().getCurrentApp();
-        if (current && strcmp(current->getName(), "Wi-Fi") == 0) {
+        if (current && strcmp(current->getName(), "Settings") == 0) {
             self->_wifiStarting = false;
             self->_wifiTaskHandle = nullptr;
-            Serial.println("Main menu WiFi wake handed radio to Wi-Fi app");
+            Serial.println("Main menu WiFi wake handed radio to Settings app");
             vTaskDelete(NULL);
             return;
         }
@@ -163,7 +161,7 @@ void AppMainMenu::wifiWakeTask(void* parameter) {
 #if !defined(BOARD_SEEED_STICKY)
         if (!isReaderActive()) self->startHotspot();
 #else
-        Serial.println("Sticky is offline; use the on-device Wi-Fi app");
+        Serial.println("Sticky is offline; use Wi-Fi inside the on-device Settings app");
 #endif
         self->_wifiStarting = false;
         self->_footerOnlyRedraw = true;
@@ -292,7 +290,6 @@ void AppMainMenu::handleTouch(uint16_t x, uint16_t y) {
     std::vector<App*>& apps = appMgr.getApps();
 #if defined(BOARD_SEEED_STICKY)
     int maxSelectable = static_cast<int>(apps.size()) - 1;
-    int updateIndex = maxSelectable; // Wi-Fi occupies the replaceable fourth tile.
 #else
     int maxSelectable = static_cast<int>(apps.size()) - 1 + (_updateAvailable ? 1 : 0);
     int updateIndex = static_cast<int>(apps.size());
@@ -302,11 +299,15 @@ void AppMainMenu::handleTouch(uint16_t x, uint16_t y) {
         if (x >= rect.x && x < rect.x + rect.w && y >= rect.y && y < rect.y + rect.h) {
             selectedIndex = index;
             playMenuTouchBeep();
+#if defined(BOARD_SEEED_STICKY)
+            if (index < static_cast<int>(apps.size())) appMgr.switchTo(index);
+#else
             if (_updateAvailable && index == updateIndex) {
                 GitHubMgr::getInstance().triggerUpdate(SYSTEM_VERSION);
             } else if (index < static_cast<int>(apps.size())) {
                 appMgr.switchTo(index);
             }
+#endif
             return;
         }
     }
@@ -321,16 +322,17 @@ void AppMainMenu::forceRedraw() {
 }
 
 void AppMainMenu::handleInput(InputAction action) {
+#if defined(BOARD_SEEED_STICKY)
+    // Sticky launches apps directly by touch; its hardware buttons are used as
+    // back controls inside apps rather than navigating an invisible selection.
+    (void)action;
+    return;
+#else
     AppMgr& appMgr = AppMgr::getInstance();
     std::vector<App*>& apps = appMgr.getApps();
-    
-#if defined(BOARD_SEEED_STICKY)
-    int maxSelectable = static_cast<int>(apps.size()) - 1;
-    int updateIndex = maxSelectable;
-#else
+
     int maxSelectable = apps.size() - 1 + (_updateAvailable ? 1 : 0);
     int updateIndex = static_cast<int>(apps.size());
-#endif
 
     if (action == INPUT_NEXT) {
         _previousSelectedIndex = selectedIndex;
@@ -349,6 +351,7 @@ void AppMainMenu::handleInput(InputAction action) {
             appMgr.switchTo(selectedIndex);
         }
     }
+#endif
 }
 
 void AppMainMenu::update() {
@@ -482,13 +485,6 @@ void AppMainMenu::draw() {
             if (i == 0) continue;
 
             App* app = apps[i];
-#if defined(BOARD_SEEED_STICKY)
-            bool updateReplacement = _updateAvailable &&
-                                     i == apps.size() - 1 &&
-                                     strcmp(app->getName(), "Wi-Fi") == 0;
-#else
-            bool updateReplacement = false;
-#endif
             int idx = i - 1;
             int col = idx % COLS;
             int row = idx / COLS;
@@ -496,24 +492,26 @@ void AppMainMenu::draw() {
             int x = col * colWidth + (colWidth - ICON_SIZE) / 2;
             int y = START_Y + row * ROW_HEIGHT;
 
+#if !defined(BOARD_SEEED_STICKY)
             if ((int)i == selectedIndex) {
                 display.drawRect(x - 8, y - 8, ICON_SIZE + 16, ICON_SIZE + 16, GxEPD_BLACK);
                 display.drawRect(x - 7, y - 7, ICON_SIZE + 14, ICON_SIZE + 14, GxEPD_BLACK);
             }
+#endif
 
-            const uint8_t* icon = updateReplacement ? icon_update_160x160 : app->getIconImage();
+            const uint8_t* icon = app->getIconImage();
             if (icon) {
                 display.drawBitmap(x, y, icon, ICON_SIZE, ICON_SIZE, GxEPD_BLACK);
 #if defined(BOARD_SEEED_STICKY)
-            } else if (strcmp(app->getName(), "Wi-Fi") == 0) {
-                drawWifiMenuIcon(display, x, y);
+            } else if (strcmp(app->getName(), "Settings") == 0) {
+                drawSettingsMenuIcon(display, x, y);
 #endif
             } else {
                 display.drawRect(x, y, ICON_SIZE, ICON_SIZE, GxEPD_BLACK);
             }
 
 #if defined(BOARD_SEEED_STICKY)
-            String name = updateReplacement ? String("Update ") + _updateVersion : app->getName();
+            String name = app->getName();
             int nameWidth = fontMgr.getTextWidth(name.c_str(), FONT_SIZE_MENU);
             int nameX = x + (ICON_SIZE - nameWidth) / 2;
             fontMgr.drawText(display, name.c_str(), nameX, y + ICON_SIZE + 25, FONT_SIZE_MENU, GxEPD_BLACK);
@@ -525,8 +523,8 @@ void AppMainMenu::draw() {
 #endif
         }
         
-        // The original Book32 keeps its virtual update tile. On Sticky the
-        // update action temporarily replaces the fourth (Wi-Fi) tile.
+        // The original Book32 keeps its virtual update tile. Sticky keeps its
+        // fourth tile dedicated to Settings and installs updates from the web UI.
 #if !defined(BOARD_SEEED_STICKY)
         if (_updateAvailable) {
             int i = apps.size(); // Index for update app (virtual index)

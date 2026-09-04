@@ -1,218 +1,120 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#0d1117">
     <title>InkDeck</title>
     <link rel="stylesheet" href="style.css">
-    <!-- Using system sans-serif to match FreeSans on the e-reader -->
 </head>
-
 <body>
-    <div class="container">
-        <nav class="sidebar">
-            <div class="brand">InkDeck <span style="font-size: 0.5em; opacity: 0.7;">by Rolohaun</span></div>
-            <ul class="nav-links">
-                <li class="active" onclick="showTab('dashboard')">Dashboard</li>
-                <li onclick="showTab('ereader')">Ereader</li>
-                <li onclick="showTab('klipper')">Klipper</li>
-                <li onclick="showTab('todo')">Todo</li>
-                <li onclick="showTab('settings')">Settings</li>
-            </ul>
-            <div class="version">v<span id="version-display">1.2</span></div>
-        </nav>
+    <div class="app-shell">
+        <aside class="sidebar">
+            <a class="brand" href="#" onclick="showTab('dashboard'); return false;" aria-label="InkDeck dashboard">
+                <span class="brand-mark" aria-hidden="true">ID</span>
+                <span><strong>InkDeck</strong><small>by Rolohaun</small></span>
+            </a>
+            <nav aria-label="InkDeck sections">
+                <ul class="nav-links">
+                    <li><button class="active" data-tab="dashboard" onclick="showTab('dashboard')"><span>⌂</span>Dashboard</button></li>
+                    <li><button data-tab="ereader" onclick="showTab('ereader')"><span>▤</span>Ereader</button></li>
+                    <li><button data-tab="klipper" onclick="showTab('klipper')"><span>◫</span>Klipper</button></li>
+                    <li><button data-tab="todo" onclick="showTab('todo')"><span>✓</span>Todo</button></li>
+                    <li><button data-tab="settings" onclick="showTab('settings')"><span>⚙</span>Settings</button></li>
+                </ul>
+            </nav>
+            <div class="version">InkDeck v<span id="version-display">1.2.7</span></div>
+        </aside>
 
         <main class="content">
             <header class="top-bar">
-                <div class="battery-status">
-                    <span id="header-voltage"></span>
-                    <i class="battery-icon" id="battery-icon" data-level="100"></i>
-                </div>
+                <div class="page-brand">InkDeck <span>device manager</span></div>
+                <div class="battery-status" aria-label="Battery status"><span id="header-voltage">--</span><i class="battery-icon" id="battery-icon" data-level="100"></i></div>
             </header>
 
-            <!-- Dashboard Tab -->
             <section id="dashboard" class="tab-content active">
-                <h1>System Status</h1>
+                <div class="page-heading"><p class="eyebrow">Device overview</p><h1>System status</h1><p>See the essentials at a glance.</p></div>
                 <div class="stats-grid">
-                    <div class="card stat">
-                        <h3>Battery</h3>
-                        <p id="battery-val">--%</p>
-                    </div>
-                    <div class="card stat">
-                        <h3>Uptime</h3>
-                        <p id="uptime-val">--</p>
-                    </div>
-                    <div class="card stat">
-                        <h3>Free Space</h3>
-                        <p id="freespace-val">--</p>
-                    </div>
+                    <article class="card stat"><span class="stat-icon">↯</span><div><h3>Battery</h3><p id="battery-val">--%</p></div></article>
+                    <article class="card stat"><span class="stat-icon">◷</span><div><h3>Uptime</h3><p id="uptime-val">--</p></div></article>
+                    <article class="card stat"><span class="stat-icon">▰</span><div><h3>Free space</h3><p id="freespace-val">--</p></div></article>
                 </div>
             </section>
 
-            <!-- Ereader Tab -->
             <section id="ereader" class="tab-content">
-                <h1>Ereader Library</h1>
+                <div class="page-heading"><p class="eyebrow">Reading</p><h1>Ereader library</h1><p>Choose how books look and manage your EPUB collection.</p></div>
+                <article class="card section-card">
+                    <div class="card-heading"><div><h2>Reader appearance</h2><p>Selections apply to book text and reflow pages automatically.</p></div></div>
+                    <fieldset class="choice-fieldset">
+                        <legend>Reading font</legend>
+                        <div class="choice-grid two-up">
+                            <label class="choice-card font-choice" for="font-native"><input type="radio" id="font-native" name="font-family" value="native" checked><span class="choice-check">✓</span><span class="font-preview native-preview">Ag</span><strong>Native</strong><small>Built-in FreeSans</small></label>
+                            <label class="choice-card font-choice" for="font-open-sans"><input type="radio" id="font-open-sans" name="font-family" value="openSans"><span class="choice-check">✓</span><span class="font-preview open-sans-preview">Ag</span><strong>Open Sans</strong><small>Clean and highly readable</small></label>
+                        </div>
+                    </fieldset>
+                    <fieldset class="choice-fieldset">
+                        <legend>Reading size</legend>
+                        <div class="choice-grid three-up">
+                            <label class="choice-card size-choice" for="font-small"><input type="radio" id="font-small" name="font-size" value="9"><span class="choice-check">✓</span><span class="size-preview small">Aa</span><strong>Small</strong></label>
+                            <label class="choice-card size-choice" for="font-medium"><input type="radio" id="font-medium" name="font-size" value="12" checked><span class="choice-check">✓</span><span class="size-preview medium">Aa</span><strong>Medium</strong></label>
+                            <label class="choice-card size-choice" for="font-large"><input type="radio" id="font-large" name="font-size" value="18"><span class="choice-check">✓</span><span class="size-preview large">Aa</span><strong>Large</strong></label>
+                        </div>
+                    </fieldset>
+                    <div class="inline-setting"><div><label for="refresh-rate">Full refresh interval</label><p>Clear the display completely after this many page turns.</p></div><div class="number-control"><input type="number" id="refresh-rate" min="1" max="100" value="15"><span>pages</span></div></div>
+                    <div class="action-row"><button class="btn primary" onclick="saveReaderSettings()">Save reader settings</button><div id="reader-settings-status" class="status-msg" role="status"></div></div>
+                </article>
 
-                <div class="card">
-                    <h3>Reader Options</h3>
-                    <div class="setting-row">
-                        <label for="font-family">Reading Font</label>
-                        <select id="font-family" style="margin-left: 10px;">
-                            <option value="native">Native</option>
-                            <option value="openSans">Open Sans</option>
-                        </select>
-                    </div>
-                    <div class="setting-row">
-                        <label for="font-size">Reading Font Size</label>
-                        <select id="font-size" style="margin-left: 10px;">
-                            <option value="9">Small</option>
-                            <option value="12">Medium</option>
-                            <option value="18">Large</option>
-                        </select>
-                    </div>
-                    <p class="hint">Applies to the book text. A larger size fits fewer words per page; pages reflow automatically.</p>
-                    <div class="setting-row">
-                        <label for="refresh-rate">Full Refresh Interval (Pages)</label>
-                        <input type="number" id="refresh-rate" min="1" max="100" value="15" style="width: 60px;">
-                    </div>
-                    <button class="btn secondary" onclick="saveReaderSettings()">Save Settings</button>
-                    <div id="reader-settings-status" class="status-msg"></div>
-                </div>
+                <article class="card section-card compact-card">
+                    <div><h2>Reading progress</h2><p id="reader-progress-status" class="hint">Loading saved position…</p></div>
+                    <button class="btn danger-outline" onclick="resetReaderProgress()">Reset reading progress</button>
+                    <div id="reader-progress-reset-status" class="status-msg" role="status"></div>
+                </article>
 
-                <div class="card">
-                    <h3>Reading Progress</h3>
-                    <p id="reader-progress-status" class="hint">Loading saved position...</p>
-                    <button class="btn secondary" onclick="resetReaderProgress()">Reset Reading Progress</button>
-                    <div id="reader-progress-reset-status" class="status-msg"></div>
-                </div>
-
-                <div class="card">
-                    <h3>Upload Book</h3>
-                    <p class="hint">Upload EPUB books directly</p>
-                    <input type="file" id="book-file" accept=".epub,.ttf">
-                    <button class="btn primary" onclick="uploadBook()">Upload</button>
-                    <div id="upload-progress" class="progress-container hidden">
-                        <div id="upload-progress-bar" class="progress-bar"></div>
-                    </div>
-                    <div id="upload-status"></div>
-                </div>
-
-                <div class="card">
-                    <h3>Your Books</h3>
-                    <div id="book-list">
-                        <!-- Books injected by JS -->
-                    </div>
+                <div class="content-grid">
+                    <article class="card section-card"><div class="card-heading"><div><h2>Upload a book</h2><p>Add EPUB files to your reader.</p></div></div><input type="file" id="book-file" accept=".epub,.ttf"><button class="btn primary" onclick="uploadBook()">Upload file</button><div id="upload-progress" class="progress-container hidden"><div id="upload-progress-bar" class="progress-bar"></div></div><div id="upload-status" class="status-msg" role="status"></div></article>
+                    <article class="card section-card"><div class="card-heading"><div><h2>Your books</h2><p>Files currently stored on InkDeck.</p></div></div><div id="book-list"><p class="hint">Loading…</p></div></article>
                 </div>
             </section>
 
-            <!-- Klipper Tab -->
             <section id="klipper" class="tab-content">
-                <h1>Klipper Settings</h1>
-
-                <div class="card">
-                    <h3>Display Options</h3>
-                    <div class="setting-row">
-                        <label for="klipper-refresh">Full Refresh Interval (Minutes)</label>
-                        <input type="number" id="klipper-refresh" min="0" max="60" value="5" style="width: 60px;">
-                    </div>
-                    <p class="hint">Set to 0 for partial refresh only (faster updates, may cause ghosting over time)</p>
-                    <div class="setting-row">
-                        <label for="klipper-update-interval">Status Update Interval (Seconds)</label>
-                        <input type="number" id="klipper-update-interval" min="10" max="120" value="30" style="width: 60px;">
-                    </div>
-                    <p class="hint">How often the device polls printer status (10-120 seconds)</p>
-                    <button class="btn secondary" onclick="saveKlipperSettings()">Save Settings</button>
-                    <div id="klipper-settings-status" class="status-msg"></div>
-                </div>
+                <div class="page-heading"><p class="eyebrow">Printer monitoring</p><h1>Klipper settings</h1><p>Control how frequently InkDeck polls and refreshes.</p></div>
+                <article class="card section-card">
+                    <div class="inline-setting"><div><label for="klipper-refresh">Full refresh interval</label><p>Set to 0 for partial updates only.</p></div><div class="number-control"><input type="number" id="klipper-refresh" min="0" max="60" value="5"><span>minutes</span></div></div>
+                    <div class="inline-setting"><div><label for="klipper-update-interval">Status update interval</label><p>How often InkDeck asks Klipper for new status.</p></div><div class="number-control"><input type="number" id="klipper-update-interval" min="10" max="120" value="30"><span>seconds</span></div></div>
+                    <div class="action-row"><button class="btn primary" onclick="saveKlipperSettings()">Save Klipper settings</button><div id="klipper-settings-status" class="status-msg" role="status"></div></div>
+                </article>
             </section>
 
-            <!-- Todo Tab -->
             <section id="todo" class="tab-content">
-                <h1>Todo List</h1>
-
-                <div class="card">
-                    <h3>Add Task</h3>
-                    <div class="todo-input-container">
-                        <input type="text" id="new-todo-input" placeholder="Enter a new task..." maxlength="100">
-                        <button class="btn-add" onclick="addTodo()">Add</button>
-                    </div>
-                </div>
-
-                <div class="card">
-                    <h3>Your Tasks</h3>
-                    <div id="todo-list">
-                        <!-- Todos injected by JS -->
-                    </div>
-                </div>
+                <div class="page-heading"><p class="eyebrow">Tasks</p><h1>Todo list</h1><p>Keep a simple checklist synced with the device.</p></div>
+                <article class="card section-card"><div class="todo-input-container"><input type="text" id="new-todo-input" placeholder="What needs doing?" maxlength="100"><button class="btn primary btn-add" onclick="addTodo()">Add task</button></div></article>
+                <article class="card section-card"><div id="todo-list"><p class="hint">Loading…</p></div></article>
             </section>
 
-            <!-- Settings Tab -->
             <section id="settings" class="tab-content">
-                <h1>Settings</h1>
-
-                <div class="card">
-                    <h3>Sleep Settings</h3>
-                    <div class="setting-row">
-                        <label for="sleep-timeout">Idle Sleep Timeout (Minutes)</label>
-                        <input type="number" id="sleep-timeout" min="0" max="60" value="5" style="width: 60px;">
-                    </div>
-                    <p class="hint">Set to 0 to disable auto-sleep. Device sleeps after this many minutes of inactivity.</p>
-                    <div class="setting-row" style="margin-top: 15px;">
-                        <label for="sleep-message">Sleep Message</label>
-                        <input type="text" id="sleep-message" maxlength="100" placeholder="Press button to wake" style="width: 100%; margin-top: 5px;">
-                    </div>
-                    <p class="hint">Message displayed on screen when device enters sleep mode.</p>
-                    <button class="btn secondary" onclick="saveSleepSettings()">Save Sleep Settings</button>
-                    <div id="sleep-settings-status" class="status-msg"></div>
-                </div>
-
-                <div class="card">
-                    <h3>Display Orientation</h3>
-                    <div class="setting-row">
-                        <label for="display-rotation">Button Side</label>
-                        <select id="display-rotation" style="margin-left: 10px;">
-                            <option value="3">Left (default)</option>
-                            <option value="1">Right (rotate 180°)</option>
-                        </select>
-                    </div>
-                    <p class="hint">Flips the entire screen 180° so the button sits on your preferred side. Applies immediately.</p>
-                    <button class="btn secondary" onclick="saveDisplaySettings()">Apply Orientation</button>
-                    <div id="display-settings-status" class="status-msg"></div>
-                </div>
-
-                <div class="card">
-                    <h3>Wi-Fi &amp; Hotspot</h3>
-                    <p id="wifi-status" class="hint">Checking connection...</p>
-                    <div class="setting-row" style="margin-top: 12px;">
-                        <label for="wifi-ssid">Network</label>
-                        <select id="wifi-ssid" style="flex: 1; margin-left: 10px;">
-                            <option value="">Tap Scan to list networks…</option>
-                        </select>
-                    </div>
-                    <div class="setting-row" style="margin-top: 10px;">
-                        <label for="wifi-pass">Password</label>
-                        <input type="password" id="wifi-pass" placeholder="(leave blank if open)" style="flex: 1; margin-left: 10px;">
-                    </div>
-                    <p class="hint">Connect InkDeck to a network, or manage it directly over the InkDeck hotspot when no network is available.</p>
-                    <div style="margin-top: 12px;">
-                        <button class="btn secondary" onclick="scanWifi()">Scan</button>
-                        <button class="btn primary" onclick="connectWifi()">Connect</button>
-                    </div>
-                    <div id="wifi-connect-status" class="status-msg"></div>
-                </div>
-
-                <div class="card update-card">
-                    <h3>Software Update</h3>
-                    <p>Current Version: <span id="current-ver">1.2</span></p>
-                    <div id="update-status" class="status-msg"></div>
-                    <button id="check-update-btn" class="btn primary" onclick="checkUpdate()">Check for Updates</button>
-                    <button id="update-btn" class="btn primary hidden" onclick="performUpdate()">Install Update</button>
-                </div>
+                <div class="page-heading"><p class="eyebrow">InkDeck</p><h1>Device settings</h1><p>Adjust sleep behavior, orientation, and software updates.</p></div>
+                <article class="card section-card">
+                    <div class="card-heading"><div><h2>Sleep settings</h2><p>Save battery when InkDeck is left idle.</p></div></div>
+                    <div class="inline-setting"><div><label for="sleep-timeout">Idle sleep timeout</label><p>Use 0 to disable automatic sleep.</p></div><div class="number-control"><input type="number" id="sleep-timeout" min="0" max="60" value="5"><span>minutes</span></div></div>
+                    <label class="text-field" for="sleep-message"><span>Sleep message</span><input type="text" id="sleep-message" maxlength="100" placeholder="Press button to wake"></label>
+                    <div class="action-row"><button class="btn primary" onclick="saveSleepSettings()">Save sleep settings</button><div id="sleep-settings-status" class="status-msg" role="status"></div></div>
+                </article>
+                <article class="card section-card">
+                    <div class="card-heading"><div><h2>Display orientation</h2><p>Choose which side holds the physical buttons.</p></div></div>
+                    <fieldset class="choice-fieldset orientation-fieldset"><legend class="sr-only">Button side</legend><div class="choice-grid two-up">
+                        <label class="choice-card orientation-choice" for="rotation-left"><input type="radio" id="rotation-left" name="display-rotation" value="3" checked><span class="choice-check">✓</span><span class="device-preview left-button"><i></i></span><strong>Buttons on left</strong><small>Default orientation</small></label>
+                        <label class="choice-card orientation-choice" for="rotation-right"><input type="radio" id="rotation-right" name="display-rotation" value="1"><span class="choice-check">✓</span><span class="device-preview right-button"><i></i></span><strong>Buttons on right</strong><small>Rotate display 180°</small></label>
+                    </div></fieldset>
+                    <div class="action-row"><button class="btn secondary" onclick="saveDisplaySettings()">Apply orientation</button><div id="display-settings-status" class="status-msg" role="status"></div></div>
+                </article>
+                <article class="card section-card update-card">
+                    <div class="card-heading"><div><h2>Software update</h2><p>Currently running InkDeck <span id="current-ver">1.2.7</span>.</p></div><span class="version-badge">Stable</span></div>
+                    <div id="update-status" class="status-msg" role="status"></div>
+                    <div id="update-buttons"><button id="check-update-btn" class="btn secondary" onclick="checkUpdate()">Check for updates</button><button id="update-btn" class="btn primary hidden" onclick="performUpdate()">Install update</button></div>
+                </article>
             </section>
         </main>
     </div>
     <script src="script.js"></script>
 </body>
-
 </html>

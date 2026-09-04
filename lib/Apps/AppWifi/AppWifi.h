@@ -15,7 +15,7 @@ struct WifiNetworkEntry {
 
 class AppWifi : public App {
 public:
-    const char* getName() override { return "Wi-Fi"; }
+    const char* getName() override { return "Settings"; }
 
     void start() override;
     void stop() override;
@@ -28,18 +28,25 @@ public:
 
 private:
     enum View {
+        SETTINGS_HOME,
         NETWORK_LIST,
         PASSWORD_KEYBOARD,
+        MESSAGE_KEYBOARD,
         CONNECTION_RESULT
     };
 
-    View _view = NETWORK_LIST;
+    View _view = SETTINGS_HOME;
     std::vector<WifiNetworkEntry> _networks;
     int _page = 0;
     String _selectedSsid;
     uint8_t _selectedAuth = 0;
     String _password;
+    String _sleepMessage;
+    String _messageDraft;
     String _status;
+    int _sleepTimeoutMinutes = 0;
+    int _fontSizePt = 18;
+    int _rotation = 3;
     bool _scanning = false;
     bool _connecting = false;
     bool _uppercase = false;
@@ -57,6 +64,12 @@ private:
     void beginConnect();
     void returnToMenu();
     void appendKey(char key);
+    void loadDeviceSettings();
+    void saveSleepSettings();
+    void saveReaderFontSize();
+    void saveDisplayRotation();
+    void showSettingsHome(const String& status = "");
+    void drawSettingsHome();
     void drawNetworkList();
     void drawKeyboard();
     void drawConnectionResult();

@@ -1,10 +1,10 @@
 function showTab(tabId) {
     document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
-    document.querySelectorAll('.nav-links li').forEach(el => el.classList.remove('active'));
+    document.querySelectorAll('.nav-links button').forEach(el => el.classList.remove('active'));
 
     document.getElementById(tabId).classList.add('active');
-    const navItems = ['dashboard', 'ereader', 'klipper', 'todo', 'settings'];
-    document.querySelectorAll('.nav-links li')[navItems.indexOf(tabId)].classList.add('active');
+    const navButton = document.querySelector(`.nav-links button[data-tab="${tabId}"]`);
+    if (navButton) navButton.classList.add('active');
 
     // Load data when switching tabs
     if (tabId === 'ereader') {
@@ -16,7 +16,6 @@ function showTab(tabId) {
         fetchTodos();
         switchDeviceApp('Todo');
     } else if (tabId === 'settings') {
-        getWifiStatus();
         getDisplaySettings();
     }
 }
@@ -109,12 +108,12 @@ async function checkUpdate() {
             if (data.release_notes) {
                 msg.innerHTML += `<br><small>${data.release_notes}</small>`;
             }
-            msg.style.color = "var(--success)";
+            msg.style.color = "var(--accent)";
             updateBtn.classList.remove('hidden');
             btn.innerText = "Check Again";
         } else {
             msg.innerText = "You are up to date.";
-            msg.style.color = "var(--text-secondary)";
+            msg.style.color = "var(--muted)";
             btn.innerText = "Check Again";
         }
     } catch (e) {
@@ -211,7 +210,7 @@ function uploadBook() {
         if (xhr.status === 200) {
             progressBar.style.width = '100%';
             status.innerText = "Upload complete!";
-            status.style.color = "var(--success)";
+            status.style.color = "var(--accent)";
             fileInput.value = '';
 
             // Hide progress bar after a delay
@@ -268,8 +267,17 @@ getReaderSettings();
 getReaderProgress();
 getKlipperSettings();
 getSleepSettings();
-getWifiStatus();
 getDisplaySettings();
+
+function setRadioValue(name, value) {
+    const option = document.querySelector(`input[name="${name}"][value="${value}"]`);
+    if (option) option.checked = true;
+}
+
+function getRadioValue(name, fallback) {
+    const selected = document.querySelector(`input[name="${name}"]:checked`);
+    return selected ? selected.value : fallback;
+}
 
 function getReaderSettings() {
     fetch('/api/settings/reader')
@@ -279,17 +287,17 @@ function getReaderSettings() {
                 document.getElementById('refresh-rate').value = data.refreshFrequency;
             }
             if (data.fontSize) {
-                document.getElementById('font-size').value = data.fontSize;
+                setRadioValue('font-size', String(data.fontSize));
             }
-            document.getElementById('font-family').value = data.fontFamily || 'native';
+            setRadioValue('font-family', data.fontFamily || 'native');
         })
         .catch(error => console.error('Error loading reader settings:', error));
 }
 
 function saveReaderSettings() {
     const refreshRate = parseInt(document.getElementById('refresh-rate').value);
-    const fontSize = parseInt(document.getElementById('font-size').value);
-    const fontFamily = document.getElementById('font-family').value;
+    const fontSize = parseInt(getRadioValue('font-size', '12'));
+    const fontFamily = getRadioValue('font-family', 'native');
     const statusDiv = document.getElementById('reader-settings-status');
 
     fetch('/api/settings/reader', {
@@ -303,17 +311,17 @@ function saveReaderSettings() {
         .then(data => {
             if (data.status === 'ok') {
                 statusDiv.textContent = "Settings saved!";
-                statusDiv.style.color = "green";
+                statusDiv.style.color = "var(--accent)";
                 setTimeout(() => statusDiv.textContent = "", 3000);
             } else {
                 statusDiv.textContent = "Error saving settings.";
-                statusDiv.style.color = "red";
+                statusDiv.style.color = "var(--danger)";
             }
         })
         .catch(error => {
             console.error('Error saving settings:', error);
             statusDiv.textContent = "Connection error.";
-            statusDiv.style.color = "red";
+            statusDiv.style.color = "var(--danger)";
         });
 }
 
@@ -344,18 +352,18 @@ function resetReaderProgress() {
         .then(data => {
             if (data.status === 'ok') {
                 statusDiv.textContent = 'Reading progress reset.';
-                statusDiv.style.color = 'green';
+                statusDiv.style.color = 'var(--accent)';
                 getReaderProgress();
                 setTimeout(() => statusDiv.textContent = '', 3000);
             } else {
                 statusDiv.textContent = 'Error resetting progress.';
-                statusDiv.style.color = 'red';
+                statusDiv.style.color = 'var(--danger)';
             }
         })
         .catch(error => {
             console.error('Error resetting reader progress:', error);
             statusDiv.textContent = 'Connection error.';
-            statusDiv.style.color = 'red';
+            statusDiv.style.color = 'var(--danger)';
         });
 }
 
@@ -390,17 +398,17 @@ function saveKlipperSettings() {
         .then(data => {
             if (data.status === 'ok') {
                 statusDiv.textContent = "Settings saved!";
-                statusDiv.style.color = "green";
+                statusDiv.style.color = "var(--accent)";
                 setTimeout(() => statusDiv.textContent = "", 3000);
             } else {
                 statusDiv.textContent = "Error saving settings.";
-                statusDiv.style.color = "red";
+                statusDiv.style.color = "var(--danger)";
             }
         })
         .catch(error => {
             console.error('Error saving Klipper settings:', error);
             statusDiv.textContent = "Connection error.";
-            statusDiv.style.color = "red";
+            statusDiv.style.color = "var(--danger)";
         });
 }
 
@@ -435,17 +443,17 @@ function saveSleepSettings() {
         .then(data => {
             if (data.status === 'ok') {
                 statusDiv.textContent = "Settings saved!";
-                statusDiv.style.color = "green";
+                statusDiv.style.color = "var(--accent)";
                 setTimeout(() => statusDiv.textContent = "", 3000);
             } else {
                 statusDiv.textContent = "Error saving settings.";
-                statusDiv.style.color = "red";
+                statusDiv.style.color = "var(--danger)";
             }
         })
         .catch(error => {
             console.error('Error saving sleep settings:', error);
             statusDiv.textContent = "Connection error.";
-            statusDiv.style.color = "red";
+            statusDiv.style.color = "var(--danger)";
         });
 }
 
@@ -455,14 +463,14 @@ function getDisplaySettings() {
         .then(response => response.json())
         .then(data => {
             if (data.rotation !== undefined) {
-                document.getElementById('display-rotation').value = data.rotation;
+                setRadioValue('display-rotation', String(data.rotation));
             }
         })
         .catch(error => console.error('Error loading display settings:', error));
 }
 
 function saveDisplaySettings() {
-    const rotation = parseInt(document.getElementById('display-rotation').value);
+    const rotation = parseInt(getRadioValue('display-rotation', '3'));
     const statusDiv = document.getElementById('display-settings-status');
 
     fetch('/api/settings/display', {
@@ -474,119 +482,17 @@ function saveDisplaySettings() {
         .then(data => {
             if (data.status === 'ok') {
                 statusDiv.textContent = "Orientation applied.";
-                statusDiv.style.color = "green";
+                statusDiv.style.color = "var(--accent)";
                 setTimeout(() => statusDiv.textContent = "", 3000);
             } else {
                 statusDiv.textContent = "Error applying orientation.";
-                statusDiv.style.color = "red";
+                statusDiv.style.color = "var(--danger)";
             }
         })
         .catch(error => {
             console.error('Error saving display settings:', error);
             statusDiv.textContent = "Connection error.";
-            statusDiv.style.color = "red";
-        });
-}
-
-// === Wi-Fi / Hotspot ===
-function getWifiStatus() {
-    fetch('/api/wifi/status')
-        .then(response => response.json())
-        .then(data => {
-            const el = document.getElementById('wifi-status');
-            if (!el) return;
-            if (data.sta_connected) {
-                el.textContent = `Connected to "${data.sta_ssid}" (${data.sta_ip}), signal ${data.rssi} dBm.`;
-            } else if (data.ap_active) {
-                el.textContent = `Hotspot mode — network "${data.ap_ssid}" at ${data.ap_ip}. Join a Wi-Fi network below to get online.`;
-            } else {
-                el.textContent = 'Not connected.';
-            }
-        })
-        .catch(error => console.error('Error loading Wi-Fi status:', error));
-}
-
-function scanWifi() {
-    const sel = document.getElementById('wifi-ssid');
-    const status = document.getElementById('wifi-connect-status');
-    status.style.color = 'var(--accent)';
-    status.textContent = 'Scanning…';
-
-    let tries = 0;
-    const poll = () => {
-        fetch('/api/wifi/scan')
-            .then(response => response.status === 202 ? null : response.json())
-            .then(data => {
-                if (!data) {
-                    if (tries++ < 10) { setTimeout(poll, 1000); return; }
-                    status.textContent = 'Scan timed out. Try again.';
-                    status.style.color = 'var(--danger)';
-                    return;
-                }
-                const nets = (data.networks || []).filter(n => n.ssid);
-                if (nets.length === 0) {
-                    status.textContent = 'No networks found.';
-                    status.style.color = 'var(--text-secondary)';
-                    return;
-                }
-                sel.innerHTML = nets.map(n =>
-                    `<option value="${escapeHtml(n.ssid)}">${escapeHtml(n.ssid)} (${n.rssi} dBm)${n.secure ? ' 🔒' : ''}</option>`
-                ).join('');
-                status.textContent = `Found ${nets.length} network(s).`;
-                status.style.color = 'var(--success)';
-            })
-            .catch(error => {
-                console.error('Wi-Fi scan failed:', error);
-                status.textContent = 'Scan error.';
-                status.style.color = 'var(--danger)';
-            });
-    };
-    poll();
-}
-
-function connectWifi() {
-    const ssid = document.getElementById('wifi-ssid').value;
-    const password = document.getElementById('wifi-pass').value;
-    const status = document.getElementById('wifi-connect-status');
-
-    if (!ssid) {
-        status.textContent = 'Select a network first (tap Scan).';
-        status.style.color = 'var(--danger)';
-        return;
-    }
-
-    status.textContent = `Connecting to "${ssid}"…`;
-    status.style.color = 'var(--accent)';
-
-    fetch('/api/wifi/connect', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ssid: ssid, password: password })
-    })
-        .then(response => response.json())
-        .then(() => {
-            let tries = 0;
-            const poll = () => fetch('/api/wifi/status')
-                .then(response => response.json())
-                .then(data => {
-                    if (data.sta_connected) {
-                        status.textContent = `Connected! InkDeck is online at ${data.sta_ip}. You can rejoin your home Wi-Fi on your phone.`;
-                        status.style.color = 'var(--success)';
-                        getWifiStatus();
-                    } else if (tries++ < 15) {
-                        setTimeout(poll, 1000);
-                    } else {
-                        status.textContent = 'Could not connect — check the password and try again.';
-                        status.style.color = 'var(--danger)';
-                    }
-                })
-                .catch(() => { if (tries++ < 15) setTimeout(poll, 1000); });
-            poll();
-        })
-        .catch(error => {
-            console.error('Wi-Fi connect failed:', error);
-            status.textContent = 'Connection request failed.';
-            status.style.color = 'var(--danger)';
+            statusDiv.style.color = "var(--danger)";
         });
 }
 

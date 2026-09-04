@@ -259,7 +259,7 @@ AppReader::AppReader() {
     _pageTurnsSinceRefresh = 0;
     _totalBookPages = 0;
     _refreshEveryNPages = READER_FULL_REFRESH_INTERVAL_DEFAULT;
-    _fontSizePt = 9;          // Default body size (small)
+    _fontSizePt = READER_FONT_SIZE_DEFAULT;
     _useOpenSans = false;     // Preserve the original reader font by default
     _readingFirstDraw = true;
     loadSettings();

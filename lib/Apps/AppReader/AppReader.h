@@ -62,6 +62,7 @@ private:
     int _previousBookIndex;
     void scanBooks();
     void drawLibrary();
+    void drawLoadingScreen(const char* title, const char* status, uint8_t progress, bool fullRefresh);
     void drawBookTile(Book32Display& display, int x, int y, int w, int h, bool selected);
     void loadBookCover(BookEntry& book, int width, int height);
     

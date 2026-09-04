@@ -103,7 +103,7 @@ class EpubLoader {
 public:
     EpubLoader();
     ~EpubLoader();
-    bool open(const char* path);
+    bool open(const char* path, bool buildReadingIndex = true);
     void close();
     
     // Metadata getters
@@ -180,7 +180,7 @@ private:
 
     // Helper to read file from zip
     String readFileFromZip(const char* path);
-    uint32_t getFileSizeFromZip(const String& path);
+    void populateSpineSizes();
     std::vector<ContentNode> readRichContentFromZip(const char* path);
     uint8_t* readItemBytes(const String& path, size_t& size, size_t maximumBytes = 6 * 1024 * 1024);
     uint8_t* readItemPrefix(const String& path, size_t& size, size_t maximumBytes = 128 * 1024);
@@ -192,7 +192,7 @@ private:
     TextAlign getAlignFromStyle(String styleAttr);
 
     bool parseContainer();
-    bool parseOpf();
+    bool parseOpf(bool buildReadingIndex);
     void parseToc(const String& navPath, const String& ncxPath);
     void mapTocToSpine();
 };

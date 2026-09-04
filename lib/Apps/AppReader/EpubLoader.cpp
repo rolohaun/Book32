@@ -674,7 +674,7 @@ EpubLoader::EpubLoader() {
 
 EpubLoader::~EpubLoader() { if (zip) { zip->~UNZIP(); free(zip); zip = nullptr; } }
 
-bool EpubLoader::open(const char* path) {
+bool EpubLoader::open(const char* path, bool buildReadingIndex) {
     if (!zip || !path) return false;
     spine.clear();
     toc.clear();
@@ -685,7 +685,7 @@ bool EpubLoader::open(const char* path) {
     hiddenCssClasses.clear();
     if (zip->openZIP(path, myOpen, myClose, myRead, mySeek) != ZIP_SUCCESS) return false;
     if (!parseContainer()) { close(); return false; }
-    if (!parseOpf()) { close(); return false; }
+    if (!parseOpf(buildReadingIndex)) { close(); return false; }
     return true;
 }
 
@@ -813,7 +813,7 @@ bool EpubLoader::parseContainer() {
     return true;
 }
 
-bool EpubLoader::parseOpf() {
+bool EpubLoader::parseOpf(bool buildReadingIndex) {
     String xml = readFileFromZip(opfPath.c_str());
     if(xml.length() == 0) return false;
     bookTitle = extractMetadata(xml, "dc:title");
@@ -899,9 +899,11 @@ bool EpubLoader::parseOpf() {
         }
         pos = itemEnd;
     }
-    for (const String& stylesheetPath : stylesheetPaths) {
-        String css = readFileFromZip(stylesheetPath.c_str());
-        if (css.length() > 0) collectHiddenCssClasses(std::move(css), hiddenCssClasses);
+    if (buildReadingIndex) {
+        for (const String& stylesheetPath : stylesheetPaths) {
+            String css = readFileFromZip(stylesheetPath.c_str());
+            if (css.length() > 0) collectHiddenCssClasses(std::move(css), hiddenCssClasses);
+        }
     }
     if (coverHref.length() == 0 && coverWrapperHref.length() > 0) {
         String wrapper = readFileFromZip(coverWrapperHref.c_str());
@@ -954,17 +956,23 @@ bool EpubLoader::parseOpf() {
         String idref = extractAttribute(itemRefTag, "itemref", "idref");
         if(idref.length() > 0 && manifest.count(idref)) {
             SpineItem item; item.id = idref; item.href = manifest[idref];
-            item.uncompressedSize = getFileSizeFromZip(resolveZipHref(opfPath, item.href));
             spine.push_back(item);
         }
         pos = itemRefEnd;
     }
 
-    // EPUB reading order (the spine) commonly contains cover, title, copyright,
-    // and other files that are not chapters. Map it to the EPUB 2/3 navigation
-    // document so the reader reports the chapter the publisher intended.
-    parseToc(navPath, ncxPath);
-    mapTocToSpine();
+    if (buildReadingIndex) {
+        // Scan the ZIP directory once for all spine sizes. Repeated locateFile()
+        // calls become extremely slow on SD cards because every lookup starts
+        // another walk through the archive's central directory.
+        populateSpineSizes();
+
+        // EPUB reading order (the spine) commonly contains cover, title,
+        // copyright, and other files that are not chapters. Map it to the EPUB
+        // navigation document so the reader reports the publisher's chapters.
+        parseToc(navPath, ncxPath);
+        mapTocToSpine();
+    }
 
     return true;
 }
@@ -1140,14 +1148,27 @@ String EpubLoader::readFileFromZip(const char* path) {
     return str;
 }
 
-uint32_t EpubLoader::getFileSizeFromZip(const String& path) {
-    if (!zip || path.length() == 0 || zip->locateFile(path.c_str()) != ZIP_SUCCESS) return 0;
-    if (zip->openCurrentFile() != ZIP_SUCCESS) return 0;
-    unz_file_info fileInfo = {};
-    char fileName[256];
-    const int result = zip->getFileInfo(&fileInfo, fileName, sizeof(fileName), nullptr, 0, nullptr, 0);
-    zip->closeCurrentFile();
-    return result == ZIP_SUCCESS ? fileInfo.uncompressed_size : 0;
+void EpubLoader::populateSpineSizes() {
+    if (!zip || spine.empty()) return;
+
+    std::map<String, int> spineByPath;
+    for (int i = 0; i < static_cast<int>(spine.size()); i++) {
+        spineByPath[resolveZipHref(opfPath, spine[i].href)] = i;
+    }
+
+    int result = zip->gotoFirstFile();
+    while (result == ZIP_SUCCESS) {
+        unz_file_info fileInfo = {};
+        char fileName[384] = {};
+        result = zip->getFileInfo(&fileInfo, fileName, sizeof(fileName), nullptr, 0, nullptr, 0);
+        if (result != ZIP_SUCCESS) break;
+
+        const String path = normalizeZipPath(decodeUriEscapes(String(fileName)));
+        auto match = spineByPath.find(path);
+        if (match != spineByPath.end()) spine[match->second].uncompressedSize = fileInfo.uncompressed_size;
+        result = zip->gotoNextFile();
+        yield();
+    }
 }
 
 uint8_t* EpubLoader::readItemBytes(const String& path, size_t& size, size_t maximumBytes) {

@@ -370,6 +370,10 @@ void AppReader::stop() {
 const uint8_t* AppReader::getIconImage() { return icon_reader_160x160; }
 
 void AppReader::scanBooks() {
+    // Keep decoded covers for books that are still present. AppReader stays
+    // alive while switching apps, so reopening the library should not decode
+    // the same cover from the SD card again.
+    std::vector<BookEntry> previousBooks = std::move(_books);
     _books.clear();
     std::map<String, String> metadata;
     loadBookMetadata(metadata);
@@ -385,12 +389,19 @@ void AppReader::scanBooks() {
         if(fileNameLower.endsWith(".epub")) {
             BookEntry entry;
             entry.path = "/" + fileName;
+            for (const BookEntry& previous : previousBooks) {
+                if (previous.path == entry.path) {
+                    entry.coverAttempted = previous.coverAttempted;
+                    entry.cover = previous.cover;
+                    break;
+                }
+            }
             auto meta = metadata.find(fileName);
             String displayTitle = meta != metadata.end() ? meta->second : "";
             if (displayTitle.length() == 0) {
                 EpubLoader loader;
                 String fullPath = "/ebooks/" + fileName;
-                if (loader.open(fullPath.c_str())) {
+                if (loader.open(fullPath.c_str(), false)) {
                     displayTitle = loader.getTitle();
                     displayTitle.trim();
                     loader.close();
@@ -442,7 +453,7 @@ void AppReader::loadBookCover(BookEntry& book, int width, int height) {
 
     EpubLoader loader;
     String fullPath = "/ebooks" + book.path;
-    if (!loader.open(fullPath.c_str())) return;
+    if (!loader.open(fullPath.c_str(), false)) return;
     String coverHref = loader.getCoverHref();
     if (coverHref.length() > 0) {
         std::shared_ptr<EpubBitmap> cover(new (std::nothrow) EpubBitmap());
@@ -540,6 +551,7 @@ int AppReader::getGlobalPageNumber() {
 
 bool AppReader::openBook(const String& path, bool restoreProgress) {
     String fullPath = "/ebooks" + path;
+    drawLoadingScreen("Opening book", "Indexing chapters...", 15, _libraryFirstDraw);
     closeBook(false);
     _currentBookPath = path;
     _currentBookFingerprint = fingerprintBook(path, _currentBookSize);
@@ -552,6 +564,7 @@ bool AppReader::openBook(const String& path, bool restoreProgress) {
         _currentBookFingerprint = 0;
         return false;
     }
+    drawLoadingScreen("Opening book", "Loading book content...", 70, false);
     if (!_textRenderer) {
         DisplayMgr& dispMgr = DisplayMgr::getInstance();
         Book32Display& display = dispMgr.getDisplay();
@@ -579,6 +592,7 @@ bool AppReader::openBook(const String& path, bool restoreProgress) {
     bool restored = restoreProgress && loadBookProgress(path, restoreChapter, restorePointer, restorePage,
                                                         restoreVisibleOffset, hasVisibleOffset);
 
+    drawLoadingScreen("Opening book", restored ? "Restoring your page..." : "Laying out first page...", 88, false);
     loadChapter(restored ? restoreChapter : 0);
     if (restored && restoreChapter == _currentChapter) {
         if (hasVisibleOffset) {
@@ -598,6 +612,7 @@ bool AppReader::openBook(const String& path, bool restoreProgress) {
     }
 
     _state = VIEW_READING;
+    _readingFirstDraw = true;
     saveReadingProgress(true);
     _needsRedraw = true;
     return true;
@@ -855,8 +870,39 @@ void AppReader::draw() {
     else drawReading();
 }
 
+void AppReader::drawLoadingScreen(const char* title, const char* status, uint8_t progress, bool fullRefresh) {
+    Book32Display& display = DisplayMgr::getInstance().getDisplay();
+    FontMgr& fontMgr = FontMgr::getInstance();
+    const int barWidth = display.width() - 100;
+    const int barHeight = 28;
+    const int barX = 50;
+    const int barY = display.height() / 2;
+    const int fillWidth = ((barWidth - 4) * constrain(progress, 0, 100)) / 100;
+
+    if (fullRefresh) display.setFullWindow();
+    else display.setPartialWindow(0, 0, display.width(), display.height());
+    display.firstPage();
+    do {
+        display.fillScreen(GxEPD_WHITE);
+        fontMgr.drawTextCentered(display, title, barY - 72, FONT_SIZE_TITLE, GxEPD_BLACK);
+        fontMgr.drawTextCentered(display, status, barY - 32, FONT_SIZE_BODY, GxEPD_BLACK);
+        display.drawRoundRect(barX, barY, barWidth, barHeight, 7, GxEPD_BLACK);
+        display.drawRoundRect(barX + 2, barY + 2, barWidth - 4, barHeight - 4, 5, GxEPD_BLACK);
+        if (fillWidth > 0) display.fillRoundRect(barX + 2, barY + 2, fillWidth, barHeight - 4, 5, GxEPD_BLACK);
+        char percentText[8];
+        snprintf(percentText, sizeof(percentText), "%u%%", static_cast<unsigned>(progress));
+        fontMgr.drawTextCentered(display, percentText, barY + 72, FONT_SIZE_SUBTITLE, GxEPD_BLACK);
+    } while (display.nextPage());
+}
+
 void AppReader::drawLibrary() {
-    if (!_booksScanned) { scanBooks(); _booksScanned = true; }
+    const bool initialLoad = !_booksScanned;
+    if (initialLoad) {
+        drawLoadingScreen("Opening eReader", "Finding books...", 15, true);
+        _libraryFirstDraw = false;  // The loading screen already established a clean full-refresh baseline.
+        scanBooks();
+        _booksScanned = true;
+    }
     DisplayMgr& dispMgr = DisplayMgr::getInstance();
     Book32Display& display = dispMgr.getDisplay();
     FontMgr& fontMgr = FontMgr::getInstance();
@@ -881,6 +927,16 @@ void AppReader::drawLibrary() {
     if (_scrollOffset != previousScrollOffset) _librarySelectionOnlyRedraw = false;
 
     int lastVisibleBook = min(static_cast<int>(_books.size()), _scrollOffset + visibleBookCount);
+    bool coversNeedLoading = false;
+    for (int index = _scrollOffset; index < lastVisibleBook; index++) {
+        if (!_books[index].coverAttempted) {
+            coversNeedLoading = true;
+            break;
+        }
+    }
+    if (initialLoad && coversNeedLoading) {
+        drawLoadingScreen("Opening eReader", "Loading book covers...", 60, false);
+    }
     for (int index = _scrollOffset; index < lastVisibleBook; index++) {
         loadBookCover(_books[index], COVER_WIDTH, COVER_HEIGHT);
     }

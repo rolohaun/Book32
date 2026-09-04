@@ -1028,7 +1028,6 @@ void AppReader::drawReading() {
     
     // Page numbers: use _globalPageNumber which is tracked at runtime
     int currentPageNum = _pageHistory.size();  // For render cache key
-    const int chapterCount = _epubLoader ? max(1, _epubLoader->getChapterCount()) : 1;
     const uint32_t chapterLength = _showReadingPercentage
                                        ? ReaderPosition::totalVisibleLength(_currentRichContent)
                                        : 0;
@@ -1044,12 +1043,22 @@ void AppReader::drawReading() {
         // The footer is deliberately drawn outside TextRenderer so its
         // visibility never affects pagination or the page cache.
         display.setFont(NULL);
+        display.setTextSize(2);
         display.setTextColor(GxEPD_BLACK);
 
-        const int footerY = display.height() - 15;
+        const int footerY = display.height() - 24;
         if (_showChapter) {
+            String chapterTitle = _epubLoader ? _epubLoader->getChapterTitle(_currentChapter) : "";
+            if (chapterTitle.length() == 0) chapterTitle = "Chapter " + String(_currentChapter + 1);
+            while (chapterTitle.length() > 0) {
+                int16_t textX, textY;
+                uint16_t textW, textH;
+                display.getTextBounds(chapterTitle, 0, 0, &textX, &textY, &textW, &textH);
+                if (textW <= display.width() * 0.40f) break;
+                chapterTitle.remove(chapterTitle.length() - 1);
+            }
             display.setCursor(12, footerY);
-            display.printf("Chapter %d/%d", _currentChapter + 1, chapterCount);
+            display.print(chapterTitle);
         }
         if (_showPageNumber) {
             char pageText[24];
@@ -1068,9 +1077,10 @@ void AppReader::drawReading() {
             float chapterFraction = chapterLength > 0
                                         ? min(1.0f, chapterRead / static_cast<float>(chapterLength))
                                         : 0.0f;
-            int percentage = constrain(static_cast<int>(((_currentChapter + chapterFraction) /
-                                                          chapterCount) * 100.0f + 0.5f),
-                                       0, 100);
+            const float bookProgress = _epubLoader
+                                           ? _epubLoader->calculateBookProgress(_currentChapter, chapterFraction)
+                                           : 0.0f;
+            int percentage = constrain(static_cast<int>(bookProgress * 100.0f + 0.5f), 0, 100);
             char percentageText[8];
             snprintf(percentageText, sizeof(percentageText), "%d%%", percentage);
             int16_t textX, textY;
@@ -1079,6 +1089,7 @@ void AppReader::drawReading() {
             display.setCursor(display.width() - textW - 12, footerY);
             display.print(percentageText);
         }
+        display.setTextSize(1);
     } while (display.nextPage());
 }
 

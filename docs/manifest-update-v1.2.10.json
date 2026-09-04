@@ -1,0 +1,19 @@
+{
+  "name": "InkDeck for Book32",
+  "version": "1.2.10",
+  "new_install_prompt_erase": false,
+  "new_install_improv_wait_time": 0,
+  "builds": [
+    {
+      "chipFamily": "ESP32-S3",
+      "improv": false,
+      "parts": [
+        { "path": "firmware/book32-bootloader-v1.2.10.bin", "offset": 0 },
+        { "path": "firmware/book32-partitions-v1.2.10.bin", "offset": 32768 },
+        { "path": "firmware/book32-boot-app-v1.2.10.bin", "offset": 57344 },
+        { "path": "firmware/firmware-v1.2.10.bin", "offset": 65536 },
+        { "path": "firmware/littlefs-v1.2.10.bin", "offset": 5308416 }
+      ]
+    }
+  ]
+}

@@ -1,17 +1,17 @@
 const ESPTOOL_MODULE_URL = 'https://unpkg.com/esptool-js@0.6.1/bundle.js';
-const RELEASE_VERSION = '1.2.9';
+const RELEASE_VERSION = '1.2.10';
 
 const profiles = {
   book32: {
     name: 'Book32 — 7.5 inch',
-    manifest: 'manifest-update-v1.2.9.json',
+    manifest: 'manifest-update-v1.2.10.json',
     flashSize: '16MB',
     description: 'Single-button Book32 with the 7.5-inch e-paper display.',
     after: 'After restart, connect to the InkDeck-Setup Wi-Fi network to configure Wi-Fi.'
   },
   sticky: {
     name: 'Seeed Studio Sticky — 3.97 inch',
-    manifest: 'manifest-sticky-update-v1.2.9.json',
+    manifest: 'manifest-sticky-update-v1.2.10.json',
     flashSize: '32MB',
     resetMode: 'atomic-rts',
     description: 'Seeed Studio touch-screen reader with InkDeck installed.',
@@ -263,7 +263,7 @@ async function flashSelectedDevice() {
     flashing = false;
     deviceCards.forEach((card) => { card.disabled = false; });
     flashButton.disabled = !selectedProfile || !setBrowserSupport();
-    flashButton.lastChild.textContent = ' Flash InkDeck 1.2.9';
+    flashButton.lastChild.textContent = ' Flash InkDeck 1.2.10';
   }
 }
 

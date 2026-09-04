@@ -142,6 +142,29 @@ String decodeHtmlEntities(const String& input) {
     return output;
 }
 
+String stripMarkup(String value) {
+    String clean;
+    clean.reserve(value.length());
+    bool inTag = false;
+    for (int i = 0; i < static_cast<int>(value.length()); i++) {
+        const char c = value[i];
+        if (c == '<') {
+            inTag = true;
+        } else if (c == '>') {
+            inTag = false;
+        } else if (!inTag) {
+            clean += c;
+        }
+    }
+    clean = decodeHtmlEntities(clean);
+    clean.replace("\r", " ");
+    clean.replace("\n", " ");
+    clean.replace("\t", " ");
+    while (clean.indexOf("  ") >= 0) clean.replace("  ", " ");
+    clean.trim();
+    return clean;
+}
+
 String attributeValue(const String& tag, const char* attribute) {
     String lower = tag;
     lower.toLowerCase();
@@ -653,6 +676,10 @@ EpubLoader::~EpubLoader() { if (zip) { zip->~UNZIP(); free(zip); zip = nullptr; 
 
 bool EpubLoader::open(const char* path) {
     if (!zip || !path) return false;
+    spine.clear();
+    toc.clear();
+    manifest.clear();
+    fonts.clear();
     epubPath = String(path);
     coverHref = "";
     hiddenCssClasses.clear();
@@ -665,11 +692,38 @@ bool EpubLoader::open(const char* path) {
 void EpubLoader::close() {
     if (zip) zip->closeZIP();
     if (zipFd >= 0) { ::close(zipFd); zipFd = -1; }
-    spine.clear(); manifest.clear(); fonts.clear(); hiddenCssClasses.clear(); coverHref = "";
+    spine.clear(); toc.clear(); manifest.clear(); fonts.clear(); hiddenCssClasses.clear(); coverHref = "";
 }
 
 String EpubLoader::getTitle() { return bookTitle; }
 int EpubLoader::getChapterCount() { return spine.size(); }
+
+String EpubLoader::getChapterTitle(int index) const {
+    if (index < 0 || index >= static_cast<int>(spine.size())) return "";
+    const int tocIndex = spine[index].tocIndex;
+    if (tocIndex >= 0 && tocIndex < static_cast<int>(toc.size()) && toc[tocIndex].title.length() > 0) {
+        return toc[tocIndex].title;
+    }
+    return "Chapter " + String(index + 1);
+}
+
+float EpubLoader::calculateBookProgress(int index, float chapterProgress) const {
+    if (spine.empty()) return 0.0f;
+    index = constrain(index, 0, static_cast<int>(spine.size()) - 1);
+    chapterProgress = constrain(chapterProgress, 0.0f, 1.0f);
+
+    uint64_t totalSize = 0;
+    uint64_t previousSize = 0;
+    for (int i = 0; i < static_cast<int>(spine.size()); i++) {
+        totalSize += spine[i].uncompressedSize;
+        if (i < index) previousSize += spine[i].uncompressedSize;
+    }
+    if (totalSize == 0) {
+        return (index + chapterProgress) / static_cast<float>(spine.size());
+    }
+    const float currentSize = chapterProgress * static_cast<float>(spine[index].uncompressedSize);
+    return (static_cast<float>(previousSize) + currentSize) / static_cast<float>(totalSize);
+}
 
 String EpubLoader::getChapterContent(int index) {
     if(index < 0 || index >= (int)spine.size()) return "";
@@ -788,6 +842,8 @@ bool EpubLoader::parseOpf() {
     String manifestBlock = xml.substring(manifestStart, manifestEnd);
     String probableCoverHref;
     String coverWrapperHref;
+    String navPath;
+    String ncxPath;
     std::vector<String> stylesheetPaths;
     int pos = 0;
     while(true) {
@@ -805,6 +861,10 @@ bool EpubLoader::parseOpf() {
             String idLower = id; idLower.toLowerCase();
             String mediaLower = mediaType; mediaLower.toLowerCase();
             String propertiesLower = properties; propertiesLower.toLowerCase();
+            if (propertiesLower.indexOf("nav") >= 0) navPath = resolveZipHref(opfPath, href);
+            if (mediaLower == "application/x-dtbncx+xml" || hrefLower.endsWith(".ncx")) {
+                ncxPath = resolveZipHref(opfPath, href);
+            }
             if (mediaLower == "text/css" || hrefLower.endsWith(".css")) {
                 stylesheetPaths.push_back(resolveZipHref(opfPath, href));
             }
@@ -894,12 +954,123 @@ bool EpubLoader::parseOpf() {
         String idref = extractAttribute(itemRefTag, "itemref", "idref");
         if(idref.length() > 0 && manifest.count(idref)) {
             SpineItem item; item.id = idref; item.href = manifest[idref];
+            item.uncompressedSize = getFileSizeFromZip(resolveZipHref(opfPath, item.href));
             spine.push_back(item);
         }
         pos = itemRefEnd;
     }
 
+    // EPUB reading order (the spine) commonly contains cover, title, copyright,
+    // and other files that are not chapters. Map it to the EPUB 2/3 navigation
+    // document so the reader reports the chapter the publisher intended.
+    parseToc(navPath, ncxPath);
+    mapTocToSpine();
+
     return true;
+}
+
+void EpubLoader::parseToc(const String& navPath, const String& ncxPath) {
+    toc.clear();
+    String documentPath;
+    String xml;
+    bool isNav = false;
+
+    if (navPath.length() > 0) {
+        xml = readFileFromZip(navPath.c_str());
+        documentPath = navPath;
+        isNav = xml.length() > 0;
+    }
+    if (xml.length() == 0 && ncxPath.length() > 0) {
+        xml = readFileFromZip(ncxPath.c_str());
+        documentPath = ncxPath;
+        isNav = false;
+    }
+    if (xml.length() == 0) return;
+
+    if (isNav) {
+        String lower = xml;
+        lower.toLowerCase();
+        int navStart = 0;
+        while ((navStart = lower.indexOf("<nav", navStart)) >= 0) {
+            const int tagEnd = lower.indexOf('>', navStart);
+            if (tagEnd < 0) break;
+            String tag = lower.substring(navStart, tagEnd + 1);
+            if (tag.indexOf("epub:type=\"toc\"") >= 0 || tag.indexOf("epub:type='toc'") >= 0 ||
+                tag.indexOf("type=\"toc\"") >= 0 || tag.indexOf("type='toc'") >= 0) {
+                const int navEnd = lower.indexOf("</nav>", tagEnd);
+                const int limit = navEnd >= 0 ? navEnd : static_cast<int>(xml.length());
+                int pos = tagEnd + 1;
+                while ((pos = lower.indexOf("<a", pos)) >= 0 && pos < limit) {
+                    const int anchorTagEnd = lower.indexOf('>', pos);
+                    const int anchorEnd = lower.indexOf("</a>", anchorTagEnd);
+                    if (anchorTagEnd < 0 || anchorEnd < 0 || anchorEnd > limit) break;
+                    const String anchorTag = xml.substring(pos, anchorTagEnd + 1);
+                    const String rawHref = attributeValue(anchorTag, "href");
+                    const String title = stripMarkup(xml.substring(anchorTagEnd + 1, anchorEnd));
+                    const String href = resolveZipHref(documentPath, rawHref);
+                    if (title.length() > 0 && href.length() > 0) {
+                        TocEntry entry;
+                        entry.title = title;
+                        entry.href = href;
+                        toc.push_back(entry);
+                    }
+                    pos = anchorEnd + 4;
+                }
+                break;
+            }
+            navStart = tagEnd + 1;
+        }
+    } else {
+        String lower = xml;
+        lower.toLowerCase();
+        int pos = 0;
+        while ((pos = lower.indexOf("<navpoint", pos)) >= 0) {
+            const int pointEnd = lower.indexOf("</navpoint>", pos);
+            const int limit = pointEnd >= 0 ? pointEnd : static_cast<int>(xml.length());
+            const int textStart = lower.indexOf("<text", pos);
+            const int contentStart = lower.indexOf("<content", pos);
+            if (textStart >= 0 && textStart < limit && contentStart >= 0 && contentStart < limit) {
+                const int textTagEnd = lower.indexOf('>', textStart);
+                const int textEnd = lower.indexOf("</text>", textTagEnd);
+                const int contentEnd = lower.indexOf('>', contentStart);
+                if (textTagEnd >= 0 && textEnd >= 0 && textEnd < limit && contentEnd >= 0) {
+                    const String title = stripMarkup(xml.substring(textTagEnd + 1, textEnd));
+                    const String contentTag = xml.substring(contentStart, contentEnd + 1);
+                    const String href = resolveZipHref(documentPath, attributeValue(contentTag, "src"));
+                    if (title.length() > 0 && href.length() > 0) {
+                        TocEntry entry;
+                        entry.title = title;
+                        entry.href = href;
+                        toc.push_back(entry);
+                    }
+                }
+            }
+            pos += 9;
+        }
+    }
+
+    // Some EPUB 3 books advertise a nav document that is malformed or does
+    // not actually contain a TOC. Fall back to the EPUB 2 NCX when available.
+    if (toc.empty() && isNav && ncxPath.length() > 0) parseToc("", ncxPath);
+}
+
+void EpubLoader::mapTocToSpine() {
+    for (int tocIndex = 0; tocIndex < static_cast<int>(toc.size()); tocIndex++) {
+        for (int spineIndex = 0; spineIndex < static_cast<int>(spine.size()); spineIndex++) {
+            const String spineHref = resolveZipHref(opfPath, spine[spineIndex].href);
+            if (spineHref == toc[tocIndex].href) {
+                toc[tocIndex].spineIndex = spineIndex;
+                if (spine[spineIndex].tocIndex < 0) spine[spineIndex].tocIndex = tocIndex;
+                break;
+            }
+        }
+    }
+
+    int lastTocIndex = -1;
+    for (SpineItem& item : spine) {
+        if (item.tocIndex >= 0) lastTocIndex = item.tocIndex;
+        else item.tocIndex = lastTocIndex;
+    }
 }
 
 uint8_t* EpubLoader::getFontData(String path, size_t* outSize) {
@@ -967,6 +1138,16 @@ String EpubLoader::readFileFromZip(const char* path) {
 
     zip->closeCurrentFile();
     return str;
+}
+
+uint32_t EpubLoader::getFileSizeFromZip(const String& path) {
+    if (!zip || path.length() == 0 || zip->locateFile(path.c_str()) != ZIP_SUCCESS) return 0;
+    if (zip->openCurrentFile() != ZIP_SUCCESS) return 0;
+    unz_file_info fileInfo = {};
+    char fileName[256];
+    const int result = zip->getFileInfo(&fileInfo, fileName, sizeof(fileName), nullptr, 0, nullptr, 0);
+    zip->closeCurrentFile();
+    return result == ZIP_SUCCESS ? fileInfo.uncompressed_size : 0;
 }
 
 uint8_t* EpubLoader::readItemBytes(const String& path, size_t& size, size_t maximumBytes) {

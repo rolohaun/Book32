@@ -116,6 +116,8 @@ public:
     
     // Content getters
     int getChapterCount();
+    String getChapterTitle(int index) const;
+    float calculateBookProgress(int index, float chapterProgress) const;
     String getChapterContent(int index);  // Legacy plain text
     std::vector<ContentNode> getChapterContentRich(int index);  // Rich formatted content
     String getCoverHref() const { return coverHref; }
@@ -148,9 +150,22 @@ private:
     struct SpineItem {
         String id;
         String href;
+        uint32_t uncompressedSize;
+        int tocIndex;
+
+        SpineItem() : uncompressedSize(0), tocIndex(-1) {}
+    };
+
+    struct TocEntry {
+        String title;
+        String href;
+        int spineIndex;
+
+        TocEntry() : spineIndex(-1) {}
     };
 
     std::vector<SpineItem> spine;
+    std::vector<TocEntry> toc;
     std::map<String, String> manifest; // id -> href
 
     // Allocate UNZIP in PSRAM to avoid memory issues with the 41KB internal buffer
@@ -165,6 +180,7 @@ private:
 
     // Helper to read file from zip
     String readFileFromZip(const char* path);
+    uint32_t getFileSizeFromZip(const String& path);
     std::vector<ContentNode> readRichContentFromZip(const char* path);
     uint8_t* readItemBytes(const String& path, size_t& size, size_t maximumBytes = 6 * 1024 * 1024);
     uint8_t* readItemPrefix(const String& path, size_t& size, size_t maximumBytes = 128 * 1024);
@@ -177,6 +193,8 @@ private:
 
     bool parseContainer();
     bool parseOpf();
+    void parseToc(const String& navPath, const String& ncxPath);
+    void mapTocToSpine();
 };
 
 #endif

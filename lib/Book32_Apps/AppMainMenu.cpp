@@ -46,27 +46,43 @@ static bool isReaderActive() {
 }
 
 #if defined(BOARD_SEEED_STICKY)
-static void drawThickLine(Book32Display& display, int x1, int y1, int x2, int y2) {
-    for (int offset = -2; offset <= 2; ++offset)
-        display.drawLine(x1 + offset, y1, x2 + offset, y2, GxEPD_BLACK);
-    for (int offset = -2; offset <= 2; ++offset)
-        display.drawLine(x1, y1 + offset, x2, y2 + offset, GxEPD_BLACK);
+static void fillQuad(Book32Display& display,
+                     int x1, int y1, int x2, int y2,
+                     int x3, int y3, int x4, int y4) {
+    display.fillTriangle(x1, y1, x2, y2, x3, y3, GxEPD_BLACK);
+    display.fillTriangle(x1, y1, x3, y3, x4, y4, GxEPD_BLACK);
 }
 
 static void drawSettingsMenuIcon(Book32Display& display, int x, int y) {
-    // Bold bitmap-free gear for the touch-only Settings tile.
+    // A framed, eight-tooth cog matching the bold outlined app icons.
     const int cx = x + 80;
     const int cy = y + 80;
-    for (int radius = 46; radius <= 50; ++radius) display.drawCircle(cx, cy, radius, GxEPD_BLACK);
-    for (int radius = 17; radius <= 21; ++radius) display.drawCircle(cx, cy, radius, GxEPD_BLACK);
-    drawThickLine(display, cx, y + 9, cx, y + 30);
-    drawThickLine(display, cx, y + 130, cx, y + 151);
-    drawThickLine(display, x + 9, cy, x + 30, cy);
-    drawThickLine(display, x + 130, cy, x + 151, cy);
-    drawThickLine(display, x + 29, y + 29, x + 44, y + 44);
-    drawThickLine(display, x + 116, y + 116, x + 131, y + 131);
-    drawThickLine(display, x + 116, y + 44, x + 131, y + 29);
-    drawThickLine(display, x + 29, y + 131, x + 44, y + 116);
+
+    for (int inset = 0; inset < 4; ++inset) {
+        display.drawRoundRect(x + 5 + inset, y + 5 + inset,
+                              150 - inset * 2, 150 - inset * 2,
+                              10, GxEPD_BLACK);
+    }
+
+    // Square cardinal teeth.
+    display.fillRect(cx - 9, y + 20, 18, 34, GxEPD_BLACK);
+    display.fillRect(cx - 9, y + 106, 18, 34, GxEPD_BLACK);
+    display.fillRect(x + 20, cy - 9, 34, 18, GxEPD_BLACK);
+    display.fillRect(x + 106, cy - 9, 34, 18, GxEPD_BLACK);
+
+    // Square diagonal teeth, each drawn as a solid quadrilateral.
+    fillQuad(display, x + 101, y + 47, x + 114, y + 34,
+             x + 126, y + 46, x + 113, y + 59);
+    fillQuad(display, x + 113, y + 101, x + 126, y + 114,
+             x + 114, y + 126, x + 101, y + 113);
+    fillQuad(display, x + 59, y + 101, x + 46, y + 114,
+             x + 34, y + 126, x + 47, y + 113);
+    fillQuad(display, x + 47, y + 59, x + 34, y + 46,
+             x + 46, y + 34, x + 59, y + 47);
+
+    // Solid gear body with a clean center opening.
+    display.fillCircle(cx, cy, 44, GxEPD_BLACK);
+    display.fillCircle(cx, cy, 27, GxEPD_WHITE);
 }
 #endif
 

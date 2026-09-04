@@ -261,6 +261,9 @@ AppReader::AppReader() {
     _refreshEveryNPages = READER_FULL_REFRESH_INTERVAL_DEFAULT;
     _fontSizePt = READER_FONT_SIZE_DEFAULT;
     _useOpenSans = false;     // Preserve the original reader font by default
+    _showChapter = true;
+    _showPageNumber = true;
+    _showReadingPercentage = true;
     _readingFirstDraw = true;
     loadSettings();
 }
@@ -284,6 +287,9 @@ void AppReader::loadSettings() {
             }
             const char* fontFamily = doc["fontFamily"] | "native";
             _useOpenSans = strcmp(fontFamily, "openSans") == 0;
+            _showChapter = doc["showChapter"] | true;
+            _showPageNumber = doc["showPageNumber"] | true;
+            _showReadingPercentage = doc["showReadingPercentage"] | true;
         }
         file.close();
     }
@@ -1022,6 +1028,10 @@ void AppReader::drawReading() {
     
     // Page numbers: use _globalPageNumber which is tracked at runtime
     int currentPageNum = _pageHistory.size();  // For render cache key
+    const int chapterCount = _epubLoader ? max(1, _epubLoader->getChapterCount()) : 1;
+    const uint32_t chapterLength = _showReadingPercentage
+                                       ? ReaderPosition::totalVisibleLength(_currentRichContent)
+                                       : 0;
     
     display.firstPage();
     do {
@@ -1031,11 +1041,44 @@ void AppReader::drawReading() {
                                                                 _currentPagePointer.charOffset,
                                                                 currentPageNum, _globalPageNumber, true);
         _currentPageRenderValid = true;
-        // Draw page number directly here for consistent display
+        // The footer is deliberately drawn outside TextRenderer so its
+        // visibility never affects pagination or the page cache.
         display.setFont(NULL);
         display.setTextColor(GxEPD_BLACK);
-        display.setCursor(display.width()/2 - 20, display.height() - 15);
-        display.printf("Page %d", _globalPageNumber);
+
+        const int footerY = display.height() - 15;
+        if (_showChapter) {
+            display.setCursor(12, footerY);
+            display.printf("Chapter %d/%d", _currentChapter + 1, chapterCount);
+        }
+        if (_showPageNumber) {
+            char pageText[24];
+            snprintf(pageText, sizeof(pageText), "Page %d", _globalPageNumber);
+            int16_t textX, textY;
+            uint16_t textW, textH;
+            display.getTextBounds(pageText, 0, 0, &textX, &textY, &textW, &textH);
+            display.setCursor((display.width() - textW) / 2, footerY);
+            display.print(pageText);
+        }
+        if (_showReadingPercentage) {
+            PagePointer pageEnd = {_currentPageRender.nextNodeIndex, _currentPageRender.nextCharOffset};
+            uint32_t chapterRead = _currentPageRender.pageFull
+                                       ? ReaderPosition::toVisibleOffset(_currentRichContent, pageEnd)
+                                       : chapterLength;
+            float chapterFraction = chapterLength > 0
+                                        ? min(1.0f, chapterRead / static_cast<float>(chapterLength))
+                                        : 0.0f;
+            int percentage = constrain(static_cast<int>(((_currentChapter + chapterFraction) /
+                                                          chapterCount) * 100.0f + 0.5f),
+                                       0, 100);
+            char percentageText[8];
+            snprintf(percentageText, sizeof(percentageText), "%d%%", percentage);
+            int16_t textX, textY;
+            uint16_t textW, textH;
+            display.getTextBounds(percentageText, 0, 0, &textX, &textY, &textW, &textH);
+            display.setCursor(display.width() - textW - 12, footerY);
+            display.print(percentageText);
+        }
     } while (display.nextPage());
 }
 

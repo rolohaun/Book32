@@ -95,7 +95,7 @@ bool DisplayMgr::mapNativeTouchToScreen(uint16_t nativeX, uint16_t nativeY,
 }
 
 void DisplayMgr::loadDisplaySettings() {
-    int rotation = 3;  // Default: button on the left
+    int rotation = 3;  // Default: buttons on the right
     if (EbookFS.exists("/display_config.json")) {
         File file = EbookFS.open("/display_config.json", "r");
         if (file) {

@@ -1,10 +1,10 @@
 #pragma once
 
 #if defined(BOARD_SEEED_STICKY)
-#define SYSTEM_VERSION "1.2.8"
+#define SYSTEM_VERSION "1.2.9"
 #define DEVICE_NAME "Seeed Studio Sticky"
 #else
-#define SYSTEM_VERSION "1.2.8"
+#define SYSTEM_VERSION "1.2.9"
 #define DEVICE_NAME "Book32"
 #endif
 

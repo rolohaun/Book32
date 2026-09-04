@@ -42,10 +42,8 @@ async function fetchStatus() {
             document.getElementById('version-display').innerText = data.version;
         }
 
-        // Format free space in KB or MB
-        const freeKB = Math.round(data.freeSpace / 1024);
-        const totalKB = Math.round(data.totalSpace / 1024);
-        document.getElementById('freespace-val').innerText = freeKB + ' / ' + totalKB + ' KB';
+        document.getElementById('freespace-val').innerText =
+            formatStorage(data.freeSpace) + ' / ' + formatStorage(data.totalSpace);
 
         // Update Header
         let voltageText = data.voltage.toFixed(2) + 'V';
@@ -274,6 +272,17 @@ function setRadioValue(name, value) {
     if (option) option.checked = true;
 }
 
+function formatStorage(bytes) {
+    const value = Number(bytes) || 0;
+    const gibibyte = 1024 * 1024 * 1024;
+    const mebibyte = 1024 * 1024;
+    if (value >= gibibyte) {
+        const amount = value / gibibyte;
+        return amount.toFixed(amount >= 10 ? 1 : 2) + ' GB';
+    }
+    return Math.round(value / mebibyte) + ' MB';
+}
+
 function getRadioValue(name, fallback) {
     const selected = document.querySelector(`input[name="${name}"]:checked`);
     return selected ? selected.value : fallback;
@@ -290,6 +299,9 @@ function getReaderSettings() {
                 setRadioValue('font-size', String(data.fontSize));
             }
             setRadioValue('font-family', data.fontFamily || 'native');
+            document.getElementById('show-chapter').checked = data.showChapter !== false;
+            document.getElementById('show-page-number').checked = data.showPageNumber !== false;
+            document.getElementById('show-reading-percentage').checked = data.showReadingPercentage !== false;
         })
         .catch(error => console.error('Error loading reader settings:', error));
 }
@@ -298,6 +310,9 @@ function saveReaderSettings() {
     const refreshRate = parseInt(document.getElementById('refresh-rate').value);
     const fontSize = parseInt(getRadioValue('font-size', '12'));
     const fontFamily = getRadioValue('font-family', 'native');
+    const showChapter = document.getElementById('show-chapter').checked;
+    const showPageNumber = document.getElementById('show-page-number').checked;
+    const showReadingPercentage = document.getElementById('show-reading-percentage').checked;
     const statusDiv = document.getElementById('reader-settings-status');
 
     fetch('/api/settings/reader', {
@@ -305,7 +320,14 @@ function saveReaderSettings() {
         headers: {
             'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ refreshFrequency: refreshRate, fontSize: fontSize, fontFamily: fontFamily }),
+        body: JSON.stringify({
+            refreshFrequency: refreshRate,
+            fontSize: fontSize,
+            fontFamily: fontFamily,
+            showChapter: showChapter,
+            showPageNumber: showPageNumber,
+            showReadingPercentage: showReadingPercentage
+        }),
     })
         .then(response => response.json())
         .then(data => {

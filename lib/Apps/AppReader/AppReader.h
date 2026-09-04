@@ -76,6 +76,9 @@ private:
     int _pageTurnsSinceRefresh;
     int _fontSizePt;          // Reading body font size in points (9/12/18)
     bool _useOpenSans;        // False uses the original FreeSans reader font
+    bool _showChapter;
+    bool _showPageNumber;
+    bool _showReadingPercentage;
     bool _readingFirstDraw;   // Forces a full refresh on the next reading draw
     void loadSettings();
     

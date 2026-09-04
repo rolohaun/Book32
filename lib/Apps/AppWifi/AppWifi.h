@@ -29,6 +29,7 @@ public:
 private:
     enum View {
         SETTINGS_HOME,
+        READER_DISPLAY,
         NETWORK_LIST,
         PASSWORD_KEYBOARD,
         MESSAGE_KEYBOARD,
@@ -47,6 +48,9 @@ private:
     int _sleepTimeoutMinutes = 0;
     int _fontSizePt = 18;
     int _rotation = 3;
+    bool _showChapter = true;
+    bool _showPageNumber = true;
+    bool _showReadingPercentage = true;
     bool _scanning = false;
     bool _connecting = false;
     bool _uppercase = false;
@@ -66,10 +70,12 @@ private:
     void appendKey(char key);
     void loadDeviceSettings();
     void saveSleepSettings();
-    void saveReaderFontSize();
+    void saveReaderSettings();
     void saveDisplayRotation();
     void showSettingsHome(const String& status = "");
+    void showReaderDisplay(const String& status = "");
     void drawSettingsHome();
+    void drawReaderDisplay();
     void drawNetworkList();
     void drawKeyboard();
     void drawConnectionResult();

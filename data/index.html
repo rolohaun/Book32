@@ -23,7 +23,7 @@
                     <li><button data-tab="settings" onclick="showTab('settings')"><span>⚙</span>Settings</button></li>
                 </ul>
             </nav>
-            <div class="version">InkDeck v<span id="version-display">1.2.8</span></div>
+            <div class="version">InkDeck v<span id="version-display">1.2.9</span></div>
         </aside>
 
         <main class="content">
@@ -58,6 +58,14 @@
                             <label class="choice-card size-choice" for="font-small"><input type="radio" id="font-small" name="font-size" value="9"><span class="choice-check">✓</span><span class="size-preview small">Aa</span><strong>Small</strong></label>
                             <label class="choice-card size-choice" for="font-medium"><input type="radio" id="font-medium" name="font-size" value="12" checked><span class="choice-check">✓</span><span class="size-preview medium">Aa</span><strong>Medium</strong></label>
                             <label class="choice-card size-choice" for="font-large"><input type="radio" id="font-large" name="font-size" value="18"><span class="choice-check">✓</span><span class="size-preview large">Aa</span><strong>Large</strong></label>
+                        </div>
+                    </fieldset>
+                    <fieldset class="choice-fieldset">
+                        <legend>Reading footer</legend>
+                        <div class="choice-grid three-up">
+                            <label class="choice-card footer-choice" for="show-chapter"><input type="checkbox" id="show-chapter" checked><span class="choice-check">✓</span><span class="footer-preview">Ch 4/18</span><strong>Chapter</strong><small>Show the current chapter</small></label>
+                            <label class="choice-card footer-choice" for="show-page-number"><input type="checkbox" id="show-page-number" checked><span class="choice-check">✓</span><span class="footer-preview">Page 42</span><strong>Page number</strong><small>Show the current page</small></label>
+                            <label class="choice-card footer-choice" for="show-reading-percentage"><input type="checkbox" id="show-reading-percentage" checked><span class="choice-check">✓</span><span class="footer-preview">37%</span><strong>Progress</strong><small>Show percentage read</small></label>
                         </div>
                     </fieldset>
                     <div class="inline-setting"><div><label for="refresh-rate">Full refresh interval</label><p>Clear the display completely after this many page turns.</p></div><div class="number-control"><input type="number" id="refresh-rate" min="1" max="100" value="15"><span>pages</span></div></div>
@@ -102,13 +110,13 @@
                 <article class="card section-card">
                     <div class="card-heading"><div><h2>Display orientation</h2><p>Choose which side holds the physical buttons.</p></div></div>
                     <fieldset class="choice-fieldset orientation-fieldset"><legend class="sr-only">Button side</legend><div class="choice-grid two-up">
-                        <label class="choice-card orientation-choice" for="rotation-left"><input type="radio" id="rotation-left" name="display-rotation" value="3" checked><span class="choice-check">✓</span><span class="device-preview left-button"><i></i></span><strong>Buttons on left</strong><small>Default orientation</small></label>
-                        <label class="choice-card orientation-choice" for="rotation-right"><input type="radio" id="rotation-right" name="display-rotation" value="1"><span class="choice-check">✓</span><span class="device-preview right-button"><i></i></span><strong>Buttons on right</strong><small>Rotate display 180°</small></label>
+                        <label class="choice-card orientation-choice" for="rotation-right"><input type="radio" id="rotation-right" name="display-rotation" value="3" checked><span class="choice-check">✓</span><span class="device-preview right-button"><i></i></span><strong>Buttons on right</strong><small>Default orientation</small></label>
+                        <label class="choice-card orientation-choice" for="rotation-left"><input type="radio" id="rotation-left" name="display-rotation" value="1"><span class="choice-check">✓</span><span class="device-preview left-button"><i></i></span><strong>Buttons on left</strong><small>Rotate display 180°</small></label>
                     </div></fieldset>
                     <div class="action-row"><button class="btn secondary" onclick="saveDisplaySettings()">Apply orientation</button><div id="display-settings-status" class="status-msg" role="status"></div></div>
                 </article>
                 <article class="card section-card update-card">
-                    <div class="card-heading"><div><h2>Software update</h2><p>Currently running InkDeck <span id="current-ver">1.2.8</span>.</p></div><span class="version-badge">Stable</span></div>
+                    <div class="card-heading"><div><h2>Software update</h2><p>Currently running InkDeck <span id="current-ver">1.2.9</span>.</p></div><span class="version-badge">Stable</span></div>
                     <div id="update-status" class="status-msg" role="status"></div>
                     <div id="update-buttons"><button id="check-update-btn" class="btn secondary" onclick="checkUpdate()">Check for updates</button><button id="update-btn" class="btn primary hidden" onclick="performUpdate()">Install update</button></div>
                 </article>

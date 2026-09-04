@@ -141,6 +141,9 @@ void AppWifi::loadDeviceSettings() {
     _sleepMessage = "Press button to wake";
     _fontSizePt = 18;
     _rotation = DisplayMgr::getInstance().getRotation();
+    _showChapter = true;
+    _showPageNumber = true;
+    _showReadingPercentage = true;
 
     if (EbookFS.exists("/sleep_config.json")) {
         File file = EbookFS.open("/sleep_config.json", "r");
@@ -158,13 +161,24 @@ void AppWifi::loadDeviceSettings() {
     if (EbookFS.exists("/reader_config.json")) readerFile = EbookFS.open("/reader_config.json", "r");
     else if (SystemFS.exists("/reader_config.json")) readerFile = SystemFS.open("/reader_config.json", "r");
     if (readerFile) {
-        DynamicJsonDocument doc(256);
+        DynamicJsonDocument doc(512);
         if (!deserializeJson(doc, readerFile)) {
             int size = doc["fontSize"] | 18;
             _fontSizePt = size >= 18 ? 18 : (size >= 12 ? 12 : 9);
+            _showChapter = doc["showChapter"] | true;
+            _showPageNumber = doc["showPageNumber"] | true;
+            _showReadingPercentage = doc["showReadingPercentage"] | true;
         }
         readerFile.close();
     }
+}
+
+void AppWifi::showReaderDisplay(const String& status) {
+    _view = READER_DISPLAY;
+    _status = status;
+    _fullRefresh = true;
+    _passwordOnlyRedraw = false;
+    _needsRedraw = true;
 }
 
 void AppWifi::showSettingsHome(const String& status) {
@@ -191,27 +205,33 @@ void AppWifi::saveSleepSettings() {
     _status = "Sleep settings saved";
 }
 
-void AppWifi::saveReaderFontSize() {
-    DynamicJsonDocument doc(256);
+void AppWifi::saveReaderSettings() {
+    DynamicJsonDocument doc(512);
     doc["refreshFrequency"] = READER_FULL_REFRESH_INTERVAL_DEFAULT;
     doc["fontSize"] = 18;
     doc["fontFamily"] = "native";
-    if (EbookFS.exists("/reader_config.json")) {
-        File existing = EbookFS.open("/reader_config.json", "r");
-        if (existing) {
-            DynamicJsonDocument savedDoc(256);
+    File existing;
+    if (EbookFS.exists("/reader_config.json")) existing = EbookFS.open("/reader_config.json", "r");
+    else if (SystemFS.exists("/reader_config.json")) existing = SystemFS.open("/reader_config.json", "r");
+    if (existing) {
+            DynamicJsonDocument savedDoc(512);
             if (!deserializeJson(savedDoc, existing)) {
                 doc["refreshFrequency"] = savedDoc["refreshFrequency"] | READER_FULL_REFRESH_INTERVAL_DEFAULT;
                 doc["fontSize"] = savedDoc["fontSize"] | READER_FONT_SIZE_DEFAULT;
                 doc["fontFamily"] = savedDoc["fontFamily"] | "native";
+                doc["showChapter"] = savedDoc["showChapter"] | true;
+                doc["showPageNumber"] = savedDoc["showPageNumber"] | true;
+                doc["showReadingPercentage"] = savedDoc["showReadingPercentage"] | true;
             }
             existing.close();
-        }
     }
     doc["fontSize"] = _fontSizePt;
+    doc["showChapter"] = _showChapter;
+    doc["showPageNumber"] = _showPageNumber;
+    doc["showReadingPercentage"] = _showReadingPercentage;
     File file = EbookFS.open("/reader_config.json", FILE_WRITE);
     if (!file) {
-        _status = "Could not save reading size";
+        _status = "Could not save reading display";
         return;
     }
     serializeJson(doc, file);
@@ -222,7 +242,7 @@ void AppWifi::saveReaderFontSize() {
             break;
         }
     }
-    _status = "Reading size saved";
+    _status = "Reading display saved";
 }
 
 void AppWifi::saveDisplayRotation() {
@@ -379,16 +399,38 @@ void AppWifi::handleTouch(uint16_t x, uint16_t y) {
             _passwordOnlyRedraw = false;
             _needsRedraw = true;
         } else if (row == 3) {
-            _fontSizePt = _fontSizePt == 9 ? 12 : (_fontSizePt == 12 ? 18 : 9);
-            saveReaderFontSize();
-            _fullRefresh = true;
-            _needsRedraw = true;
+            showReaderDisplay();
         } else {
             _rotation = _rotation == 3 ? 1 : 3;
             saveDisplayRotation();
             _fullRefresh = true;
             _needsRedraw = true;
         }
+        return;
+    }
+
+    if (_view == READER_DISPLAY) {
+        if (y >= 55 && y < 112) {
+            showSettingsHome();
+            return;
+        }
+        if (y < SETTINGS_TOP) return;
+        int row = (y - SETTINGS_TOP) / SETTINGS_ROW_HEIGHT;
+        int withinRow = (y - SETTINGS_TOP) % SETTINGS_ROW_HEIGHT;
+        if (row < 0 || row > 3 || withinRow >= SETTINGS_CARD_HEIGHT) return;
+
+        if (row == 0) {
+            _fontSizePt = _fontSizePt == 9 ? 12 : (_fontSizePt == 12 ? 18 : 9);
+        } else if (row == 1) {
+            _showChapter = !_showChapter;
+        } else if (row == 2) {
+            _showPageNumber = !_showPageNumber;
+        } else {
+            _showReadingPercentage = !_showReadingPercentage;
+        }
+        saveReaderSettings();
+        _fullRefresh = true;
+        _needsRedraw = true;
         return;
     }
 
@@ -531,6 +573,7 @@ void AppWifi::draw() {
     if (!_needsRedraw) return;
     _needsRedraw = false;
     if (_view == SETTINGS_HOME) drawSettingsHome();
+    else if (_view == READER_DISPLAY) drawReaderDisplay();
     else if (_view == NETWORK_LIST) drawNetworkList();
     else if (_view == PASSWORD_KEYBOARD || _view == MESSAGE_KEYBOARD) drawKeyboard();
     else drawConnectionResult();
@@ -550,7 +593,10 @@ void AppWifi::drawSettingsHome() {
                               ? "Off"
                               : String(_sleepTimeoutMinutes) + (_sleepTimeoutMinutes == 1 ? " minute" : " minutes");
     String fontValue = _fontSizePt == 18 ? "Large" : (_fontSizePt == 12 ? "Medium" : "Small");
-    String rotationValue = _rotation == 3 ? "Buttons on left" : "Buttons on right";
+    int footerItems = (_showChapter ? 1 : 0) + (_showPageNumber ? 1 : 0) +
+                      (_showReadingPercentage ? 1 : 0);
+    String readerDisplayValue = fontValue + " text, " + String(footerItems) + "/3 footer items";
+    String rotationValue = _rotation == 3 ? "Buttons on right" : "Buttons on left";
 
     display.firstPage();
     do {
@@ -570,10 +616,42 @@ void AppWifi::drawSettingsHome() {
         drawSettingCard(display, fontMgr, SETTINGS_TOP + SETTINGS_ROW_HEIGHT * 2,
                         "Sleep message", _sleepMessage);
         drawSettingCard(display, fontMgr, SETTINGS_TOP + SETTINGS_ROW_HEIGHT * 3,
-                        "Reading size", fontValue);
+                        "Reading display", readerDisplayValue);
         drawSettingCard(display, fontMgr, SETTINGS_TOP + SETTINGS_ROW_HEIGHT * 4,
                         "Orientation", rotationValue);
         fontMgr.drawTextCentered(display, "Tap a setting to change it", 760,
+                                 FONT_SIZE_SMALL, GxEPD_BLACK);
+    } while (display.nextPage());
+}
+
+void AppWifi::drawReaderDisplay() {
+    Book32Display& display = DisplayMgr::getInstance().getDisplay();
+    FontMgr& fontMgr = FontMgr::getInstance();
+    if (_fullRefresh) display.setFullWindow();
+    else display.setPartialWindow(0, 0, display.width(), display.height());
+    _fullRefresh = false;
+
+    String fontValue = _fontSizePt == 18 ? "Large" : (_fontSizePt == 12 ? "Medium" : "Small");
+    display.firstPage();
+    do {
+        display.fillScreen(GxEPD_WHITE);
+        fontMgr.drawText(display, "Reading Display", 15, 35, FONT_SIZE_SUBTITLE, GxEPD_BLACK);
+        display.drawLine(0, 50, display.width(), 50, GxEPD_BLACK);
+        drawCenteredButton(display, fontMgr, 10, 58, display.width() - 20, 52, "< Settings");
+        if (_status.length()) {
+            String status = fittedText(fontMgr, _status, display.width() - 30, FONT_SIZE_SMALL);
+            fontMgr.drawTextCentered(display, status.c_str(), 132, FONT_SIZE_SMALL, GxEPD_BLACK);
+        }
+
+        drawSettingCard(display, fontMgr, SETTINGS_TOP + SETTINGS_ROW_HEIGHT * 0,
+                        "Reading size", fontValue);
+        drawSettingCard(display, fontMgr, SETTINGS_TOP + SETTINGS_ROW_HEIGHT * 1,
+                        "Chapter", _showChapter ? "Shown" : "Hidden");
+        drawSettingCard(display, fontMgr, SETTINGS_TOP + SETTINGS_ROW_HEIGHT * 2,
+                        "Page number", _showPageNumber ? "Shown" : "Hidden");
+        drawSettingCard(display, fontMgr, SETTINGS_TOP + SETTINGS_ROW_HEIGHT * 3,
+                        "Reading percentage", _showReadingPercentage ? "Shown" : "Hidden");
+        fontMgr.drawTextCentered(display, "Tap an option to change it", 760,
                                  FONT_SIZE_SMALL, GxEPD_BLACK);
     } while (display.nextPage());
 }

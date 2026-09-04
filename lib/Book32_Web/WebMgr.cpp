@@ -528,7 +528,7 @@ void WebMgr::setupEndpoints() {
     // API: Reader Settings - GET
     server->on("/api/settings/reader", HTTP_GET, [](AsyncWebServerRequest *request) {
         AsyncResponseStream *response = request->beginResponseStream("application/json");
-        DynamicJsonDocument doc(256);
+        DynamicJsonDocument doc(512);
 
         // Try to load existing settings
         File file;
@@ -539,21 +539,30 @@ void WebMgr::setupEndpoints() {
         }
 
         if (file) {
-            DynamicJsonDocument savedDoc(256);
+            DynamicJsonDocument savedDoc(512);
             if (!deserializeJson(savedDoc, file)) {
                 doc["refreshFrequency"] = savedDoc["refreshFrequency"] | READER_FULL_REFRESH_INTERVAL_DEFAULT;
                 doc["fontSize"] = savedDoc["fontSize"] | READER_FONT_SIZE_DEFAULT;
                 doc["fontFamily"] = savedDoc["fontFamily"] | "native";
+                doc["showChapter"] = savedDoc["showChapter"] | true;
+                doc["showPageNumber"] = savedDoc["showPageNumber"] | true;
+                doc["showReadingPercentage"] = savedDoc["showReadingPercentage"] | true;
             } else {
                 doc["refreshFrequency"] = READER_FULL_REFRESH_INTERVAL_DEFAULT;
                 doc["fontSize"] = READER_FONT_SIZE_DEFAULT;
                 doc["fontFamily"] = "native";
+                doc["showChapter"] = true;
+                doc["showPageNumber"] = true;
+                doc["showReadingPercentage"] = true;
             }
             file.close();
         } else {
             doc["refreshFrequency"] = READER_FULL_REFRESH_INTERVAL_DEFAULT;
             doc["fontSize"] = READER_FONT_SIZE_DEFAULT;
             doc["fontFamily"] = "native";
+            doc["showChapter"] = true;
+            doc["showPageNumber"] = true;
+            doc["showReadingPercentage"] = true;
         }
 
         serializeJson(doc, *response);
@@ -564,18 +573,24 @@ void WebMgr::setupEndpoints() {
     AsyncCallbackJsonWebHandler* readerSettingsHandler = new AsyncCallbackJsonWebHandler("/api/settings/reader",
         [](AsyncWebServerRequest *request, JsonVariant &json) {
             // Merge into the existing config so one setting doesn't wipe the other.
-            DynamicJsonDocument doc(256);
+            DynamicJsonDocument doc(512);
             doc["refreshFrequency"] = READER_FULL_REFRESH_INTERVAL_DEFAULT;
             doc["fontSize"] = READER_FONT_SIZE_DEFAULT;
             doc["fontFamily"] = "native";
+            doc["showChapter"] = true;
+            doc["showPageNumber"] = true;
+            doc["showReadingPercentage"] = true;
             if (EbookFS.exists("/reader_config.json")) {
                 File existing = EbookFS.open("/reader_config.json", "r");
                 if (existing) {
-                    DynamicJsonDocument savedDoc(256);
+                    DynamicJsonDocument savedDoc(512);
                     if (!deserializeJson(savedDoc, existing)) {
                         doc["refreshFrequency"] = savedDoc["refreshFrequency"] | READER_FULL_REFRESH_INTERVAL_DEFAULT;
                         doc["fontSize"] = savedDoc["fontSize"] | READER_FONT_SIZE_DEFAULT;
                         doc["fontFamily"] = savedDoc["fontFamily"] | "native";
+                        doc["showChapter"] = savedDoc["showChapter"] | true;
+                        doc["showPageNumber"] = savedDoc["showPageNumber"] | true;
+                        doc["showReadingPercentage"] = savedDoc["showReadingPercentage"] | true;
                     }
                     existing.close();
                 }
@@ -596,6 +611,15 @@ void WebMgr::setupEndpoints() {
                 bool useOpenSans = strcmp(requestedFamily, "openSans") == 0;
                 doc["fontFamily"] = useOpenSans ? "openSans" : "native";
                 WebMgr::getInstance()._pendingReaderFontFamily = useOpenSans ? 1 : 0;
+            }
+            if (json.containsKey("showChapter")) {
+                doc["showChapter"] = json["showChapter"].as<bool>();
+            }
+            if (json.containsKey("showPageNumber")) {
+                doc["showPageNumber"] = json["showPageNumber"].as<bool>();
+            }
+            if (json.containsKey("showReadingPercentage")) {
+                doc["showReadingPercentage"] = json["showReadingPercentage"].as<bool>();
             }
 
             // Save to EbookFS (primary storage - persists through OTA)
@@ -619,7 +643,7 @@ void WebMgr::setupEndpoints() {
         AsyncResponseStream *response = request->beginResponseStream("application/json");
         DynamicJsonDocument doc(128);
 
-        int rotation = 3;  // Default: button on the left
+        int rotation = 3;  // Default: buttons on the right
         if (EbookFS.exists("/display_config.json")) {
             File file = EbookFS.open("/display_config.json", "r");
             if (file) {

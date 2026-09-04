@@ -26,8 +26,8 @@ public:
     void showBootScreen(uint8_t progress, const char* status);
 
     // Display orientation. Only the two portrait orientations are supported so
-    // that every screen layout (480x800) stays valid: 3 = button on the left
-    // (default), 1 = rotated 180 (button on the right). Applies OS-wide.
+    // that every screen layout (480x800) stays valid: 3 = buttons on the right
+    // (default), 1 = rotated 180 (buttons on the left). Applies OS-wide.
     void setRotation(int rotation);
     int getRotation() const { return _rotation; }
     bool mapNativeTouchToScreen(uint16_t nativeX, uint16_t nativeY,
@@ -38,5 +38,5 @@ private:
     DisplayMgr();
     Book32Display display;
     bool _bootScreenActive = false;
-    int _rotation = 3;  // Default: portrait, button on the left
+    int _rotation = 3;  // Default: portrait, buttons on the right
 };

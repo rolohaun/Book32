@@ -1,6 +1,6 @@
 {
   "name": "InkDeck for Book32",
-  "version": "1.2.11",
+  "version": "1.2.12",
   "new_install_prompt_erase": true,
   "new_install_improv_wait_time": 0,
   "builds": [

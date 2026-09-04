@@ -24,6 +24,7 @@ public:
 
 private:
     BBEPAPER _panel;
+    uint8_t* _previousBuffer = nullptr;
     bool _partialWindow = false;
     bool _pagePending = false;
 

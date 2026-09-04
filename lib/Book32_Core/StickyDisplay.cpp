@@ -4,8 +4,18 @@
 
 #include "Config.h"
 #include <cstring>
+#include <esp_heap_caps.h>
 
-StickyDisplay::StickyDisplay() : GFXcanvas1(800, 480), _panel(EP397_800x480) {}
+namespace {
+constexpr size_t FRAME_BYTES = ((800 + 7) / 8) * 480;
+}
+
+StickyDisplay::StickyDisplay() : GFXcanvas1(800, 480), _panel(EP397_800x480) {
+    _previousBuffer = static_cast<uint8_t*>(
+        heap_caps_malloc(FRAME_BYTES, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    if (!_previousBuffer) _previousBuffer = static_cast<uint8_t*>(malloc(FRAME_BYTES));
+    if (_previousBuffer) memset(_previousBuffer, 0xFF, FRAME_BYTES);
+}
 
 void StickyDisplay::init(uint32_t, bool, uint16_t, bool) {
     pinMode(EPD_ENABLE, OUTPUT);
@@ -46,19 +56,23 @@ bool StickyDisplay::nextPage() {
 void StickyDisplay::flush() {
     if (!getBuffer()) return;
     digitalWrite(SD_CS, HIGH);
-    _panel.setBuffer(getBuffer());
     SPI.beginTransaction(SPISettings(8000000, MSBFIRST, SPI_MODE0));
-    // The Sticky's controller compares two internal image planes during a
-    // partial refresh. With only the new plane populated, black pixels appear
-    // but old black pixels are not driven back to white. PLANE_FALSE_DIFF is
-    // the bb_epaper library's Sticky-specific one-buffer path: it writes the
-    // new frame and its inverse so every changed pixel is actively driven.
-    // Full refreshes duplicate the frame into both planes, leaving the
-    // controller in a synchronized state for the next update.
-    _panel.writePlane(_partialWindow ? PLANE_FALSE_DIFF : PLANE_DUPLICATE);
+    if (_partialWindow && _previousBuffer) {
+        // SSD1677 partial refresh compares an old plane with a new plane.
+        // Supplying both avoids the forced all-pixel update (and its flash)
+        // while still driving erased black pixels cleanly back to white.
+        _panel.setBuffer(_previousBuffer);
+        _panel.writePlane(PLANE_1);
+        _panel.setBuffer(getBuffer());
+        _panel.writePlane(PLANE_0);
+    } else {
+        _panel.setBuffer(getBuffer());
+        _panel.writePlane(_partialWindow ? PLANE_FALSE_DIFF : PLANE_DUPLICATE);
+    }
     _panel.refresh(_partialWindow ? REFRESH_PARTIAL : REFRESH_FULL, false);
     SPI.endTransaction();
     _panel.wait();
+    if (_previousBuffer) memcpy(_previousBuffer, getBuffer(), FRAME_BYTES);
 }
 
 void StickyDisplay::refresh(bool partialUpdateMode) {

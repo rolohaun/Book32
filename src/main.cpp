@@ -10,6 +10,7 @@
 #include "GitHubMgr.h"
 #include "BatteryMgr.h"
 #include "FontMgr.h"
+#include "SoundMgr.h"
 
 #include "../Book32_Apps/AppMainMenu.h"
 #include "../Apps/AppReader/AppReader.h"
@@ -124,6 +125,10 @@ void setup() {
     // 2. Mount Filesystems EARLY (before WiFi, prevents race conditions)
     displayMgr.showBootScreen(28, "Mounting storage");
     webMgr.mountFilesystems();
+
+    // Touch feedback is persisted in ebook storage and is available to every
+    // app. Boards without a buzzer simply expose a no-op SoundMgr.
+    SoundMgr::getInstance().init();
     
     // 2.5. Initialize Font Manager (after filesystems, before UI)
     FontMgr::getInstance().init();

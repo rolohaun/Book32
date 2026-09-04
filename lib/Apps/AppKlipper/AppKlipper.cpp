@@ -27,6 +27,7 @@ AppKlipper::AppKlipper() {
     _scanProgress = 0;
     _scannedIPs = 0;
     _totalIPs = 0;
+    _lastDisplayedScanChunk = 0;
     _scanTaskHandle = NULL;
     _fullRefreshInterval = 5;  // Default: full refresh every 5 minutes
     _lastFullRefreshTime = 0;
@@ -168,10 +169,10 @@ void AppKlipper::update() {
         _needsRedraw = true;
     }
 
-    // Update progress bar during scanning (every 500ms)
-    static unsigned long lastProgressUpdate = 0;
-    if (_scanning && (now - lastProgressUpdate > 500)) {
-        lastProgressUpdate = now;
+    // E-ink progress updates are intentionally coarse: repaint only after
+    // another ten addresses have completed instead of flashing for every IP.
+    if (_scanning && (_scannedIPs / 10) > _lastDisplayedScanChunk) {
+        _lastDisplayedScanChunk = _scannedIPs / 10;
         _needsRedraw = true;
     }
 
@@ -229,6 +230,7 @@ void AppKlipper::startScan() {
     _foundPrinters.clear();
     _scanProgress = 0;
     _scannedIPs = 0;
+    _lastDisplayedScanChunk = 0;
     _totalIPs = 254;  // Full subnet scan
     _needsRedraw = true;
     _lastScanTime = millis();

@@ -7,6 +7,7 @@
 #include "../../Book32_Core/DisplayMgr.h"
 #include "../../Book32_Core/FontMgr.h"
 #include "../../Book32_Core/Book32FS.h"
+#include "../../Book32_Core/SoundMgr.h"
 #include "../../Book32_Web/WebMgr.h"
 #include <ArduinoJson.h>
 #include <WiFi.h>
@@ -22,8 +23,8 @@ constexpr int KEYBOARD_TOP = 165;
 constexpr int KEY_HEIGHT = 55;
 constexpr int KEY_GAP = 5;
 constexpr int SETTINGS_TOP = 150;
-constexpr int SETTINGS_ROW_HEIGHT = 105;
-constexpr int SETTINGS_CARD_HEIGHT = 86;
+constexpr int SETTINGS_ROW_HEIGHT = 95;
+constexpr int SETTINGS_CARD_HEIGHT = 78;
 constexpr unsigned long CONNECT_TIMEOUT_MS = 20000;
 
 String fittedText(FontMgr& fontMgr, const String& value, int width, int fontSize) {
@@ -144,6 +145,7 @@ void AppWifi::loadDeviceSettings() {
     _showChapter = true;
     _showPageNumber = true;
     _showReadingPercentage = true;
+    _soundEnabled = SoundMgr::getInstance().isEnabled();
 
     if (EbookFS.exists("/sleep_config.json")) {
         File file = EbookFS.open("/sleep_config.json", "r");
@@ -312,6 +314,7 @@ void AppWifi::finishScan(int count) {
 
 void AppWifi::selectNetwork(int index) {
     if (index < 0 || index >= static_cast<int>(_networks.size())) return;
+    SoundMgr::getInstance().beep();
     _selectedSsid = _networks[index].ssid;
     _selectedAuth = _networks[index].auth;
     _password = "";
@@ -351,6 +354,7 @@ void AppWifi::appendKey(char key) {
     String& value = _view == MESSAGE_KEYBOARD ? _messageDraft : _password;
     size_t maxLength = _view == MESSAGE_KEYBOARD ? 80 : 63;
     if (!key || value.length() >= maxLength || _connecting) return;
+    SoundMgr::getInstance().beep();
     value += key;
     if (_uppercase && key >= 'A' && key <= 'Z') {
         // Shift is one-shot, like a phone keyboard.
@@ -366,17 +370,20 @@ void AppWifi::appendKey(char key) {
 void AppWifi::handleTouch(uint16_t x, uint16_t y) {
     if (_view == SETTINGS_HOME) {
         if (y >= 55 && y < 112) {
+            SoundMgr::getInstance().beep();
             returnToMenu();
             return;
         }
         if (y < SETTINGS_TOP) return;
         int row = (y - SETTINGS_TOP) / SETTINGS_ROW_HEIGHT;
         int withinRow = (y - SETTINGS_TOP) % SETTINGS_ROW_HEIGHT;
-        if (row < 0 || row > 4 || withinRow >= SETTINGS_CARD_HEIGHT) return;
+        if (row < 0 || row > 5 || withinRow >= SETTINGS_CARD_HEIGHT) return;
 
         if (row == 0) {
+            SoundMgr::getInstance().beep();
             startScan();
         } else if (row == 1) {
+            SoundMgr::getInstance().beep();
             const int choices[] = {0, 1, 5, 10, 15, 30, 60};
             int next = choices[0];
             for (size_t i = 0; i < sizeof(choices) / sizeof(choices[0]); ++i) {
@@ -390,6 +397,7 @@ void AppWifi::handleTouch(uint16_t x, uint16_t y) {
             _fullRefresh = true;
             _needsRedraw = true;
         } else if (row == 2) {
+            SoundMgr::getInstance().beep();
             _messageDraft = _sleepMessage;
             _uppercase = false;
             _symbols = false;
@@ -399,8 +407,22 @@ void AppWifi::handleTouch(uint16_t x, uint16_t y) {
             _passwordOnlyRedraw = false;
             _needsRedraw = true;
         } else if (row == 3) {
+            SoundMgr::getInstance().beep();
             showReaderDisplay();
+        } else if (row == 4) {
+            if (_soundEnabled) {
+                SoundMgr::getInstance().beep();
+                SoundMgr::getInstance().setEnabled(false);
+            } else {
+                SoundMgr::getInstance().setEnabled(true);
+                SoundMgr::getInstance().beep();
+            }
+            _soundEnabled = SoundMgr::getInstance().isEnabled();
+            _status = _soundEnabled ? "Touch sounds on" : "Touch sounds off";
+            _fullRefresh = true;
+            _needsRedraw = true;
         } else {
+            SoundMgr::getInstance().beep();
             _rotation = _rotation == 3 ? 1 : 3;
             saveDisplayRotation();
             _fullRefresh = true;
@@ -411,6 +433,7 @@ void AppWifi::handleTouch(uint16_t x, uint16_t y) {
 
     if (_view == READER_DISPLAY) {
         if (y >= 55 && y < 112) {
+            SoundMgr::getInstance().beep();
             showSettingsHome();
             return;
         }
@@ -418,6 +441,7 @@ void AppWifi::handleTouch(uint16_t x, uint16_t y) {
         int row = (y - SETTINGS_TOP) / SETTINGS_ROW_HEIGHT;
         int withinRow = (y - SETTINGS_TOP) % SETTINGS_ROW_HEIGHT;
         if (row < 0 || row > 3 || withinRow >= SETTINGS_CARD_HEIGHT) return;
+        SoundMgr::getInstance().beep();
 
         if (row == 0) {
             _fontSizePt = _fontSizePt == 9 ? 12 : (_fontSizePt == 12 ? 18 : 9);
@@ -437,6 +461,7 @@ void AppWifi::handleTouch(uint16_t x, uint16_t y) {
     if (_view == NETWORK_LIST) {
         if (_connecting) return;
         if (y >= 55 && y < 112) {
+            SoundMgr::getInstance().beep();
             if (x < SCREEN_WIDTH / 2) showSettingsHome();
             else startScan();
             return;
@@ -451,6 +476,7 @@ void AppWifi::handleTouch(uint16_t x, uint16_t y) {
             if (x < SCREEN_WIDTH / 2 && _page > 0) --_page;
             else if (x >= SCREEN_WIDTH / 2 && _page + 1 < pageCount) ++_page;
             else return;
+            SoundMgr::getInstance().beep();
             _fullRefresh = false;
             _needsRedraw = true;
         }
@@ -458,11 +484,15 @@ void AppWifi::handleTouch(uint16_t x, uint16_t y) {
     }
 
     if (_view == CONNECTION_RESULT) {
-        if (y >= 640) showSettingsHome();
+        if (y >= 640) {
+            SoundMgr::getInstance().beep();
+            showSettingsHome();
+        }
         return;
     }
 
     if (_view == PASSWORD_KEYBOARD && y >= 88 && y < 145 && x >= 355) {
+        SoundMgr::getInstance().beep();
         _showPassword = !_showPassword;
         _fullRefresh = true;
         _passwordOnlyRedraw = false;
@@ -485,11 +515,13 @@ void AppWifi::handleTouch(uint16_t x, uint16_t y) {
     if (y >= 410 && y < 470) {
         String& value = _view == MESSAGE_KEYBOARD ? _messageDraft : _password;
         if (x < 90) {
+            SoundMgr::getInstance().beep();
             _symbols = !_symbols;
             _fullRefresh = true;
             _passwordOnlyRedraw = false;
             _needsRedraw = true;
         } else if (x < 180) {
+            SoundMgr::getInstance().beep();
             if (!_symbols) _uppercase = !_uppercase;
             _fullRefresh = true;
             _passwordOnlyRedraw = false;
@@ -497,6 +529,7 @@ void AppWifi::handleTouch(uint16_t x, uint16_t y) {
         } else if (x < 360) {
             appendKey(' ');
         } else if (value.length() > 0) {
+            SoundMgr::getInstance().beep();
             value.remove(value.length() - 1);
             _fullRefresh = true;
             _passwordOnlyRedraw = false;
@@ -507,6 +540,7 @@ void AppWifi::handleTouch(uint16_t x, uint16_t y) {
 
     if (y >= 490 && y < 555) {
         if (x < 150) {
+            SoundMgr::getInstance().beep();
             if (_view == MESSAGE_KEYBOARD) showSettingsHome();
             else {
                 _view = NETWORK_LIST;
@@ -516,16 +550,19 @@ void AppWifi::handleTouch(uint16_t x, uint16_t y) {
                 _needsRedraw = true;
             }
         } else if (x < 270) {
+            SoundMgr::getInstance().beep();
             if (_view == MESSAGE_KEYBOARD) _messageDraft = "";
             else _password = "";
             _fullRefresh = true;
             _passwordOnlyRedraw = false;
             _needsRedraw = true;
         } else if (_view == MESSAGE_KEYBOARD) {
+            SoundMgr::getInstance().beep();
             _sleepMessage = _messageDraft;
             saveSleepSettings();
             showSettingsHome("Sleep message saved");
         } else {
+            SoundMgr::getInstance().beep();
             beginConnect();
         }
     }
@@ -618,6 +655,8 @@ void AppWifi::drawSettingsHome() {
         drawSettingCard(display, fontMgr, SETTINGS_TOP + SETTINGS_ROW_HEIGHT * 3,
                         "Reading display", readerDisplayValue);
         drawSettingCard(display, fontMgr, SETTINGS_TOP + SETTINGS_ROW_HEIGHT * 4,
+                        "Touch sounds", _soundEnabled ? "On" : "Off");
+        drawSettingCard(display, fontMgr, SETTINGS_TOP + SETTINGS_ROW_HEIGHT * 5,
                         "Orientation", rotationValue);
         fontMgr.drawTextCentered(display, "Tap a setting to change it", 760,
                                  FONT_SIZE_SMALL, GxEPD_BLACK);

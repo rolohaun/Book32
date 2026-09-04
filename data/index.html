@@ -23,7 +23,7 @@
                     <li><button data-tab="settings" onclick="showTab('settings')"><span>⚙</span>Settings</button></li>
                 </ul>
             </nav>
-            <div class="version">InkDeck v<span id="version-display">1.2.11</span></div>
+            <div class="version">InkDeck v<span id="version-display">1.2.12</span></div>
         </aside>
 
         <main class="content">
@@ -100,12 +100,20 @@
             </section>
 
             <section id="settings" class="tab-content">
-                <div class="page-heading"><p class="eyebrow">InkDeck</p><h1>Device settings</h1><p>Adjust sleep behavior, orientation, and software updates.</p></div>
+                <div class="page-heading"><p class="eyebrow">InkDeck</p><h1>Device settings</h1><p>Adjust sleep behavior, touch feedback, orientation, and software updates.</p></div>
                 <article class="card section-card">
                     <div class="card-heading"><div><h2>Sleep settings</h2><p>Save battery when InkDeck is left idle.</p></div></div>
                     <div class="inline-setting"><div><label for="sleep-timeout">Idle sleep timeout</label><p>Use 0 to disable automatic sleep.</p></div><div class="number-control"><input type="number" id="sleep-timeout" min="0" max="60" value="5"><span>minutes</span></div></div>
                     <label class="text-field" for="sleep-message"><span>Sleep message</span><input type="text" id="sleep-message" maxlength="100" placeholder="Press button to wake"></label>
                     <div class="action-row"><button class="btn primary" onclick="saveSleepSettings()">Save sleep settings</button><div id="sleep-settings-status" class="status-msg" role="status"></div></div>
+                </article>
+                <article id="sound-settings-card" class="card section-card">
+                    <div class="card-heading"><div><h2>Touch sounds</h2><p>Play a short confirmation beep for controls. Page turns always remain silent.</p></div></div>
+                    <fieldset class="choice-fieldset"><legend class="sr-only">Touch sounds</legend><div class="choice-grid two-up">
+                        <label class="choice-card" for="sound-on"><input type="radio" id="sound-on" name="sound-enabled" value="true" checked><span class="choice-check">✓</span><strong>Sounds on</strong><small>Confirm touchscreen actions</small></label>
+                        <label class="choice-card" for="sound-off"><input type="radio" id="sound-off" name="sound-enabled" value="false"><span class="choice-check">✓</span><strong>Sounds off</strong><small>Keep every interaction silent</small></label>
+                    </div></fieldset>
+                    <div class="action-row"><button class="btn secondary" onclick="saveSoundSettings()">Save touch sounds</button><div id="sound-settings-status" class="status-msg" role="status"></div></div>
                 </article>
                 <article class="card section-card">
                     <div class="card-heading"><div><h2>Display orientation</h2><p>Choose which side holds the physical buttons.</p></div></div>
@@ -116,7 +124,7 @@
                     <div class="action-row"><button class="btn secondary" onclick="saveDisplaySettings()">Apply orientation</button><div id="display-settings-status" class="status-msg" role="status"></div></div>
                 </article>
                 <article class="card section-card update-card">
-                    <div class="card-heading"><div><h2>Software update</h2><p>Currently running InkDeck <span id="current-ver">1.2.11</span>.</p></div><span class="version-badge">Stable</span></div>
+                    <div class="card-heading"><div><h2>Software update</h2><p>Currently running InkDeck <span id="current-ver">1.2.12</span>.</p></div><span class="version-badge">Stable</span></div>
                     <div id="update-status" class="status-msg" role="status"></div>
                     <div id="update-buttons"><button id="check-update-btn" class="btn secondary" onclick="checkUpdate()">Check for updates</button><button id="update-btn" class="btn primary hidden" onclick="performUpdate()">Install update</button></div>
                 </article>

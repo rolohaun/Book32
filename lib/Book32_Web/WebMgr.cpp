@@ -10,6 +10,7 @@
 #include "../Apps/AppTodo/AppTodo.h"
 #include "../Book32_Core/AppMgr.h"
 #include "../Book32_Core/DisplayMgr.h"
+#include "../Book32_Core/SoundMgr.h"
 #include "../../include/Config.h"
 
 static const char* READER_PROGRESS_PATH = "/reader_progress.json";
@@ -684,6 +685,32 @@ void WebMgr::setupEndpoints() {
         }
     );
     server->addHandler(displaySettingsHandler);
+
+    // API: Touch sounds. Unsupported hardware reports itself so the web UI can
+    // hide the control instead of presenting a setting that cannot take effect.
+    server->on("/api/settings/sound", HTTP_GET, [](AsyncWebServerRequest *request) {
+        AsyncResponseStream *response = request->beginResponseStream("application/json");
+        DynamicJsonDocument doc(128);
+        SoundMgr& sound = SoundMgr::getInstance();
+        doc["supported"] = sound.isSupported();
+        doc["enabled"] = sound.isEnabled();
+        serializeJson(doc, *response);
+        request->send(response);
+    });
+
+    AsyncCallbackJsonWebHandler* soundSettingsHandler = new AsyncCallbackJsonWebHandler("/api/settings/sound",
+        [](AsyncWebServerRequest *request, JsonVariant &json) {
+            SoundMgr& sound = SoundMgr::getInstance();
+            if (!sound.isSupported()) {
+                request->send(400, "application/json", "{\"status\":\"unsupported\"}");
+                return;
+            }
+            bool enabled = json["enabled"] | true;
+            sound.setEnabled(enabled);
+            request->send(200, "application/json", "{\"status\":\"ok\"}");
+        }
+    );
+    server->addHandler(soundSettingsHandler);
 
     // API: Reader Progress - GET
     server->on("/api/reader/progress", HTTP_GET, [](AsyncWebServerRequest *request) {

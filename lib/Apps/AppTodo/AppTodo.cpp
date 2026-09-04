@@ -1,4 +1,5 @@
 #include "AppTodo.h"
+#include "SoundMgr.h"
 #include "DisplayMgr.h"
 #include "InputMgr.h"
 #include "FontMgr.h"
@@ -188,6 +189,7 @@ void AppTodo::handleTouch(uint16_t, uint16_t y) {
     constexpr int ITEM_HEIGHT = 70;
 
     if (y >= BACK_Y && y < BACK_Y + BACK_HEIGHT) {
+        SoundMgr::getInstance().beep();
         AppMgr::getInstance().switchTo(0);
         return;
     }
@@ -195,6 +197,7 @@ void AppTodo::handleTouch(uint16_t, uint16_t y) {
     if (y < BACK_Y + BACK_HEIGHT) return;
     int index = (static_cast<int>(y) - BACK_Y - BACK_HEIGHT) / ITEM_HEIGHT;
     if (index >= 0 && index < static_cast<int>(_todos.size())) {
+        SoundMgr::getInstance().beep();
         _previousSelectedIndex = _selectedIndex;
         _selectedIndex = index;
         toggleTodo(_todos[index].id);

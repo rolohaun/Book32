@@ -1,4 +1,5 @@
 #include "AppReader.h"
+#include "SoundMgr.h"
 #include "DisplayMgr.h"
 #include "InputMgr.h"
 #include "FontMgr.h"
@@ -514,6 +515,7 @@ void AppReader::handleTouch(uint16_t x, uint16_t y) {
     constexpr int ITEM_HEIGHT = 110;
     constexpr int FOOTER_H = 70;
     if (y >= HEADER_H && y < HEADER_H + BACK_ITEM_HEIGHT) {
+        SoundMgr::getInstance().beep();
         markProgressInactive();
         AppMgr::getInstance().switchTo(0);
         return;
@@ -523,6 +525,7 @@ void AppReader::handleTouch(uint16_t x, uint16_t y) {
     int visibleRow = (static_cast<int>(y) - HEADER_H - BACK_ITEM_HEIGHT) / ITEM_HEIGHT;
     int bookIndex = _scrollOffset + visibleRow;
     if (bookIndex >= 0 && bookIndex < static_cast<int>(_books.size())) {
+        SoundMgr::getInstance().beep();
         _selectedBookIndex = bookIndex;
         openBook(_books[bookIndex].path);
     }

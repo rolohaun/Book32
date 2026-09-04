@@ -51,6 +51,7 @@ private:
     bool _showChapter = true;
     bool _showPageNumber = true;
     bool _showReadingPercentage = true;
+    bool _soundEnabled = true;
     bool _scanning = false;
     bool _connecting = false;
     bool _uppercase = false;

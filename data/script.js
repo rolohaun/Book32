@@ -17,7 +17,43 @@ function showTab(tabId) {
         switchDeviceApp('Todo');
     } else if (tabId === 'settings') {
         getDisplaySettings();
+        getSoundSettings();
     }
+}
+
+// === Touch Sounds ===
+function getSoundSettings() {
+    fetch('/api/settings/sound')
+        .then(response => response.json())
+        .then(data => {
+            const card = document.getElementById('sound-settings-card');
+            if (card) card.classList.toggle('hidden', data.supported === false);
+            if (data.enabled !== undefined) {
+                setRadioValue('sound-enabled', String(data.enabled));
+            }
+        })
+        .catch(error => console.error('Error loading sound settings:', error));
+}
+
+function saveSoundSettings() {
+    const enabled = getRadioValue('sound-enabled', 'true') === 'true';
+    const statusDiv = document.getElementById('sound-settings-status');
+    fetch('/api/settings/sound', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: enabled }),
+    })
+        .then(response => response.json())
+        .then(data => {
+            statusDiv.textContent = data.status === 'ok' ? 'Touch sounds saved.' : 'Error saving touch sounds.';
+            statusDiv.style.color = data.status === 'ok' ? 'var(--accent)' : 'var(--danger)';
+            if (data.status === 'ok') setTimeout(() => statusDiv.textContent = '', 3000);
+        })
+        .catch(error => {
+            console.error('Error saving sound settings:', error);
+            statusDiv.textContent = 'Connection error.';
+            statusDiv.style.color = 'var(--danger)';
+        });
 }
 
 // Switch the app on the device

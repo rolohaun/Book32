@@ -4,6 +4,7 @@
 #include "../Book32_Core/BatteryMgr.h"
 #include "../Book32_Core/InputMgr.h"
 #include "../Book32_Core/FontMgr.h"
+#include "../Book32_Core/SoundMgr.h"
 #include "../Book32_Web/WebMgr.h"
 #include "../../include/Config.h"
 #include "../../include/NetworkState.h"
@@ -85,20 +86,6 @@ static void drawSettingsMenuIcon(Book32Display& display, int x, int y) {
     display.fillCircle(cx, cy, 27, GxEPD_WHITE);
 }
 #endif
-
-#if BOOK32_HAS_BUZZER
-static constexpr uint8_t MENU_BUZZER_CHANNEL = 7;
-#endif
-
-static void playMenuTouchBeep() {
-#if BOOK32_HAS_BUZZER
-    // A brief confirmation chirp for valid touchscreen choices.
-    // It is deliberately owned by the main menu so reading and page turns stay silent.
-    ledcWriteTone(MENU_BUZZER_CHANNEL, 2400);
-    delay(35);
-    ledcWriteTone(MENU_BUZZER_CHANNEL, 0);
-#endif
-}
 
 void AppMainMenu::updateCheckTask(void* parameter) {
     AppMainMenu* self = (AppMainMenu*)parameter;
@@ -265,11 +252,6 @@ void AppMainMenu::ensureWifiAwake() {
 }
 
 void AppMainMenu::start() {
-#if BOOK32_HAS_BUZZER
-    ledcSetup(MENU_BUZZER_CHANNEL, 2400, 10);
-    ledcAttachPin(PIN_BUZZER, MENU_BUZZER_CHANNEL);
-    ledcWrite(MENU_BUZZER_CHANNEL, 0);
-#endif
     selectedIndex = 1; // Start with first app (skip main menu itself)
     _needsRedraw = true;
     _firstDraw = true;  // Force full refresh on first draw
@@ -314,7 +296,7 @@ void AppMainMenu::handleTouch(uint16_t x, uint16_t y) {
         MenuDirtyRect rect = menuItemRect(index, SCREEN_WIDTH);
         if (x >= rect.x && x < rect.x + rect.w && y >= rect.y && y < rect.y + rect.h) {
             selectedIndex = index;
-            playMenuTouchBeep();
+            SoundMgr::getInstance().beep();
 #if defined(BOARD_SEEED_STICKY)
             if (index < static_cast<int>(apps.size())) appMgr.switchTo(index);
 #else

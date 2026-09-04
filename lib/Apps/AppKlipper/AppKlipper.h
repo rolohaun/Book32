@@ -65,6 +65,7 @@ private:
     volatile int _scanProgress;  // 0-100%
     volatile int _scannedIPs;
     int _totalIPs;
+    int _lastDisplayedScanChunk;
 
     // Found printers during scan (temporary storage)
     std::vector<PrinterInfo> _foundPrinters;

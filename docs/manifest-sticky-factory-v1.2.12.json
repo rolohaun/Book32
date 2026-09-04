@@ -1,5 +1,5 @@
 {
-  "name": "InkDeck for Book32",
+  "name": "InkDeck for Seeed Studio Sticky",
   "version": "1.2.12",
   "new_install_prompt_erase": true,
   "new_install_improv_wait_time": 0,
@@ -8,8 +8,8 @@
       "chipFamily": "ESP32-S3",
       "improv": false,
       "parts": [
-        { "path": "firmware/book32-factory.bin", "offset": 0 },
-        { "path": "firmware/littlefs.bin", "offset": 5308416 }
+        { "path": "firmware/book32-sticky-factory-v1.2.12.bin", "offset": 0 },
+        { "path": "firmware/book32-sticky-littlefs-v1.2.12.bin", "offset": 8454144 }
       ]
     }
   ]

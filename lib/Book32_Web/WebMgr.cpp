@@ -828,20 +828,20 @@ void WebMgr::setupEndpoints() {
             if (file) {
                 DynamicJsonDocument savedDoc(512);
                 if (!deserializeJson(savedDoc, file)) {
-                    doc["sleepTimeout"] = savedDoc.containsKey("sleepTimeout") ? savedDoc["sleepTimeout"].as<int>() : 0;
-                    doc["sleepMessage"] = savedDoc["sleepMessage"] | "Press button to wake";
+                    doc["sleepTimeout"] = savedDoc.containsKey("sleepTimeout") ? savedDoc["sleepTimeout"].as<int>() : SLEEP_TIMEOUT_DEFAULT_MINUTES;
+                    doc["sleepMessage"] = savedDoc["sleepMessage"] | SLEEP_MESSAGE_DEFAULT;
                 } else {
-                    doc["sleepTimeout"] = 0;  // Default (disabled)
-                    doc["sleepMessage"] = "Press button to wake";
+                    doc["sleepTimeout"] = SLEEP_TIMEOUT_DEFAULT_MINUTES;
+                    doc["sleepMessage"] = SLEEP_MESSAGE_DEFAULT;
                 }
                 file.close();
             } else {
-                doc["sleepTimeout"] = 0;  // Default (disabled)
-                doc["sleepMessage"] = "Press button to wake";
+                doc["sleepTimeout"] = SLEEP_TIMEOUT_DEFAULT_MINUTES;
+                doc["sleepMessage"] = SLEEP_MESSAGE_DEFAULT;
             }
         } else {
-            doc["sleepTimeout"] = 0;  // Default: disabled
-            doc["sleepMessage"] = "Press button to wake";
+            doc["sleepTimeout"] = SLEEP_TIMEOUT_DEFAULT_MINUTES;
+            doc["sleepMessage"] = SLEEP_MESSAGE_DEFAULT;
         }
 
         serializeJson(doc, *response);
@@ -852,6 +852,7 @@ void WebMgr::setupEndpoints() {
     AsyncCallbackJsonWebHandler* sleepSettingsHandler = new AsyncCallbackJsonWebHandler("/api/settings/sleep",
         [](AsyncWebServerRequest *request, JsonVariant &json) {
             DynamicJsonDocument doc(512);
+            doc["configVersion"] = SLEEP_CONFIG_VERSION;
 
             if (json.containsKey("sleepTimeout")) {
                 doc["sleepTimeout"] = json["sleepTimeout"].as<int>();

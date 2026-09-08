@@ -7,6 +7,7 @@
 class StickyTouch {
 public:
     bool begin();
+    void stop();
     bool readFrame(bool& touching, uint16_t& nativeX, uint16_t& nativeY);
     bool available() const { return _address != 0; }
 

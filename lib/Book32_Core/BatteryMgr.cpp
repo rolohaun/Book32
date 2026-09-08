@@ -4,11 +4,16 @@
 #include <esp_sleep.h>
 #include "Book32FS.h"
 #include "DisplayMgr.h"
+#include "InputMgr.h"
+#include "AppMgr.h"
+#include "../Book32_Web/WebMgr.h"
 #include <ArduinoJson.h>
 #include <Fonts/FreeSans18pt7b.h>
 #include <esp32-hal-cpu.h>
 #if defined(BOARD_SEEED_STICKY)
+#include <WiFi.h>
 #include <Wire.h>
+#include <driver/gpio.h>
 #endif
 
 // Static constants
@@ -26,6 +31,16 @@ static int voltageToPercentage(float voltage) {
 }
 
 #if defined(BOARD_SEEED_STICKY)
+static void holdStickyPin(int pin, uint8_t level) {
+    const gpio_num_t gpio = static_cast<gpio_num_t>(pin);
+    gpio_hold_dis(gpio);
+    pinMode(pin, OUTPUT);
+    digitalWrite(pin, level);
+    gpio_hold_en(gpio);
+}
+#endif
+
+#if defined(BOARD_SEEED_STICKY)
 static bool readGaugeWord(uint8_t reg, uint16_t& value) {
     constexpr uint8_t GAUGE_ADDRESS = 0x55;
     Wire1.beginTransmission(GAUGE_ADDRESS);
@@ -41,9 +56,10 @@ static bool readGaugeWord(uint8_t reg, uint16_t& value) {
 
 BatteryMgr::BatteryMgr() : _lastReadTime(0), _historyIndex(0), _lastHistoryUpdate(0),
                            _previousVoltage(0.0f), _lastValidVoltage(0.0f),
-                           _criticalCount(0), _lastChargingTime(0), _sleepTimeoutMinutes(0),
-                           _sleepMessage("Press button to wake"), _lastActivityTime(0),
-                           _readerActive(false), _cpuReduced(false),
+                           _criticalCount(0), _lastChargingTime(0),
+                           _sleepTimeoutMinutes(SLEEP_TIMEOUT_DEFAULT_MINUTES),
+                           _sleepMessage(SLEEP_MESSAGE_DEFAULT), _lastActivityTime(0),
+                           _readerActive(false), _cpuReduced(false), _sleeping(false),
                            _lastDisplayedCharging(false), _lastIndicatorUpdate(0) {
     _cachedStatus = {0.0f, 0, false};
     // Initialize history
@@ -303,13 +319,8 @@ void BatteryMgr::shutdownLowBattery() {
     Serial.println("Battery critically low - entering deep sleep");
     Serial.printf("Voltage: %.2fV\n", _cachedStatus.voltage);
     Serial.flush();
-
-    // Small delay to let serial finish
-    delay(100);
-
-    // Enter deep sleep indefinitely (will wake on reset/power)
-    // This is the safest way to "power off" on ESP32
-    esp_deep_sleep_start();
+    _sleepMessage = "Battery low - connect USB to charge";
+    enterIdleSleep();
 }
 
 BatteryStatus BatteryMgr::getStatus() {
@@ -338,25 +349,54 @@ bool BatteryMgr::isCharging() {
 }
 
 void BatteryMgr::loadSleepSettings() {
-    // Load from EbookFS partition
+    _sleepTimeoutMinutes = SLEEP_TIMEOUT_DEFAULT_MINUTES;
+    _sleepMessage = SLEEP_MESSAGE_DEFAULT;
+    bool saveMigratedSettings = false;
+
+    // Load from EbookFS partition. Sticky versions before 1.2.13 wrote an
+    // implicit disabled value (0), even though sleep was not yet functional.
+    // Migrate that legacy value once so existing devices receive the new
+    // 10-minute default; an explicit Off choice saved by this version remains
+    // off because it carries the current schema version.
     if (EbookFS.exists("/sleep_config.json")) {
         File file = EbookFS.open("/sleep_config.json", "r");
         if (file) {
             DynamicJsonDocument doc(512);
             if (!deserializeJson(doc, file)) {
-                _sleepTimeoutMinutes = doc.containsKey("sleepTimeout") ? doc["sleepTimeout"].as<int>() : 0;
-                _sleepMessage = doc["sleepMessage"] | "Press button to wake";
-                Serial.printf("Loaded sleep settings: timeout=%d min, message=%s\n",
-                             _sleepTimeoutMinutes, _sleepMessage.c_str());
+                int configVersion = doc["configVersion"] | 1;
+                _sleepTimeoutMinutes = doc["sleepTimeout"] | SLEEP_TIMEOUT_DEFAULT_MINUTES;
+                _sleepMessage = doc["sleepMessage"] | SLEEP_MESSAGE_DEFAULT;
+#if defined(BOARD_SEEED_STICKY)
+                if (configVersion < SLEEP_CONFIG_VERSION && _sleepTimeoutMinutes == 0) {
+                    _sleepTimeoutMinutes = SLEEP_TIMEOUT_DEFAULT_MINUTES;
+                }
+#endif
+                saveMigratedSettings = configVersion < SLEEP_CONFIG_VERSION;
             }
             file.close();
         }
     } else {
-        // Use defaults (sleep disabled)
-        _sleepTimeoutMinutes = 0;
-        _sleepMessage = "Press button to wake";
-        Serial.println("Using default sleep settings (sleep disabled)");
+        saveMigratedSettings = true;
     }
+
+    _sleepTimeoutMinutes = constrain(_sleepTimeoutMinutes, 0, 60);
+    if (_sleepMessage.length() == 0) _sleepMessage = SLEEP_MESSAGE_DEFAULT;
+
+    if (saveMigratedSettings) {
+        DynamicJsonDocument doc(512);
+        doc["configVersion"] = SLEEP_CONFIG_VERSION;
+        doc["sleepTimeout"] = _sleepTimeoutMinutes;
+        doc["sleepMessage"] = _sleepMessage;
+        File file = EbookFS.open("/sleep_config.json", FILE_WRITE);
+        if (file) {
+            serializeJson(doc, file);
+            file.close();
+        }
+    }
+
+    Serial.printf("Loaded sleep settings: timeout=%d min, message=%s\n",
+                  _sleepTimeoutMinutes, _sleepMessage.c_str());
+    resetIdleTimer();
 }
 
 void BatteryMgr::resetIdleTimer() {
@@ -377,11 +417,27 @@ void BatteryMgr::setReaderActive(bool active) {
 }
 
 void BatteryMgr::enterIdleSleep() {
+    if (_sleeping) return;
+    _sleeping = true;
     Serial.println("Entering idle sleep...");
     Serial.printf("Sleep message: %s\n", _sleepMessage.c_str());
     Serial.flush();
 
-    // Display sleep message on e-ink
+    // Stop the active app first so background scans are cancelled and state is
+    // flushed. Then stop input polling and all network services before rails
+    // are removed.
+    App* currentApp = AppMgr::getInstance().getCurrentApp();
+    if (currentApp) currentApp->stop();
+    InputMgr::getInstance().prepareForSleep();
+    WebMgr::getInstance().stop();
+#if defined(BOARD_SEEED_STICKY)
+    WiFi.setAutoReconnect(false);
+    WiFi.softAPdisconnect(true);
+    WiFi.disconnect(true, false);
+    WiFi.mode(WIFI_OFF);
+#endif
+
+    // Display sleep message on e-ink.
     Book32Display& display = DisplayMgr::getInstance().getDisplay();
     display.setFullWindow();
     display.firstPage();
@@ -403,12 +459,36 @@ void BatteryMgr::enterIdleSleep() {
         display.print(_sleepMessage);
     } while (display.nextPage());
 
-    // Wait for display to finish updating
+    // Wait for display to finish updating.
     delay(100);
 
-    // Configure wake sources
-    // Wake on button press (GPIO5 on TRMNL, active LOW)
-    esp_sleep_enable_ext0_wakeup((gpio_num_t)PIN_BUTTON, 0);  // 0 = wake on LOW
+#if defined(BOARD_SEEED_STICKY)
+    display.hibernate();
+    endEbookStorageForSleep();
+
+    // GPIO4 is active low. Do not arm it until the press which requested sleep
+    // has been released, otherwise it wakes the ESP32-S3 immediately.
+    pinMode(PIN_BUTTON, INPUT_PULLUP);
+    while (digitalRead(PIN_BUTTON) == LOW) delay(50);
+    delay(50);
+    esp_sleep_enable_ext1_wakeup(1ULL << PIN_BUTTON, ESP_EXT1_WAKEUP_ANY_LOW);
+
+    // Match Seeed/FreeInk's rail shutdown: prevent back-powering through reset,
+    // gate every switched peripheral, and keep the charger enabled in sleep.
+    holdStickyPin(EPD_RST, LOW);
+    holdStickyPin(EPD_ENABLE, LOW);
+    holdStickyPin(TOUCH_RST, LOW);
+    holdStickyPin(TOUCH_ENABLE, LOW);
+    holdStickyPin(SD_POWER_ENABLE, LOW);
+    holdStickyPin(PIN_MIC_ENABLE, LOW);
+    holdStickyPin(PIN_BUZZER, LOW);
+    holdStickyPin(PIN_CHARGE_ENABLE, LOW);
+
+    esp_sleep_config_gpio_isolate();
+    gpio_deep_sleep_hold_en();
+#else
+    esp_sleep_enable_ext0_wakeup((gpio_num_t)PIN_BUTTON, 0);
+#endif
 
     // Enter deep sleep
     Serial.println("Going to deep sleep...");

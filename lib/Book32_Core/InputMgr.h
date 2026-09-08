@@ -15,7 +15,8 @@ enum InputAction {
     INPUT_NEXT,
     INPUT_PREV,
     INPUT_SELECT,
-    INPUT_BACK
+    INPUT_BACK,
+    INPUT_POWER_SLEEP
 };
 
 class InputMgr {
@@ -23,6 +24,7 @@ public:
     static InputMgr& getInstance();
     void init();
     void update();
+    void prepareForSleep();
 
     using InputCallback = std::function<void(InputAction)>;
     using TouchCallback = std::function<void(uint16_t, uint16_t)>;

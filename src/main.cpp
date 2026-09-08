@@ -20,6 +20,10 @@
 #include "../Apps/AppWifi/AppWifi.h"
 #endif
 #include <WiFiManager.h>
+#if defined(BOARD_SEEED_STICKY)
+#include <driver/gpio.h>
+#include <esp_sleep.h>
+#endif
 
 volatile bool gNetworkStartupInProgress = false;
 #if !defined(BOARD_SEEED_STICKY)
@@ -93,6 +97,18 @@ static void networkStartupTask(void* parameter) {
 
 void setup() {
 #if defined(BOARD_SEEED_STICKY)
+    const bool wokeFromPowerButton =
+        esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_EXT1;
+
+    // Deep-sleep GPIO holds survive the reset which follows wake-up. Release
+    // them before asserting the Sticky's power latches and peripheral rails.
+    gpio_deep_sleep_hold_dis();
+    for (int pin : {PIN_POWER_HOLD, PIN_POWER_LOCK, PIN_CHARGE_ENABLE,
+                    EPD_RST, EPD_ENABLE, TOUCH_RST, TOUCH_ENABLE,
+                    SD_POWER_ENABLE, PIN_MIC_ENABLE, PIN_BUZZER}) {
+        gpio_hold_dis(static_cast<gpio_num_t>(pin));
+    }
+
     // Sticky's power-hold rails must be asserted before any slow startup work.
     pinMode(PIN_POWER_HOLD, OUTPUT);
     digitalWrite(PIN_POWER_HOLD, HIGH);
@@ -100,10 +116,29 @@ void setup() {
     digitalWrite(PIN_POWER_LOCK, HIGH);
     pinMode(PIN_CHARGE_ENABLE, OUTPUT);
     digitalWrite(PIN_CHARGE_ENABLE, LOW);
+    gpio_hold_en(static_cast<gpio_num_t>(PIN_CHARGE_ENABLE));
+
+    // The SD card shares the display SPI bus. Restore its rail before the first
+    // display command so a previously unpowered card cannot clamp SCLK/MOSI.
+    pinMode(SD_POWER_ENABLE, OUTPUT);
+    digitalWrite(SD_POWER_ENABLE, HIGH);
+    pinMode(SD_CS, OUTPUT);
+    digitalWrite(SD_CS, HIGH);
+
+    // A wake press can still be held while the ESP restarts. Waiting here keeps
+    // it from being interpreted as another two-second sleep request.
+    if (wokeFromPowerButton) {
+        pinMode(PIN_BUTTON, INPUT_PULLUP);
+        while (digitalRead(PIN_BUTTON) == LOW) delay(20);
+        delay(50);
+    }
 #endif
 
     Serial.begin(115200);
     delay(250);
+#if defined(BOARD_SEEED_STICKY)
+    if (wokeFromPowerButton) Serial.println("Woke from deep sleep by power button");
+#endif
 
     // Bring the E-ink panel up before the slower startup work begins.
     DisplayMgr& displayMgr = DisplayMgr::getInstance();

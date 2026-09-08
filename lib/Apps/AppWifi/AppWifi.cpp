@@ -138,8 +138,8 @@ void AppWifi::handleInput(InputAction action) {
 }
 
 void AppWifi::loadDeviceSettings() {
-    _sleepTimeoutMinutes = 0;
-    _sleepMessage = "Press button to wake";
+    _sleepTimeoutMinutes = SLEEP_TIMEOUT_DEFAULT_MINUTES;
+    _sleepMessage = SLEEP_MESSAGE_DEFAULT;
     _fontSizePt = 18;
     _rotation = DisplayMgr::getInstance().getRotation();
     _showChapter = true;
@@ -152,8 +152,8 @@ void AppWifi::loadDeviceSettings() {
         if (file) {
             DynamicJsonDocument doc(512);
             if (!deserializeJson(doc, file)) {
-                _sleepTimeoutMinutes = doc["sleepTimeout"] | 0;
-                _sleepMessage = doc["sleepMessage"] | "Press button to wake";
+                _sleepTimeoutMinutes = doc["sleepTimeout"] | SLEEP_TIMEOUT_DEFAULT_MINUTES;
+                _sleepMessage = doc["sleepMessage"] | SLEEP_MESSAGE_DEFAULT;
             }
             file.close();
         }
@@ -194,6 +194,7 @@ void AppWifi::showSettingsHome(const String& status) {
 
 void AppWifi::saveSleepSettings() {
     DynamicJsonDocument doc(512);
+    doc["configVersion"] = SLEEP_CONFIG_VERSION;
     doc["sleepTimeout"] = _sleepTimeoutMinutes;
     doc["sleepMessage"] = _sleepMessage;
     File file = EbookFS.open("/sleep_config.json", FILE_WRITE);

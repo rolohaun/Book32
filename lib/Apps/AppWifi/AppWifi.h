@@ -45,7 +45,7 @@ private:
     String _sleepMessage;
     String _messageDraft;
     String _status;
-    int _sleepTimeoutMinutes = 0;
+    int _sleepTimeoutMinutes = SLEEP_TIMEOUT_DEFAULT_MINUTES;
     int _fontSizePt = 18;
     int _rotation = 3;
     bool _showChapter = true;

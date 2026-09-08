@@ -87,4 +87,14 @@ void StickyDisplay::clearScreen(uint8_t value) {
     flush();
 }
 
+void StickyDisplay::hibernate() {
+    // The image remains on e-paper without power. Put the SSD1677 into its
+    // controller-level deep-sleep state before the board power manager gates
+    // the display rail.
+    digitalWrite(SD_CS, HIGH);
+    SPI.beginTransaction(SPISettings(8000000, MSBFIRST, SPI_MODE0));
+    _panel.sleep(1);
+    SPI.endTransaction();
+}
+
 #endif

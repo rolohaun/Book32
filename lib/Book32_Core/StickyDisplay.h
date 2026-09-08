@@ -21,6 +21,7 @@ public:
     bool nextPage();
     void refresh(bool partialUpdateMode = false);
     void clearScreen(uint8_t value = 0xFF);
+    void hibernate();
 
 private:
     BBEPAPER _panel;

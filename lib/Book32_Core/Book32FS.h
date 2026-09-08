@@ -42,3 +42,4 @@ bool beginEbookStorage(bool internalPartitionBlank);
 uint64_t ebookStorageTotalBytes();
 uint64_t ebookStorageUsedBytes();
 bool ebookStorageUsesSD();
+void endEbookStorageForSleep();

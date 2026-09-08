@@ -56,3 +56,9 @@ uint64_t ebookStorageUsedBytes() {
 bool ebookStorageUsesSD() {
     return usingSD;
 }
+
+void endEbookStorageForSleep() {
+#if BOOK32_HAS_SD
+    if (usingSD) SD.end();
+#endif
+}

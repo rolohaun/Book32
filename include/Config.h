@@ -1,12 +1,17 @@
 #pragma once
 
 #if defined(BOARD_SEEED_STICKY)
-#define SYSTEM_VERSION "1.2.12"
+#define SYSTEM_VERSION "1.2.13"
 #define DEVICE_NAME "Seeed Studio Sticky"
+#define SLEEP_TIMEOUT_DEFAULT_MINUTES 10
 #else
-#define SYSTEM_VERSION "1.2.12"
+#define SYSTEM_VERSION "1.2.13"
 #define DEVICE_NAME "Book32"
+#define SLEEP_TIMEOUT_DEFAULT_MINUTES 0
 #endif
+
+#define SLEEP_CONFIG_VERSION 2
+#define SLEEP_MESSAGE_DEFAULT "Press power to wake"
 
 // Offline management hotspot (SoftAP). When the device can't reach a known
 // WiFi network, the main menu broadcasts this network so a phone can connect
@@ -53,6 +58,7 @@
 #define TOUCH_ENABLE     42
 
 #define PIN_BUZZER       48
+#define PIN_MIC_ENABLE   38
 
 #define PIN_POWER_HOLD    45
 #define PIN_POWER_LOCK    46

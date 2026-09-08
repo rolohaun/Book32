@@ -50,6 +50,15 @@ bool StickyTouch::begin() {
     return _address != 0;
 }
 
+void StickyTouch::stop() {
+    // Stop all I2C traffic before the touch rail is removed. Holding reset low
+    // also prevents the unpowered GT911 from being back-fed through a signal.
+    _address = 0;
+    Wire.end();
+    pinMode(TOUCH_RST, OUTPUT);
+    digitalWrite(TOUCH_RST, LOW);
+}
+
 bool StickyTouch::readRegister(uint16_t reg, uint8_t* data, uint8_t length) {
     if (!_address) return false;
     Wire.beginTransmission(_address);

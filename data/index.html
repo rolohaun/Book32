@@ -23,7 +23,7 @@
                     <li><button data-tab="settings" onclick="showTab('settings')"><span>⚙</span>Settings</button></li>
                 </ul>
             </nav>
-            <div class="version">InkDeck v<span id="version-display">1.2.12</span></div>
+            <div class="version">InkDeck v<span id="version-display">1.2.13</span></div>
         </aside>
 
         <main class="content">
@@ -103,8 +103,8 @@
                 <div class="page-heading"><p class="eyebrow">InkDeck</p><h1>Device settings</h1><p>Adjust sleep behavior, touch feedback, orientation, and software updates.</p></div>
                 <article class="card section-card">
                     <div class="card-heading"><div><h2>Sleep settings</h2><p>Save battery when InkDeck is left idle.</p></div></div>
-                    <div class="inline-setting"><div><label for="sleep-timeout">Idle sleep timeout</label><p>Use 0 to disable automatic sleep.</p></div><div class="number-control"><input type="number" id="sleep-timeout" min="0" max="60" value="5"><span>minutes</span></div></div>
-                    <label class="text-field" for="sleep-message"><span>Sleep message</span><input type="text" id="sleep-message" maxlength="100" placeholder="Press button to wake"></label>
+                    <div class="inline-setting"><div><label for="sleep-timeout">Idle sleep timeout</label><p>Defaults to 10 minutes on Sticky. Use 0 to disable automatic sleep.</p></div><div class="number-control"><input type="number" id="sleep-timeout" min="0" max="60" value="10"><span>minutes</span></div></div>
+                    <label class="text-field" for="sleep-message"><span>Sleep message</span><input type="text" id="sleep-message" maxlength="100" placeholder="Press power to wake"></label>
                     <div class="action-row"><button class="btn primary" onclick="saveSleepSettings()">Save sleep settings</button><div id="sleep-settings-status" class="status-msg" role="status"></div></div>
                 </article>
                 <article id="sound-settings-card" class="card section-card">
@@ -124,7 +124,7 @@
                     <div class="action-row"><button class="btn secondary" onclick="saveDisplaySettings()">Apply orientation</button><div id="display-settings-status" class="status-msg" role="status"></div></div>
                 </article>
                 <article class="card section-card update-card">
-                    <div class="card-heading"><div><h2>Software update</h2><p>Currently running InkDeck <span id="current-ver">1.2.12</span>.</p></div><span class="version-badge">Stable</span></div>
+                    <div class="card-heading"><div><h2>Software update</h2><p>Currently running InkDeck <span id="current-ver">1.2.13</span>.</p></div><span class="version-badge">Stable</span></div>
                     <div id="update-status" class="status-msg" role="status"></div>
                     <div id="update-buttons"><button id="check-update-btn" class="btn secondary" onclick="checkUpdate()">Check for updates</button><button id="update-btn" class="btn primary hidden" onclick="performUpdate()">Install update</button></div>
                 </article>

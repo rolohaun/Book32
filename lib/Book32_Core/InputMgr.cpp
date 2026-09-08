@@ -22,7 +22,13 @@ InputMgr& InputMgr::getInstance() {
 void InputMgr::init() {
     btn.setDebounceMs(30);
     btn.setClickMs(100);
+#if defined(BOARD_SEEED_STICKY)
+    // The Sticky shares confirm and power on GPIO4. A short release remains
+    // Select/Back; holding for two seconds requests deep sleep.
+    btn.setPressMs(2000);
+#else
     btn.setPressMs(400);
+#endif
     btn.attachClick(staticClick, this);
     btn.attachLongPressStart(staticLongPress, this);
 
@@ -59,12 +65,29 @@ void InputMgr::update() {
 
     InputEvent event;
     while (dequeueEvent(event)) {
+        if (!event.touch && event.action == INPUT_POWER_SLEEP) {
+            BatteryMgr::getInstance().enterIdleSleep();
+            return;
+        }
         if (event.touch) {
             if (touchCallback) touchCallback(event.x, event.y);
         } else if (callback) {
             callback(event.action);
         }
     }
+}
+
+void InputMgr::prepareForSleep() {
+    if (_taskHandle) {
+        vTaskDelete(_taskHandle);
+        _taskHandle = nullptr;
+    }
+    _taskRunning = false;
+#if defined(BOARD_SEEED_STICKY)
+    touch.stop();
+#endif
+    clearCallback();
+    clearTouchCallback();
 }
 
 void InputMgr::inputTask(void* parameter) {
@@ -134,8 +157,12 @@ void InputMgr::onDoubleClick() {
 }
 
 void InputMgr::onLongPress() {
+#if defined(BOARD_SEEED_STICKY)
+    enqueueAction(INPUT_POWER_SLEEP);
+#else
     BatteryMgr::getInstance().resetIdleTimer();
     enqueueAction(INPUT_SELECT);
+#endif
 }
 
 void InputMgr::onUp() {

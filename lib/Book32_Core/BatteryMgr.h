@@ -79,6 +79,7 @@ private:
     unsigned long _lastActivityTime;   // Last user interaction
     bool _readerActive;
     bool _cpuReduced;
+    bool _sleeping;
 
     // Status indicator tracking
     bool _lastDisplayedCharging;       // Last charging state shown on display

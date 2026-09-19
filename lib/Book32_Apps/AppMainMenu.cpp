@@ -446,14 +446,12 @@ void AppMainMenu::draw() {
         display.fillScreen(GxEPD_WHITE);
         display.setTextColor(GxEPD_BLACK);
 
-        // === Title (only on the original Book32; Sticky keeps a clean header) ===
-#if !defined(BOARD_SEEED_STICKY)
+        // === Firmware title and version on both devices ===
         fontMgr.drawText(display, "InkDeck", 15, 35, FONT_SIZE_SUBTITLE, GxEPD_BLACK);
         int inkDeckWidth = fontMgr.getTextWidth("InkDeck", FONT_SIZE_SUBTITLE);
         char versionStr[16];
         snprintf(versionStr, sizeof(versionStr), " v%s", SYSTEM_VERSION);
         fontMgr.drawText(display, versionStr, 15 + inkDeckWidth, 35, FONT_SIZE_SMALL, GxEPD_BLACK);
-#endif
 
         // === Battery Status (single cached read) ===
         BatteryStatus bat = BatteryMgr::getInstance().getStatus();

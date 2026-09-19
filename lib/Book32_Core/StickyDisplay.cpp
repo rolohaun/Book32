@@ -62,7 +62,10 @@ void StickyDisplay::flush() {
         // Supplying both avoids the forced all-pixel update (and its flash)
         // while still driving erased black pixels cleanly back to white.
         _panel.setBuffer(_previousBuffer);
-        _panel.writePlane(PLANE_1);
+        // This is a standalone one-frame buffer. PLANE_1 reads a second
+        // frame at buffer + FRAME_BYTES, outside our allocation. Copy this
+        // buffer's first frame to the controller's old-image plane instead.
+        _panel.writePlane(PLANE_0_TO_1);
         _panel.setBuffer(getBuffer());
         _panel.writePlane(PLANE_0);
     } else {

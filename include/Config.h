@@ -1,11 +1,11 @@
 #pragma once
 
 #if defined(BOARD_SEEED_STICKY)
-#define SYSTEM_VERSION "1.2.13"
+#define SYSTEM_VERSION "1.2.14"
 #define DEVICE_NAME "Seeed Studio Sticky"
 #define SLEEP_TIMEOUT_DEFAULT_MINUTES 10
 #else
-#define SYSTEM_VERSION "1.2.13"
+#define SYSTEM_VERSION "1.2.14"
 #define DEVICE_NAME "Book32"
 #define SLEEP_TIMEOUT_DEFAULT_MINUTES 0
 #endif

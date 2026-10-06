@@ -1,6 +1,7 @@
+#include "Config.h"
 #include "StickyTouch.h"
 
-#if defined(BOARD_SEEED_STICKY)
+#if BOOK32_HAS_TOUCH
 
 #include "Config.h"
 #include <Wire.h>
@@ -32,12 +33,14 @@ bool StickyTouch::probe() {
 }
 
 bool StickyTouch::begin() {
+#if defined(BOARD_SEEED_STICKY)
     pinMode(TOUCH_ENABLE, OUTPUT);
     digitalWrite(TOUCH_ENABLE, HIGH);
     delay(50);
 
     Wire.begin(TOUCH_SDA, TOUCH_SCL, 400000);
     Wire.setTimeOut(10);
+#endif
 
     _address = 0;
     resetWithInterruptLevel(LOW);
@@ -54,7 +57,9 @@ void StickyTouch::stop() {
     // Stop all I2C traffic before the touch rail is removed. Holding reset low
     // also prevents the unpowered GT911 from being back-fed through a signal.
     _address = 0;
+#if defined(BOARD_SEEED_STICKY)
     Wire.end();
+#endif
     pinMode(TOUCH_RST, OUTPUT);
     digitalWrite(TOUCH_RST, LOW);
 }
@@ -98,8 +103,14 @@ bool StickyTouch::readFrame(bool& touching, uint16_t& nativeX, uint16_t& nativeY
                             (static_cast<uint16_t>(point[3]) << 8);
             // The Sticky digitizer is mounted portrait relative to the panel:
             // swap axes, then flip both native panel axes.
+#if defined(BOARD_LILYGO_T5S3_PRO)
+            // H752-01 GT911 reports portrait 540x960, not panel 960x540.
+            nativeX = constrain(rawY, 0, PANEL_WIDTH - 1);
+            nativeY = PANEL_HEIGHT - 1 - constrain(rawX, 0, PANEL_HEIGHT - 1);
+#else
             nativeX = static_cast<uint16_t>(799 - constrain(rawY, 0, 799));
             nativeY = static_cast<uint16_t>(479 - constrain(rawX, 0, 479));
+#endif
             touching = true;
         } else {
             valid = false;
@@ -111,5 +122,27 @@ bool StickyTouch::readFrame(bool& touching, uint16_t& nativeX, uint16_t& nativeY
     writeRegister(0x814E, 0);
     return valid;
 }
+
+#if defined(BOARD_LILYGO_T5S3_PRO)
+bool StickyTouch::readPoints(uint16_t* x, uint16_t* y, uint8_t& count) {
+    uint8_t status = 0;
+    if (!readRegister(0x814E, &status, 1) || !(status & 0x80)) return false;
+    count = status & 15;
+    uint8_t data[40] = {};
+    bool valid = count <= 5 && (!count || readRegister(0x814F, data, count * 8));
+    writeRegister(0x814E, 0);
+    if (!valid) return false;
+    for (uint8_t i = 0; i < count; ++i) {
+        uint16_t rawX = data[i * 8 + 1] | (data[i * 8 + 2] << 8);
+        uint16_t rawY = data[i * 8 + 3] | (data[i * 8 + 4] << 8);
+        // Convert portrait digitizer coordinates into the native canvas;
+        // DisplayMgr then applies the user's selected portrait rotation.
+        if (rawX >= SCREEN_WIDTH || rawY >= SCREEN_HEIGHT) {
+            x[i] = PANEL_WIDTH; y[i] = PANEL_HEIGHT; // rejected by DisplayMgr
+        } else { x[i] = rawY; y[i] = PANEL_HEIGHT - 1 - rawX; }
+    }
+    return true;
+}
+#endif
 
 #endif

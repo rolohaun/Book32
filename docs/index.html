@@ -5,9 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0d1117">
   <title>Install InkDeck</title>
-  <meta name="description" content="Install InkDeck 1.2.14 on Book32 or Seeed Studio Sticky directly from Chrome or Edge.">
+  <meta name="description" content="Install InkDeck on Book32, Seeed Studio Sticky, or LILYGO T5 S3 Pro H752-01 directly from Chrome or Edge.">
   <link rel="icon" href="assets/book32-reader.png">
-  <link rel="stylesheet" href="installer.css?v=inkdeck-3">
+  <link rel="stylesheet" href="installer.css?v=inkdeck-lilygo-1">
 </head>
 <body>
   <header class="site-header">
@@ -78,6 +78,22 @@
               <small>Touch + three buttons · 800 × 480</small>
             </span>
           </button>
+          <button class="choice-card device-card" type="button" data-profile="lilygo" aria-pressed="false">
+            <span class="card-check" aria-hidden="true">✓</span>
+            <span class="device-art" aria-hidden="true">
+              <svg viewBox="0 0 180 118">
+                <rect x="56" y="3" width="68" height="112" rx="9"></rect>
+                <rect x="62" y="10" width="56" height="93" rx="3" class="screen"></rect>
+                <path d="M73 30h34M73 40h34M73 50h25"></path>
+                <circle cx="90" cy="109" r="2" class="button-dot"></circle>
+              </svg>
+            </span>
+            <span class="card-copy">
+              <strong>LILYGO T5 S3 Pro</strong>
+              <span>4.7-inch parallel touch e-paper</span>
+              <small>H752-01 / Pro Lite only · 960 × 540<br>Experimental · includes Paperboy-style Game Boy app</small>
+            </span>
+          </button>
         </div>
       </section>
 
@@ -86,7 +102,7 @@
           <span class="step-number" aria-hidden="true">2</span>
           <div>
             <p class="step-kicker">Choose firmware</p>
-            <h2 id="firmware-title">Latest stable release</h2>
+            <h2 id="firmware-title">Firmware for your device</h2>
           </div>
         </div>
 
@@ -94,9 +110,9 @@
           <span class="card-check" aria-hidden="true">✓</span>
           <span class="release-icon" aria-hidden="true">INK</span>
           <span class="card-copy">
-            <strong>InkDeck 1.2.14</strong>
-            <span>Stable release</span>
-            <small>Firmware + web interface · September 19, 2026</small>
+            <strong id="release-name">InkDeck 1.2.14</strong>
+            <span id="release-status">Stable release for Book32 / Sticky</span>
+            <small id="release-detail">Choose your device above to see its firmware.</small>
           </span>
           <span class="latest-badge">Latest</span>
         </button>
@@ -152,7 +168,7 @@
     <section class="information-grid" aria-label="Installation information">
       <article>
         <span class="info-icon" aria-hidden="true">↻</span>
-        <div><h2>Safe to update</h2><p>The installer refreshes InkDeck system files without erasing Wi-Fi credentials, reading progress, or ebook storage.</p></div>
+        <div><h2>Storage and backups</h2><p>Updates to the same InkDeck partition layout preserve ebook storage. Back up your data before switching from other firmware or installing the experimental LILYGO port. The SD card is not formatted.</p></div>
       </article>
       <article>
         <span class="info-icon" aria-hidden="true">✓</span>
@@ -171,6 +187,6 @@
     <a href="https://github.com/rolohaun/Book32/issues">Report a problem</a>
   </footer>
 
-  <script type="module" src="installer.js?v=inkdeck-1.2.14"></script>
+  <script type="module" src="installer.js?v=inkdeck-lilygo-1"></script>
 </body>
 </html>

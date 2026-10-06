@@ -1,6 +1,7 @@
 #pragma once
+#include "Config.h"
 
-#if defined(BOARD_SEEED_STICKY)
+#if BOOK32_HAS_TOUCH
 
 #include "../../Book32_Core/BaseApp.h"
 #include "../../Book32_Core/InputMgr.h"

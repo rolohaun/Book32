@@ -3,6 +3,7 @@ const RELEASE_VERSION = '1.2.14';
 
 const profiles = {
   book32: {
+    version: RELEASE_VERSION,
     name: 'Book32 — 7.5 inch',
     manifest: 'manifest-update-v1.2.14.json',
     flashSize: '16MB',
@@ -10,12 +11,22 @@ const profiles = {
     after: 'After restart, connect to the InkDeck-Setup Wi-Fi network to configure Wi-Fi.'
   },
   sticky: {
+    version: RELEASE_VERSION,
     name: 'Seeed Studio Sticky — 3.97 inch',
     manifest: 'manifest-sticky-update-v1.2.14.json',
     flashSize: '32MB',
     resetMode: 'atomic-rts',
     description: 'Seeed Studio touch-screen reader with InkDeck installed.',
     after: 'After restart, open Settings, tap Wi-Fi, and choose your network on the touch screen.'
+  },
+  lilygo: {
+    version: '1.3.0',
+    experimental: true,
+    name: 'LILYGO T5 S3 Pro — H752-01 / Pro Lite',
+    manifest: 'manifest-lilygo-update-v1.3.0.json',
+    flashSize: '16MB',
+    description: 'Experimental build for the newer H752-01 parallel-display board. Includes eReader, Todo, Klipper, Settings and a Paperboy-style DMG Game Boy app. Not compatible with the older H752.',
+    after: 'If it remains in download mode, press RESET. Open Settings for Wi-Fi. Put your own legal .gb files in /roms on a FAT32 SD card. Hardware validation and measured game refresh rate are still pending.'
   }
 };
 
@@ -62,6 +73,11 @@ function selectDevice(profileId) {
   flashDeviceName.textContent = profile.name;
   flashDescription.textContent = profile.description;
   afterFlashing.textContent = profile.after;
+  document.querySelector('#release-name').textContent = `InkDeck ${profile.version}`;
+  document.querySelector('#release-status').textContent = profile.experimental ? 'Experimental preview — not hardware-validated' : 'Stable release';
+  document.querySelector('#release-detail').textContent = profile.experimental ? 'H752-01 only · Game Boy: DMG, no audio/RTC · October 6, 2026' : 'Firmware + web interface · September 19, 2026';
+  flashButton.lastChild.textContent = ` Flash InkDeck ${profile.version}`;
+  flashNote.textContent = profile.experimental ? 'Check your board revision before flashing. Back up its existing firmware/settings: this installs the InkDeck partition layout.' : "Chrome or Edge will ask you to choose the device's serial port.";
   flashButton.disabled = !setBrowserSupport();
 
   const url = new URL(window.location.href);
@@ -86,7 +102,7 @@ function setStep(stepId, state, detail) {
 
 function resetProgress(profile) {
   progressPanel.hidden = false;
-  progressTitle.textContent = `Installing InkDeck ${RELEASE_VERSION} on ${profile.name}…`;
+  progressTitle.textContent = `Installing InkDeck ${profile.version} on ${profile.name}…`;
   document.querySelectorAll('[data-progress-step]').forEach((row) => {
     row.classList.remove('running', 'done', 'error');
     row.querySelector('small').textContent = row.dataset.progressStep === 'connect'
@@ -249,7 +265,7 @@ async function flashSelectedDevice() {
     await restartDevice(profile, loader, port);
     setStep('reset', 'done', 'Device restarted');
     setProgress(100);
-    showResult(`InkDeck ${RELEASE_VERSION} was installed successfully. ${profile.after}`);
+    showResult(`InkDeck ${profile.version} was installed successfully. ${profile.after}`);
     flashNote.textContent = 'Installation complete. You can disconnect the USB cable.';
   } catch (error) {
     console.error(error);
@@ -263,7 +279,7 @@ async function flashSelectedDevice() {
     flashing = false;
     deviceCards.forEach((card) => { card.disabled = false; });
     flashButton.disabled = !selectedProfile || !setBrowserSupport();
-    flashButton.lastChild.textContent = ' Flash InkDeck 1.2.14';
+    flashButton.lastChild.textContent = ` Flash InkDeck ${profile.version}`;
   }
 }
 

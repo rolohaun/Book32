@@ -25,6 +25,10 @@ public:
     void init();
     void update();
     void prepareForSleep();
+#if defined(BOARD_LILYGO_T5S3_PRO)
+    struct TouchPoint { uint16_t x, y; };
+    uint8_t heldTouches(TouchPoint* points) const;
+#endif
 
     using InputCallback = std::function<void(InputAction)>;
     using TouchCallback = std::function<void(uint16_t, uint16_t)>;
@@ -39,6 +43,8 @@ private:
 #if defined(BOARD_SEEED_STICKY)
     OneButton btnUp;
     OneButton btnDown;
+#endif
+#if BOOK32_HAS_TOUCH
     StickyTouch touch;
     bool _touchDown = false;
     bool _touchMoved = false;
@@ -47,6 +53,11 @@ private:
     uint16_t _touchLastX = 0;
     uint16_t _touchLastY = 0;
     unsigned long _touchStartedAt = 0;
+#endif
+#if defined(BOARD_LILYGO_T5S3_PRO)
+    TouchPoint _points[5] = {};
+    uint8_t _pointCount = 0;
+    unsigned long _pointsAt = 0;
 #endif
     InputCallback callback;
     TouchCallback touchCallback;

@@ -1,6 +1,6 @@
 #include "AppWifi.h"
 
-#if defined(BOARD_SEEED_STICKY)
+#if BOOK32_HAS_TOUCH
 
 #include "../../Book32_Core/AppMgr.h"
 #include "../../Book32_Core/BatteryMgr.h"

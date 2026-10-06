@@ -103,7 +103,7 @@
                 <div class="page-heading"><p class="eyebrow">InkDeck</p><h1>Device settings</h1><p>Adjust sleep behavior, touch feedback, orientation, and software updates.</p></div>
                 <article class="card section-card">
                     <div class="card-heading"><div><h2>Sleep settings</h2><p>Save battery when InkDeck is left idle.</p></div></div>
-                    <div class="inline-setting"><div><label for="sleep-timeout">Idle sleep timeout</label><p>Defaults to 10 minutes on Sticky. Use 0 to disable automatic sleep.</p></div><div class="number-control"><input type="number" id="sleep-timeout" min="0" max="60" value="10"><span>minutes</span></div></div>
+                    <div class="inline-setting"><div><label for="sleep-timeout">Idle sleep timeout</label><p>Defaults to 10 minutes on touch devices. Use 0 to disable automatic sleep.</p></div><div class="number-control"><input type="number" id="sleep-timeout" min="0" max="60" value="10"><span>minutes</span></div></div>
                     <label class="text-field" for="sleep-message"><span>Sleep message</span><input type="text" id="sleep-message" maxlength="100" placeholder="Press power to wake"></label>
                     <div class="action-row"><button class="btn primary" onclick="saveSleepSettings()">Save sleep settings</button><div id="sleep-settings-status" class="status-msg" role="status"></div></div>
                 </article>

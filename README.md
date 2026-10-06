@@ -1,7 +1,8 @@
 # InkDeck
 
-InkDeck is a custom E-Ink application OS for two ESP32-S3 readers: the 7.5-inch
-Book32 and the 3.97-inch Seeed Studio Sticky. It includes an EPUB reader, a Todo app, a
+InkDeck is a custom E-Ink application OS for three ESP32-S3 targets: the 7.5-inch
+Book32, the 3.97-inch Seeed Studio Sticky, and the experimental LILYGO T5 S3 Pro
+H752-01 / Pro Lite. It includes an EPUB reader, a Todo app, a
 Klipper printer monitor, and a local web interface for books, settings, and OTA
 updates.
 
@@ -11,6 +12,20 @@ updates.
 | --- | --- | --- | --- | --- |
 | Book32 | XIAO ESP32-S3, 16 MB | 7.5 inch, 800 x 480 | One button | 10 MB internal LittleFS |
 | Seeed Studio Sticky | ESP32-S3, 32 MB | 3.97 inch, 800 x 480 | GT911 touch + three buttons + buzzer | MicroSD, with 23 MB internal fallback |
+| LILYGO T5 S3 Pro H752-01 / Pro Lite (experimental) | ESP32-S3, 16 MB | 4.7 inch, 960 x 540, parallel | GT911 touch + BOOT back/sleep | MicroSD, with internal fallback |
+
+### LILYGO preview
+
+Version 1.3.0 adds a **build-tested, not yet hardware-validated** port for the
+newer H752-01 board. It does **not** support the older H752 pinout. The browser
+installer retains stable 1.2.14 for Book32 and Sticky; only the LILYGO card uses
+the experimental release. See [LILYGO setup and limitations](docs/lilygo-preview.md).
+
+The LILYGO-only Paperboy-style app uses Peanut-GB with a new InkDeck adapter,
+not an unchanged copy of Zephray's Paperboy firmware. It has a native 160x144
+Game Boy viewport, multitouch controls and cartridge SRAM saves. No ROMs are
+included. Fast-refresh performance, touch alignment and power use require
+testing on the actual device before this target can be called stable.
 
 ## Controls
 

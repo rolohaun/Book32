@@ -43,10 +43,10 @@ static MenuDirtyRect unionRect(MenuDirtyRect a, MenuDirtyRect b) {
 
 static bool isReaderActive() {
     App* current = AppMgr::getInstance().getCurrentApp();
-    return current && strcmp(current->getName(), "eReader") == 0;
+    return current && (strcmp(current->getName(), "eReader") == 0 || strcmp(current->getName(), "Paperboy") == 0);
 }
 
-#if defined(BOARD_SEEED_STICKY)
+#if BOOK32_HAS_TOUCH
 static void fillQuad(Book32Display& display,
                      int x1, int y1, int x2, int y2,
                      int x3, int y3, int x4, int y4) {
@@ -128,7 +128,7 @@ void AppMainMenu::wifiWakeTask(void* parameter) {
 
     int attempts = 0;
     while (WiFi.status() != WL_CONNECTED && attempts < 40) {
-#if defined(BOARD_SEEED_STICKY)
+#if BOOK32_HAS_TOUCH
         App* current = AppMgr::getInstance().getCurrentApp();
         if (current && strcmp(current->getName(), "Settings") == 0) {
             self->_wifiStarting = false;
@@ -161,7 +161,7 @@ void AppMainMenu::wifiWakeTask(void* parameter) {
     } else {
         Serial.println("Main menu WiFi wake did not connect");
         self->_wifiTaskHandle = nullptr;  // Clear before starting the hotspot
-#if !defined(BOARD_SEEED_STICKY)
+#if !BOOK32_HAS_TOUCH
         if (!isReaderActive()) self->startHotspot();
 #else
         Serial.println("Sticky is offline; use Wi-Fi inside the on-device Settings app");
@@ -235,7 +235,7 @@ void AppMainMenu::ensureWifiAwake() {
         return;
     }
 
-#if defined(BOARD_SEEED_STICKY)
+#if BOOK32_HAS_TOUCH
     // A failed or cancelled attempt leaves STA enabled. Do not continually
     // retry it and starve the interactive scanner. Wi-Fi is woken here only
     // after the reader deliberately powered the radio fully off.
@@ -286,7 +286,7 @@ void AppMainMenu::stop() {
 void AppMainMenu::handleTouch(uint16_t x, uint16_t y) {
     AppMgr& appMgr = AppMgr::getInstance();
     std::vector<App*>& apps = appMgr.getApps();
-#if defined(BOARD_SEEED_STICKY)
+#if BOOK32_HAS_TOUCH
     int maxSelectable = static_cast<int>(apps.size()) - 1;
 #else
     int maxSelectable = static_cast<int>(apps.size()) - 1 + (_updateAvailable ? 1 : 0);
@@ -297,7 +297,7 @@ void AppMainMenu::handleTouch(uint16_t x, uint16_t y) {
         if (x >= rect.x && x < rect.x + rect.w && y >= rect.y && y < rect.y + rect.h) {
             selectedIndex = index;
             SoundMgr::getInstance().beep();
-#if defined(BOARD_SEEED_STICKY)
+#if BOOK32_HAS_TOUCH
             if (index < static_cast<int>(apps.size())) appMgr.switchTo(index);
 #else
             if (_updateAvailable && index == updateIndex) {
@@ -320,7 +320,7 @@ void AppMainMenu::forceRedraw() {
 }
 
 void AppMainMenu::handleInput(InputAction action) {
-#if defined(BOARD_SEEED_STICKY)
+#if BOOK32_HAS_TOUCH
     // Sticky launches apps directly by touch; its hardware buttons are used as
     // back controls inside apps rather than navigating an invisible selection.
     (void)action;
@@ -366,7 +366,7 @@ void AppMainMenu::update() {
             _wifiStarting = false;
             // Offline and idle: bring up the management hotspot so a phone can
             // still reach the web interface without a router.
-#if !defined(BOARD_SEEED_STICKY)
+#if !BOOK32_HAS_TOUCH
             if (!_hotspotActive && !isReaderActive()) {
                 startHotspot();
             }
@@ -488,7 +488,7 @@ void AppMainMenu::draw() {
             int x = col * colWidth + (colWidth - ICON_SIZE) / 2;
             int y = START_Y + row * ROW_HEIGHT;
 
-#if !defined(BOARD_SEEED_STICKY)
+#if !BOOK32_HAS_TOUCH
             if ((int)i == selectedIndex) {
                 display.drawRect(x - 8, y - 8, ICON_SIZE + 16, ICON_SIZE + 16, GxEPD_BLACK);
                 display.drawRect(x - 7, y - 7, ICON_SIZE + 14, ICON_SIZE + 14, GxEPD_BLACK);
@@ -498,15 +498,26 @@ void AppMainMenu::draw() {
             const uint8_t* icon = app->getIconImage();
             if (icon) {
                 display.drawBitmap(x, y, icon, ICON_SIZE, ICON_SIZE, GxEPD_BLACK);
-#if defined(BOARD_SEEED_STICKY)
+#if BOOK32_HAS_TOUCH
             } else if (strcmp(app->getName(), "Settings") == 0) {
                 drawSettingsMenuIcon(display, x, y);
+#if defined(BOARD_LILYGO_T5S3_PRO)
+            } else if (strcmp(app->getName(), "Paperboy") == 0) {
+                for (int line = 0; line < 4; ++line)
+                    display.drawRoundRect(x+10+line,y+32+line,140-line*2,98-line*2,24,GxEPD_BLACK);
+                display.fillRoundRect(x+35,y+65,46,14,3,GxEPD_BLACK);
+                display.fillRoundRect(x+51,y+49,14,46,3,GxEPD_BLACK);
+                display.fillCircle(x+119,y+63,10,GxEPD_BLACK);
+                display.fillCircle(x+98,y+86,10,GxEPD_BLACK);
+                display.fillRoundRect(x+61,y+111,17,5,2,GxEPD_BLACK);
+                display.fillRoundRect(x+88,y+111,17,5,2,GxEPD_BLACK);
+#endif
 #endif
             } else {
                 display.drawRect(x, y, ICON_SIZE, ICON_SIZE, GxEPD_BLACK);
             }
 
-#if defined(BOARD_SEEED_STICKY)
+#if BOOK32_HAS_TOUCH
             String name = app->getName();
             int nameWidth = fontMgr.getTextWidth(name.c_str(), FONT_SIZE_MENU);
             int nameX = x + (ICON_SIZE - nameWidth) / 2;
@@ -521,7 +532,7 @@ void AppMainMenu::draw() {
         
         // The original Book32 keeps its virtual update tile. Sticky keeps its
         // fourth tile dedicated to Settings and installs updates from the web UI.
-#if !defined(BOARD_SEEED_STICKY)
+#if !BOOK32_HAS_TOUCH
         if (_updateAvailable) {
             int i = apps.size(); // Index for update app (virtual index)
             int idx = i - 1;

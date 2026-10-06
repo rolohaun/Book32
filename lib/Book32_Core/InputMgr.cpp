@@ -22,7 +22,7 @@ InputMgr& InputMgr::getInstance() {
 void InputMgr::init() {
     btn.setDebounceMs(30);
     btn.setClickMs(100);
-#if defined(BOARD_SEEED_STICKY)
+#if BOOK32_HAS_TOUCH
     // The Sticky shares confirm and power on GPIO4. A short release remains
     // Select/Back; holding for two seconds requests deep sleep.
     btn.setPressMs(2000);
@@ -39,9 +39,12 @@ void InputMgr::init() {
     btnDown.setClickMs(100);
     btnUp.attachClick(staticUp, this);
     btnDown.attachClick(staticDown, this);
+#endif
+#if BOOK32_HAS_TOUCH
     touch.begin();
 #endif
 
+#if !defined(BOARD_LILYGO_T5S3_PRO)
     if (!_taskHandle) {
         BaseType_t result = xTaskCreatePinnedToCore(
             inputTask, "InputPoll", 4096, this, 2, &_taskHandle, 1);
@@ -51,6 +54,7 @@ void InputMgr::init() {
             _taskHandle = nullptr;
         }
     }
+#endif
 }
 
 void InputMgr::update() {
@@ -59,6 +63,8 @@ void InputMgr::update() {
 #if defined(BOARD_SEEED_STICKY)
         btnUp.tick();
         btnDown.tick();
+#endif
+#if BOOK32_HAS_TOUCH
         pollTouch();
 #endif
     }
@@ -83,7 +89,7 @@ void InputMgr::prepareForSleep() {
         _taskHandle = nullptr;
     }
     _taskRunning = false;
-#if defined(BOARD_SEEED_STICKY)
+#if BOOK32_HAS_TOUCH
     touch.stop();
 #endif
     clearCallback();
@@ -97,6 +103,8 @@ void InputMgr::inputTask(void* parameter) {
 #if defined(BOARD_SEEED_STICKY)
         self->btnUp.tick();
         self->btnDown.tick();
+#endif
+#if BOOK32_HAS_TOUCH
         self->pollTouch();
 #endif
         vTaskDelay(pdMS_TO_TICKS(5));
@@ -144,7 +152,7 @@ void InputMgr::staticDown(void* ptr) { if (ptr) static_cast<InputMgr*>(ptr)->onD
 
 void InputMgr::onClick() {
     BatteryMgr::getInstance().resetIdleTimer();
-#if defined(BOARD_SEEED_STICKY)
+#if BOOK32_HAS_TOUCH
     enqueueAction(INPUT_SELECT);
 #else
     enqueueAction(INPUT_NEXT);
@@ -157,7 +165,7 @@ void InputMgr::onDoubleClick() {
 }
 
 void InputMgr::onLongPress() {
-#if defined(BOARD_SEEED_STICKY)
+#if BOOK32_HAS_TOUCH
     enqueueAction(INPUT_POWER_SLEEP);
 #else
     BatteryMgr::getInstance().resetIdleTimer();
@@ -176,11 +184,27 @@ void InputMgr::onDown() {
 }
 
 void InputMgr::pollTouch() {
-#if defined(BOARD_SEEED_STICKY)
+#if BOOK32_HAS_TOUCH
     bool touching = false;
     uint16_t nativeX = 0;
     uint16_t nativeY = 0;
+#if defined(BOARD_LILYGO_T5S3_PRO)
+    // Poll on the display-owning loop: all H752-01 peripherals share Wire.
+    uint16_t nx[5], ny[5];
+    uint8_t count = 0;
+    if (!touch.readPoints(nx, ny, count)) return;
+    _pointCount = 0;
+    _pointsAt = millis();
+    for (uint8_t i = 0; i < count; ++i) {
+        uint16_t sx, sy;
+        if (DisplayMgr::getInstance().mapNativeTouchToScreen(nx[i], ny[i], sx, sy))
+            _points[_pointCount++] = {sx, sy};
+    }
+    touching = _pointCount > 0;
+    if (touching) { nativeX = nx[0]; nativeY = ny[0]; }
+#else
     if (!touch.readFrame(touching, nativeX, nativeY)) return;
+#endif
 
     uint16_t x = _touchLastX;
     uint16_t y = _touchLastY;
@@ -211,3 +235,11 @@ void InputMgr::pollTouch() {
     }
 #endif
 }
+
+#if defined(BOARD_LILYGO_T5S3_PRO)
+uint8_t InputMgr::heldTouches(TouchPoint* points) const {
+    if (millis() - _pointsAt > 250) return 0;
+    for (uint8_t i = 0; i < _pointCount; ++i) points[i] = _points[i];
+    return _pointCount;
+}
+#endif

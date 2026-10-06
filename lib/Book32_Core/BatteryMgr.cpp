@@ -10,6 +10,18 @@
 #include <ArduinoJson.h>
 #include <Fonts/FreeSans18pt7b.h>
 #include <esp32-hal-cpu.h>
+#if defined(BOARD_LILYGO_T5S3_PRO)
+#include <WiFi.h>
+#include <Wire.h>
+static bool lilygoGaugeWord(uint8_t reg, uint16_t& value) {
+    Wire.beginTransmission(0x55);
+    Wire.write(reg);
+    if (Wire.endTransmission(false) != 0 || Wire.requestFrom(0x55, 2) != 2) return false;
+    value = Wire.read();
+    value |= Wire.read() << 8;
+    return true;
+}
+#endif
 #if defined(BOARD_SEEED_STICKY)
 #include <WiFi.h>
 #include <Wire.h>
@@ -75,7 +87,9 @@ BatteryMgr& BatteryMgr::getInstance() {
 }
 
 void BatteryMgr::init() {
-#if defined(BOARD_SEEED_STICKY)
+#if defined(BOARD_LILYGO_T5S3_PRO)
+    _cachedStatus = {3.7f, 50, false};
+#elif defined(BOARD_SEEED_STICKY)
     pinMode(PIN_CHARGE_STATUS, INPUT_PULLUP);
     Wire1.begin(BATTERY_I2C_SDA, BATTERY_I2C_SCL, 400000);
     Wire1.setTimeOut(10);
@@ -122,7 +136,7 @@ void BatteryMgr::update() {
 
     // Update voltage history periodically for trend analysis on the XIAO
     // hardware. Sticky reports charge state directly through its gauge/charger.
-#if !defined(BOARD_SEEED_STICKY)
+#if !BOOK32_HAS_TOUCH
     if (now - _lastHistoryUpdate >= HISTORY_INTERVAL_MS) {
         // Make sure cache is fresh
         if (now - _lastReadTime >= CACHE_DURATION_MS) {
@@ -185,7 +199,17 @@ void BatteryMgr::update() {
 }
 
 void BatteryMgr::updateCache(bool clearStaleCharging) {
-#if defined(BOARD_SEEED_STICKY)
+#if defined(BOARD_LILYGO_T5S3_PRO)
+    uint16_t mv = 0, soc = 0, current = 0;
+    if (lilygoGaugeWord(0x08, mv) && mv >= 2500 && mv <= 5000) {
+        const int percent = lilygoGaugeWord(0x2C, soc) ? constrain((int)soc, 0, 100) : voltageToPercentage(mv / 1000.f);
+        const bool charging = lilygoGaugeWord(0x0C, current) && (int16_t)current > 0;
+        _cachedStatus = {mv / 1000.f, percent, charging};
+        if (charging) _lastChargingTime = millis();
+    }
+    _lastReadTime = millis();
+    return;
+#elif defined(BOARD_SEEED_STICKY)
     (void)clearStaleCharging;
     uint16_t millivolts = 0;
     uint16_t stateOfCharge = 0;
@@ -430,7 +454,7 @@ void BatteryMgr::enterIdleSleep() {
     if (currentApp) currentApp->stop();
     InputMgr::getInstance().prepareForSleep();
     WebMgr::getInstance().stop();
-#if defined(BOARD_SEEED_STICKY)
+#if BOOK32_HAS_TOUCH
     WiFi.setAutoReconnect(false);
     WiFi.softAPdisconnect(true);
     WiFi.disconnect(true, false);
@@ -462,7 +486,13 @@ void BatteryMgr::enterIdleSleep() {
     // Wait for display to finish updating.
     delay(100);
 
-#if defined(BOARD_SEEED_STICKY)
+#if defined(BOARD_LILYGO_T5S3_PRO)
+    display.hibernate();
+    endEbookStorageForSleep();
+    pinMode(PIN_BUTTON, INPUT_PULLUP);
+    while (digitalRead(PIN_BUTTON) == LOW) delay(20);
+    esp_sleep_enable_ext0_wakeup((gpio_num_t)PIN_BUTTON, 0);
+#elif defined(BOARD_SEEED_STICKY)
     display.hibernate();
     endEbookStorageForSleep();
 
@@ -501,7 +531,7 @@ void BatteryMgr::drawStatusIndicator() {
     // Only update if charging state actually changed
     bool currentCharging = _cachedStatus.charging;
 
-#if defined(BOARD_SEEED_STICKY)
+#if BOOK32_HAS_TOUCH
     // Sticky uses a single full-frame canvas. Its active app redraws the
     // battery as part of the complete composited frame; drawing only this
     // indicator would replace the rest of that canvas with white before the

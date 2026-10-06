@@ -42,7 +42,7 @@ static void drawBootProgress(Book32Display& display, uint8_t progress, const cha
 
 // Constructor with Pin mapping
 // GxEPD2_420(int16_t cs, int16_t dc, int16_t rst, int16_t busy)
-#if defined(BOARD_SEEED_STICKY)
+#if BOOK32_HAS_TOUCH
 DisplayMgr::DisplayMgr() : display() {}
 #else
 DisplayMgr::DisplayMgr() : display(GxEPD2_750_T7(EPD_CS, EPD_DC, EPD_RST, EPD_BUSY)) {}
@@ -55,7 +55,9 @@ DisplayMgr& DisplayMgr::getInstance() {
 
 void DisplayMgr::init() {
     // For ESP32-S3 we must initialize SPI with custom pins before display.init
-    SPI.begin(EPD_SCK, EPD_MISO, EPD_MOSI, EPD_CS); 
+#if !defined(BOARD_LILYGO_T5S3_PRO)
+    SPI.begin(EPD_SCK, EPD_MISO, EPD_MOSI, EPD_CS);
+#endif
     
     display.init(115200, true, 10, false);
 
@@ -83,12 +85,12 @@ bool DisplayMgr::mapNativeTouchToScreen(uint16_t nativeX, uint16_t nativeY,
                                         uint16_t& screenX, uint16_t& screenY) const {
     // Native panel coordinates are 800x480. These transformations mirror
     // Adafruit_GFX's rotation mapping into Book32's 480x800 portrait space.
-    if (nativeX >= 800 || nativeY >= 480) return false;
+    if (nativeX >= PANEL_WIDTH || nativeY >= PANEL_HEIGHT) return false;
     if (_rotation == 1) {
         screenX = nativeY;
-        screenY = 799 - nativeX;
+        screenY = PANEL_WIDTH - 1 - nativeX;
     } else {
-        screenX = 479 - nativeY;
+        screenX = PANEL_HEIGHT - 1 - nativeY;
         screenY = nativeX;
     }
     return screenX < SCREEN_WIDTH && screenY < SCREEN_HEIGHT;

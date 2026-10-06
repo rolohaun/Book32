@@ -11,22 +11,25 @@
 #include "BatteryMgr.h"
 #include "FontMgr.h"
 #include "SoundMgr.h"
+#if defined(BOARD_LILYGO_T5S3_PRO)
+#include "../Apps/AppPaperboy/AppPaperboy.h"
+#endif
 
 #include "../Book32_Apps/AppMainMenu.h"
 #include "../Apps/AppReader/AppReader.h"
 #include "../Apps/AppKlipper/AppKlipper.h"
 #include "../Apps/AppTodo/AppTodo.h"
-#if defined(BOARD_SEEED_STICKY)
+#if BOOK32_HAS_TOUCH
 #include "../Apps/AppWifi/AppWifi.h"
 #endif
 #include <WiFiManager.h>
-#if defined(BOARD_SEEED_STICKY)
+#if BOOK32_HAS_TOUCH
 #include <driver/gpio.h>
 #include <esp_sleep.h>
 #endif
 
 volatile bool gNetworkStartupInProgress = false;
-#if !defined(BOARD_SEEED_STICKY)
+#if !BOOK32_HAS_TOUCH
 static WiFiManager* gWifiManager = nullptr;
 #endif
 
@@ -34,7 +37,7 @@ static void networkStartupTask(void* parameter) {
     (void)parameter;
 
     Serial.println("Network startup task started");
-#if defined(BOARD_SEEED_STICKY)
+#if BOOK32_HAS_TOUCH
     // Sticky performs all first-time setup on its own touch screen. At boot,
     // only try credentials already saved by the Wi-Fi app.
     WiFi.mode(WIFI_STA);
@@ -42,9 +45,11 @@ static void networkStartupTask(void* parameter) {
     int attempts = 0;
     while (WiFi.status() != WL_CONNECTED && attempts < 40) {
         App* current = AppMgr::getInstance().getCurrentApp();
-        if (current && strcmp(current->getName(), "Wi-Fi") == 0) {
+        if (current && (strcmp(current->getName(), "Settings") == 0 || strcmp(current->getName(), "Paperboy") == 0)) {
             // The interactive app now owns the radio and scan lifecycle.
-            break;
+            gNetworkStartupInProgress = false;
+            vTaskDelete(nullptr);
+            return;
         }
         vTaskDelay(pdMS_TO_TICKS(250));
         ++attempts;
@@ -60,7 +65,7 @@ static void networkStartupTask(void* parameter) {
 #endif
 
     if (!connected) {
-#if defined(BOARD_SEEED_STICKY)
+#if BOOK32_HAS_TOUCH
         WiFi.setAutoReconnect(false);
         WiFi.disconnect(false, false);
 #endif
@@ -74,7 +79,7 @@ static void networkStartupTask(void* parameter) {
     Serial.println(WiFi.localIP());
 
     App* currentApp = AppMgr::getInstance().getCurrentApp();
-    if (currentApp && strcmp(currentApp->getName(), "eReader") == 0) {
+    if (currentApp && (strcmp(currentApp->getName(), "eReader") == 0 || strcmp(currentApp->getName(), "Paperboy") == 0)) {
         Serial.println("Network startup skipped services; eReader is active");
         WebMgr::getInstance().stop();
         WiFi.disconnect(false);
@@ -186,8 +191,11 @@ void setup() {
     appMgr.registerApp(readerApp);
     appMgr.registerApp(new AppTodo());
     appMgr.registerApp(new AppKlipper());
-#if defined(BOARD_SEEED_STICKY)
+#if BOOK32_HAS_TOUCH
     appMgr.registerApp(new AppWifi());
+#endif
+#if defined(BOARD_LILYGO_T5S3_PRO)
+    appMgr.registerApp(new AppPaperboy());
 #endif
 
     displayMgr.showBootScreen(90, "Starting network");

@@ -5,7 +5,10 @@
 #include "Config.h"
 
 // Define the display class here to be used across the app
-#if defined(BOARD_SEEED_STICKY)
+#if defined(BOARD_LILYGO_T5S3_PRO)
+#include "LilygoDisplay.h"
+typedef LilygoDisplay Book32Display;
+#elif defined(BOARD_SEEED_STICKY)
 #include "StickyDisplay.h"
 typedef StickyDisplay Book32Display;
 #else

@@ -1,6 +1,10 @@
 #pragma once
 
-#if defined(BOARD_SEEED_STICKY)
+#if defined(BOARD_LILYGO_T5S3_PRO)
+#define SYSTEM_VERSION "1.3.0"
+#define DEVICE_NAME "LILYGO T5 S3 Pro (H752-01)"
+#define SLEEP_TIMEOUT_DEFAULT_MINUTES 10
+#elif defined(BOARD_SEEED_STICKY)
 #define SYSTEM_VERSION "1.2.14"
 #define DEVICE_NAME "Seeed Studio Sticky"
 #define SLEEP_TIMEOUT_DEFAULT_MINUTES 10
@@ -20,17 +24,40 @@
 
 // Both supported panels are 800x480 natively and run the InkDeck UI in
 // 480x800 portrait orientation.
+#if defined(BOARD_LILYGO_T5S3_PRO)
+#define SCREEN_WIDTH 540
+#define SCREEN_HEIGHT 960
+#else
 #define SCREEN_WIDTH 480
 #define SCREEN_HEIGHT 800
+#endif
+#define PANEL_WIDTH SCREEN_HEIGHT
+#define PANEL_HEIGHT SCREEN_WIDTH
 #define FONT_SIZE_DEFAULT 28
 #define READER_FULL_REFRESH_INTERVAL_DEFAULT 15
-#if defined(BOARD_SEEED_STICKY)
+#if defined(BOARD_SEEED_STICKY) || defined(BOARD_LILYGO_T5S3_PRO)
 #define READER_FONT_SIZE_DEFAULT 18
 #else
 #define READER_FONT_SIZE_DEFAULT 9
 #endif
 
-#if defined(BOARD_SEEED_STICKY)
+#if defined(BOARD_LILYGO_T5S3_PRO)
+// H752-01 ONLY. The older H752 has a different display and power pinout.
+#define PIN_BUTTON 0 // BOOT: back; hold two seconds for sleep, release to wake
+#define SD_CS 12
+#define SD_MISO 21
+#define SD_SCK 14
+#define SD_MOSI 13
+#define TOUCH_SDA 39
+#define TOUCH_SCL 40
+#define TOUCH_INT 3
+#define TOUCH_RST 9
+#define BOOK32_HAS_TOUCH 1
+#define BOOK32_HAS_SD 1
+#define BOOK32_HAS_BUZZER 0
+#define OTA_FIRMWARE_ASSET "inkdeck-lilygo-firmware.bin"
+#define OTA_FILESYSTEM_ASSET "inkdeck-lilygo-littlefs.bin"
+#elif defined(BOARD_SEEED_STICKY)
 // Seeed reTerminal E1002 / Sticky 3.97" (SSD1677)
 #define PIN_BUTTON       4
 #define PIN_BUTTON_UP    5

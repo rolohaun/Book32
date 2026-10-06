@@ -1,5 +1,23 @@
 # Third-Party Notices
 
+## FastEPD (LILYGO target)
+
+Copyright (c) 2024 BitBank Software, Inc., written by Larry Bank.
+Source: https://github.com/bitbank2/FastEPD at commit
+`3d2a63a52f527d4b55d4d385cbdfeac98eb6b316`. Apache-2.0; the complete license
+is in `lib/FastEPD/LICENSE`. Local H752-01 changes to `FastEPD.inl` preserve
+the function-button input, change the unused DC GPIO and bound power-good waits.
+
+## Peanut-GB (LILYGO Game Boy app)
+
+Copyright (c) 2018-2023 Mahyar Koshkouei; portions from SameBoy are
+Copyright (c) 2015-2019 Lior Halphon. MIT license and complete notices are
+preserved at the top of `lib/Apps/AppPaperboy/peanut_gb.h`.
+Source: https://github.com/deltabeard/Peanut-GB at commit
+`d0bcca771c83a2638c93a9ae61f3d51f226dc905`.
+The InkDeck GameCore adapter and app are new code. No commercial ROMs or
+Zephray Paperboy application source are included.
+
 ## esptool-js
 
 The InkDeck browser installer uses Espressif's `esptool-js` Web Serial flasher:

@@ -1,4 +1,5 @@
-param([Parameter(Mandatory=$true)][string]$Version)
+param([Parameter(Mandatory=$true)][string]$Version,
+      [ValidateSet('all','book32','book32-sticky','inkdeck-lilygo')][string]$Target = 'all')
 $ErrorActionPreference = 'Stop'
 if ($Version -notmatch '^\d+\.\d+\.\d+$') { throw 'Expected a semantic version, such as 1.2.14' }
 $repo = Split-Path $PSScriptRoot -Parent
@@ -9,9 +10,11 @@ $docs = Join-Path $repo 'docs'
 $firmwareDir = Join-Path $docs 'firmware'
 $profiles = @(
     @{ Env='seeed_xiao_esp32s3'; Prefix='book32'; App='firmware'; FS='littlefs'; Manifest='manifest'; Name='InkDeck for Book32'; Offset=5308416; Flash='16MB' },
-    @{ Env='seeed_reterminal_sticky'; Prefix='book32-sticky'; App='book32-sticky-firmware'; FS='book32-sticky-littlefs'; Manifest='manifest-sticky'; Name='InkDeck for Seeed Studio Sticky'; Offset=8454144; Flash='32MB' }
+    @{ Env='seeed_reterminal_sticky'; Prefix='book32-sticky'; App='book32-sticky-firmware'; FS='book32-sticky-littlefs'; Manifest='manifest-sticky'; Name='InkDeck for Seeed Studio Sticky'; Offset=8454144; Flash='32MB' },
+    @{ Env='lilygo_t5s3_pro'; Prefix='inkdeck-lilygo'; App='inkdeck-lilygo-firmware'; FS='inkdeck-lilygo-littlefs'; Manifest='manifest-lilygo'; Name='InkDeck for LILYGO T5 S3 Pro H752-01 (experimental)'; Offset=8454144; Flash='16MB' }
 )
 foreach ($profile in $profiles) {
+    if ($Target -ne 'all' -and $Target -ne $profile.Prefix) { continue }
     $build = Join-Path $repo ".pio/build/$($profile.Env)"
     $app = "$($profile.App)-v$Version.bin"
     $fs = "$($profile.FS)-v$Version.bin"
@@ -50,4 +53,4 @@ foreach ($profile in $profiles) {
         [IO.File]::WriteAllText("$docs/$($profile.Manifest)-$kind.json", $manifest)
     }
 }
-Write-Output "Packaged InkDeck $Version for both devices."
+Write-Output "Packaged InkDeck $Version ($Target)."

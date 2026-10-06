@@ -1,6 +1,7 @@
 #pragma once
+#include "Config.h"
 
-#if defined(BOARD_SEEED_STICKY)
+#if BOOK32_HAS_TOUCH
 
 #include <Arduino.h>
 
@@ -10,6 +11,9 @@ public:
     void stop();
     bool readFrame(bool& touching, uint16_t& nativeX, uint16_t& nativeY);
     bool available() const { return _address != 0; }
+#if defined(BOARD_LILYGO_T5S3_PRO)
+    bool readPoints(uint16_t* x, uint16_t* y, uint8_t& count);
+#endif
 
 private:
     uint8_t _address = 0;

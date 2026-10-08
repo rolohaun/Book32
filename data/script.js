@@ -1,4 +1,20 @@
+let romUploadsSupported = false;
+let lilygoControlsSupported = false;
+let romMaxBytes = 0;
+let romUploading = false;
+let romDeleting = false;
+let romListRequest = 0;
+
+function updateRomControls() {
+    const busy = romUploading || romDeleting;
+    document.getElementById('rom-file').disabled = busy;
+    document.getElementById('rom-upload-button').disabled = busy;
+    document.getElementById('rom-refresh-button').disabled = busy;
+    document.querySelectorAll('.rom-delete').forEach(button => button.disabled = busy);
+}
+
 function showTab(tabId) {
+    if (tabId === 'games' && !romUploadsSupported) return;
     document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
     document.querySelectorAll('.nav-links button').forEach(el => el.classList.remove('active'));
 
@@ -10,6 +26,8 @@ function showTab(tabId) {
     if (tabId === 'ereader') {
         fetchBooks();
         getReaderProgress();
+    } else if (tabId === 'games') {
+        fetchRoms();
     } else if (tabId === 'klipper') {
         switchDeviceApp('Klipper');
     } else if (tabId === 'todo') {
@@ -18,7 +36,39 @@ function showTab(tabId) {
     } else if (tabId === 'settings') {
         getDisplaySettings();
         getSoundSettings();
+        getLilygoControls();
     }
+}
+
+async function getLilygoControls() {
+    if (!lilygoControlsSupported) return;
+    const status = document.getElementById('lilygo-settings-status');
+    try {
+        const response = await fetch('/api/settings/lilygo');
+        if (!response.ok) throw new Error('load');
+        const data = await response.json();
+        document.getElementById('light-brightness').value = data.brightness;
+        document.getElementById('light-brightness-label').textContent = `${data.brightness}%`;
+        setRadioValue('front-button', String(data.front));
+        setRadioValue('side-button', String(data.side));
+    } catch (_) { status.textContent = 'Could not load light and button settings.'; }
+}
+async function saveLilygoControls() {
+    if (!lilygoControlsSupported) return;
+    const status = document.getElementById('lilygo-settings-status');
+    const button = document.getElementById('lilygo-settings-save');
+    button.disabled = true; status.textContent = 'Saving…';
+    try {
+        const response = await fetch('/api/settings/lilygo', {
+            method: 'POST', headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({brightness: Number(document.getElementById('light-brightness').value),
+                front: Number(getRadioValue('front-button','0')), side: Number(getRadioValue('side-button','0'))})
+        });
+        const data = await response.json();
+        if (!response.ok || data.status !== 'ok') throw new Error('save');
+        status.textContent = 'Light and button settings saved. Brightness applies when the light is on.';
+    } catch (_) { status.textContent = 'Could not save. Check the connection and try again.'; }
+    finally { button.disabled = false; }
 }
 
 // === Touch Sounds ===
@@ -69,6 +119,15 @@ async function fetchStatus() {
     try {
         const res = await fetch('/api/status');
         const data = await res.json();
+        romUploadsSupported = data.romUpload === true;
+        const newlySupported = !lilygoControlsSupported && data.lilygoControls === true;
+        lilygoControlsSupported = data.lilygoControls === true;
+        document.getElementById('lilygo-settings-card').classList.toggle('hidden', !lilygoControlsSupported);
+        if (newlySupported) getLilygoControls();
+        romMaxBytes = Number(data.romMaxBytes) || 0;
+        document.getElementById('games-nav').classList.toggle('hidden', !romUploadsSupported);
+        document.getElementById('games').classList.toggle('hidden', !romUploadsSupported);
+        document.getElementById('rom-limit').textContent = romUploadsSupported ? `Maximum ROM size: ${formatStorage(romMaxBytes)}. MicroSD required.` : '';
         document.getElementById('battery-val').innerText = data.battery + '%' + (data.charging ? ' (Charging)' : '');
         document.getElementById('uptime-val').innerText = data.uptime;
 
@@ -169,6 +228,106 @@ async function performUpdate() {
 
     fetch('/api/update/all', { method: 'POST' });
     alert("Update started. The device will reboot when complete. This page will stop responding during the update.");
+}
+
+// === LILYGO-only Game ROM Management ===
+async function fetchRoms() {
+    if (!romUploadsSupported || romUploading || romDeleting) return;
+    const requestId = ++romListRequest;
+    const list = document.getElementById('rom-list');
+    list.textContent = 'Loading…';
+    try {
+        const response = await fetch('/api/roms');
+        const data = await response.json();
+        if (requestId !== romListRequest || romUploading || romDeleting) return;
+        if (!response.ok) throw new Error(data.error || 'Unable to load ROMs.');
+        list.replaceChildren();
+        if (!data.roms.length) list.textContent = 'No ROMs yet. Upload a Game Boy, NES or Genesis ROM.';
+        for (const rom of data.roms) {
+            const row = document.createElement('div'); row.className = 'rom-row';
+            const name = document.createElement('span'); name.textContent = rom.name;
+            const size = document.createElement('small'); size.textContent = formatFileSize(rom.size);
+            if (typeof rom.size === 'number' && Number.isSafeInteger(rom.size) && rom.size >= 0)
+                size.title = `${rom.size.toLocaleString()} bytes`;
+            const actions = document.createElement('div'); actions.className = 'rom-actions';
+            const remove = document.createElement('button');
+            remove.type = 'button'; remove.className = 'btn danger-outline rom-delete';
+            remove.textContent = 'Delete'; remove.setAttribute('aria-label', `Delete ${rom.name}`);
+            remove.disabled = romUploading || romDeleting;
+            remove.onclick = () => deleteRom(rom.name);
+            actions.append(size, remove); row.append(name, actions); list.append(row);
+        }
+    } catch (error) {
+        if (requestId === romListRequest && !romUploading && !romDeleting)
+            list.textContent = error.message || 'Connection lost. Return the device to its home screen.';
+    }
+}
+
+async function deleteRom(name) {
+    if (!romUploadsSupported || romUploading || romDeleting) return;
+    if (!confirm(`Delete "${name}" from the SD card?\n\nOnly the ROM will be removed. Saved games will be kept. You will need to upload the ROM again to play it.`)) return;
+    romDeleting = true; ++romListRequest; updateRomControls();
+    const status = document.getElementById('rom-status');
+    status.textContent = 'Deleting ROM…'; status.style.color = 'var(--muted)';
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
+    try {
+        const response = await fetch('/api/roms/delete?name=' + encodeURIComponent(name), {
+            method: 'DELETE', signal: controller.signal
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || `Delete failed (${response.status}).`);
+        status.textContent = `Deleted ${name}. Saved games were kept.`;
+        status.style.color = 'var(--accent)';
+    } catch (error) {
+        status.textContent = error.name === 'AbortError' ?
+            'Delete timed out. Check the ROM list before retrying.' :
+            (error.message || 'Delete failed. Return InkDeck to its home screen and retry.');
+        status.style.color = 'var(--danger)';
+    } finally {
+        clearTimeout(timeout);
+        romDeleting = false; updateRomControls();
+        await fetchRoms();
+    }
+}
+
+function uploadRom() {
+    if (!romUploadsSupported || romUploading || romDeleting) return;
+    const input = document.getElementById('rom-file');
+    const file = input.files[0];
+    const status = document.getElementById('rom-status');
+    const progress = document.getElementById('rom-progress');
+    if (!file || !/\.(gb|gbc|nes|md|gen|bin)$/i.test(file.name)) { status.textContent = 'Choose a .gb/.gbc, .nes or .md/.gen/.bin ROM first.'; return; }
+    const isGb = /\.(gb|gbc)$/i.test(file.name), isNes = /\.nes$/i.test(file.name);
+    const minimum = isGb ? 32768 : isNes ? 16400 : 512;
+    const maximum = Math.min(romMaxBytes, isGb ? 8 * 1024 * 1024 : isNes ? 2 * 1024 * 1024 : 4 * 1024 * 1024);
+    if (file.size < minimum || file.size > maximum) { status.textContent = `This ROM must be between ${formatFileSize(minimum)} and ${formatStorage(maximum)}.`; return; }
+    romUploading = true; ++romListRequest; updateRomControls();
+    progress.value = 0; progress.classList.remove('hidden');
+    status.textContent = 'Uploading to /roms…'; status.style.color = 'var(--accent)';
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', '/api/roms/upload'); xhr.timeout = 300000;
+    xhr.upload.onprogress = event => {
+        if (!event.lengthComputable) return;
+        const percent = Math.round(event.loaded * 100 / event.total);
+        progress.value = percent;
+        status.textContent = percent < 100 ? `Uploading… ${percent}%` : 'Verifying ROM and saving to SD…';
+    };
+    function finish(message, success) {
+        romUploading = false; updateRomControls();
+        status.textContent = message; status.style.color = success ? 'var(--accent)' : 'var(--danger)';
+        if (success) { progress.value = 100; input.value = ''; fetchRoms(); }
+    }
+    xhr.onload = () => {
+        let data;
+        try { data = JSON.parse(xhr.responseText); } catch (_) { finish('Unexpected response; check the ROM list before retrying.', false); return; }
+        if (xhr.status === 201) finish(`Saved to ${data.path}. Open Ink Boy on your LILYGO to play.`, true);
+        else finish(data.error || `Upload failed (${xhr.status}).`, false);
+    };
+    xhr.onerror = () => finish('Connection lost. Return InkDeck to its home screen and check the ROM list before retrying.', false);
+    xhr.ontimeout = () => finish('Upload timed out. Check Wi-Fi and the ROM list before retrying.', false);
+    xhr.onabort = () => finish('Upload cancelled.', false);
+    const body = new FormData(); body.append('file', file); xhr.send(body);
 }
 
 // === Ereader Book Management ===
@@ -317,6 +476,17 @@ function formatStorage(bytes) {
         return amount.toFixed(amount >= 10 ? 1 : 2) + ' GB';
     }
     return Math.round(value / mebibyte) + ' MB';
+}
+
+// ROMs can be far smaller than 1 MB; never round a nonempty ROM down to zero.
+// Keep the dashboard's MB/GB formatter separate from individual file sizes.
+function formatFileSize(bytes) {
+    if (typeof bytes !== 'number' || !Number.isSafeInteger(bytes) || bytes < 0) return 'Unknown size';
+    if (bytes < 1024) return `${bytes} B`;
+    const units = ['KB', 'MB', 'GB', 'TB', 'PB'];
+    let amount = bytes / 1024, unit = 0;
+    while (amount >= 1024 && unit < units.length - 1) { amount /= 1024; unit++; }
+    return amount.toLocaleString(undefined, { maximumFractionDigits: 2 }) + ' ' + units[unit];
 }
 
 function getRadioValue(name, fallback) {
@@ -481,6 +651,7 @@ function getSleepSettings() {
             if (data.sleepMessage !== undefined) {
                 document.getElementById('sleep-message').value = data.sleepMessage;
             }
+            if (data.defaultSleepMessage) document.getElementById('sleep-message').placeholder = data.defaultSleepMessage;
         })
         .catch(error => console.error('Error loading sleep settings:', error));
 }

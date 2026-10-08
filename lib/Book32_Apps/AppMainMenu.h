@@ -45,6 +45,7 @@ private:
     TaskHandle_t _wifiTaskHandle = nullptr;
     static void updateCheckTask(void* parameter);
     static void wifiWakeTask(void* parameter);
+    static void wifiWakeWork(void* parameter);
     void ensureWifiAwake();
     String getWifiFooterText() const;
 };

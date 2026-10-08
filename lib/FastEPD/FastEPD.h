@@ -375,6 +375,28 @@ class FASTEPD
     int fullUpdate(void);
     int fullUpdate(int iClearMode, bool bKeepOn = false, BB_RECT *pRect = NULL);
     int partialUpdate(bool bKeepOn, int iStartRow = 0, int iEndRow = 4095);
+#if defined(BOARD_LILYGO_T5S3_PRO)
+    // One physical scan, with four/six-pulse history per pixel, within a native
+    // byte-aligned rectangle, with identical triples of native rows (3x scale).
+    // Caller owns 1bpp source and rect.w * (rect.h / rowRepeat) / 2 state bytes.
+    // 3 = compact GB/Genesis stripes, 1 = legacy independent 1bpp rows,
+    // 2 = NES packed 2-bit source, exact 9-bit six-pulse history per source pixel.
+    // Optional NES history banks each hold 32 source columns; all must be valid.
+    int videoScan(const BB_RECT& rect, const uint8_t* source, uint8_t* history, bool resetHistory, int rowRepeat = 3, bool reverseNesRows = true, uint8_t* const* nesBanks = nullptr, int nesBankRows = 32);
+    int videoNeutral();
+    // Select between the queued transport and video4's serial row transport.
+    // Call only between completed scans. A transport fault requires reboot;
+    // never retry a partially driven frame using already-advanced history.
+    void setVideoQueued(bool queued) { _videoQueued = queued; }
+    // A/B experiment: append one neutral row like MSG's scan epilogue.
+    // Change only after draining/neutralizing the previous profile.
+    void setVideoScanTail(bool enabled) { _videoScanTail = enabled; }
+    void setVideoPulses(uint8_t pulses, bool settledBoost = false) {
+        if (pulses != 4 && pulses != 6) return;
+        _videoPulses = pulses;
+        _videoSettledBoost = pulses == 6 && settledBoost;
+    }
+#endif
     int smoothUpdate(bool bKeepOn, uint8_t u8Color);
     int fastUpdate(bool bKeepOn = false);
     void setPasses(uint8_t iPartialPasses, uint8_t iFullPasses = 5);
@@ -424,6 +446,13 @@ class FASTEPD
 
   protected:
     FASTEPDSTATE _state;
+#if defined(BOARD_LILYGO_T5S3_PRO)
+    bool _videoQueued = true;
+    bool _videoScanTail = false;
+    uint8_t _videoPulses = 4;
+    bool _videoSettledBoost = false;
+    bool _videoFault = false;
+#endif
 }; // class FASTEPD
 #endif // __cplusplus
 

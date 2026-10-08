@@ -13,6 +13,7 @@
 #include <WiFi.h>
 #include <esp_wifi.h>
 #include <algorithm>
+#include "LilygoControls.h"
 
 namespace {
 
@@ -134,6 +135,7 @@ void AppWifi::returnToMenu() {
 }
 
 void AppWifi::handleInput(InputAction action) {
+    if (action == INPUT_BACK && _view != SETTINGS_HOME) { showSettingsHome(); return; }
     if (action == INPUT_SELECT || action == INPUT_BACK) returnToMenu();
 }
 
@@ -369,6 +371,28 @@ void AppWifi::appendKey(char key) {
 }
 
 void AppWifi::handleTouch(uint16_t x, uint16_t y) {
+#if defined(BOARD_LILYGO_T5S3_PRO)
+    if (_view == LIGHT_BUTTONS) {
+        if (y >= 55 && y < 112) { showSettingsHome(); return; }
+        if (y < SETTINGS_TOP) return;
+        const int row = (y - SETTINGS_TOP) / SETTINGS_ROW_HEIGHT;
+        if (row > 3 || (y - SETTINGS_TOP) % SETTINGS_ROW_HEIGHT >= SETTINGS_CARD_HEIGHT) return;
+        auto& controls = LilygoControls::instance();
+        int brightness = controls.brightness(), front = controls.frontAction(), side = controls.sideAction();
+        if (row == 0) {
+            brightness = brightness < 25 ? 25 : brightness < 50 ? 50 : brightness < 75 ? 75 : brightness < 100 ? 100 : 10;
+        } else if (row == 1) front = (front + 1) % LilygoControls::ACTION_COUNT;
+        else if (row == 2) side = (side + 1) % LilygoControls::ACTION_COUNT;
+        else {
+            auto& display = DisplayMgr::getInstance().getDisplay();
+            display.setFrontlight(!display.frontlightOn());
+        }
+        _status = controls.save(brightness, front, side) ? "Saved" : "Could not save settings";
+        controls.apply();
+        _fullRefresh = false; _needsRedraw = true;
+        return;
+    }
+#endif
     if (_view == SETTINGS_HOME) {
         if (y >= 55 && y < 112) {
             SoundMgr::getInstance().beep();
@@ -411,6 +435,10 @@ void AppWifi::handleTouch(uint16_t x, uint16_t y) {
             SoundMgr::getInstance().beep();
             showReaderDisplay();
         } else if (row == 4) {
+#if defined(BOARD_LILYGO_T5S3_PRO)
+            _view = LIGHT_BUTTONS;
+            _status = "Tap to cycle each setting";
+#else
             if (_soundEnabled) {
                 SoundMgr::getInstance().beep();
                 SoundMgr::getInstance().setEnabled(false);
@@ -420,6 +448,7 @@ void AppWifi::handleTouch(uint16_t x, uint16_t y) {
             }
             _soundEnabled = SoundMgr::getInstance().isEnabled();
             _status = _soundEnabled ? "Touch sounds on" : "Touch sounds off";
+#endif
             _fullRefresh = true;
             _needsRedraw = true;
         } else {
@@ -612,6 +641,7 @@ void AppWifi::draw() {
     _needsRedraw = false;
     if (_view == SETTINGS_HOME) drawSettingsHome();
     else if (_view == READER_DISPLAY) drawReaderDisplay();
+    else if (_view == LIGHT_BUTTONS) drawLightButtons();
     else if (_view == NETWORK_LIST) drawNetworkList();
     else if (_view == PASSWORD_KEYBOARD || _view == MESSAGE_KEYBOARD) drawKeyboard();
     else drawConnectionResult();
@@ -656,12 +686,39 @@ void AppWifi::drawSettingsHome() {
         drawSettingCard(display, fontMgr, SETTINGS_TOP + SETTINGS_ROW_HEIGHT * 3,
                         "Reading display", readerDisplayValue);
         drawSettingCard(display, fontMgr, SETTINGS_TOP + SETTINGS_ROW_HEIGHT * 4,
+#if defined(BOARD_LILYGO_T5S3_PRO)
+                        "Light & buttons", "Brightness and button actions");
+#else
                         "Touch sounds", _soundEnabled ? "On" : "Off");
+#endif
         drawSettingCard(display, fontMgr, SETTINGS_TOP + SETTINGS_ROW_HEIGHT * 5,
                         "Orientation", rotationValue);
         fontMgr.drawTextCentered(display, "Tap a setting to change it", 760,
                                  FONT_SIZE_SMALL, GxEPD_BLACK);
     } while (display.nextPage());
+}
+
+void AppWifi::drawLightButtons() {
+#if defined(BOARD_LILYGO_T5S3_PRO)
+    auto& d = DisplayMgr::getInstance().getDisplay();
+    auto& font = FontMgr::getInstance();
+    auto& controls = LilygoControls::instance();
+    if (_fullRefresh) d.setFullWindow(); else d.setPartialWindow(0, 0, d.width(), d.height());
+    _fullRefresh = false;
+    d.firstPage();
+    do {
+        d.fillScreen(GxEPD_WHITE);
+        font.drawText(d, "Light & Buttons", 15, 35, FONT_SIZE_SUBTITLE, GxEPD_BLACK);
+        drawCenteredButton(d, font, 10, 58, d.width() - 20, 52, "< Settings");
+        font.drawTextCentered(d, _status.c_str(), 132, FONT_SIZE_SMALL, GxEPD_BLACK);
+        drawSettingCard(d, font, SETTINGS_TOP, "Brightness", String(controls.brightness()) + "%");
+        drawSettingCard(d, font, SETTINGS_TOP + SETTINGS_ROW_HEIGHT, "Front touch button", controls.actionName(controls.frontAction()));
+        drawSettingCard(d, font, SETTINGS_TOP + 2 * SETTINGS_ROW_HEIGHT, "Side function button", controls.actionName(controls.sideAction()));
+        drawSettingCard(d, font, SETTINGS_TOP + 3 * SETTINGS_ROW_HEIGHT, "Light", d.frontlightOn() ? "On - tap to turn off" : "Off - tap to turn on");
+        font.drawTextCentered(d, "BOOT / reset keep their original functions", 650, FONT_SIZE_SMALL, GxEPD_BLACK);
+        font.drawTextCentered(d, "Tap a setting to cycle its options", 705, FONT_SIZE_SMALL, GxEPD_BLACK);
+    } while (d.nextPage());
+#endif
 }
 
 void AppWifi::drawReaderDisplay() {

@@ -120,6 +120,9 @@ void AppKlipper::stop() {
 }
 
 void AppKlipper::handleInput(InputAction action) {
+#if defined(BOARD_LILYGO_T5S3_PRO)
+    if (action == INPUT_BACK) { AppMgr::getInstance().switchTo(0); return; }
+#endif
     if (action == INPUT_NEXT) {
         if (_state == KLIPPER_SCANNING && !_scanning) {
             // Single press in scanning view: start manual scan

@@ -1,0 +1,7 @@
+{
+  "name": "InkGenesis",
+  "version": "0.2.0",
+  "description": "InkDeck ClownMDEmu adapter, AGPL-3.0-or-later",
+  "license": "AGPL-3.0-or-later",
+  "build": { "srcDir": ".", "includeDir": ".", "srcFilter": ["-<*>", "+<InkGenesis.c>"] }
+}

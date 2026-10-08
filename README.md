@@ -16,16 +16,34 @@ updates.
 
 ### LILYGO preview
 
-Version 1.3.0 adds a **build-tested, not yet hardware-validated** port for the
-newer H752-01 board. It does **not** support the older H752 pinout. The browser
-installer retains stable 1.2.14 for Book32 and Sticky; only the LILYGO card uses
-the experimental release. See [LILYGO setup and limitations](docs/lilygo-preview.md).
+The browser installer provides **InkDeck 1.3.1** for all three targets. The
+LILYGO H752-01 / Pro Lite build remains experimental; the older H752 pinout is
+not supported. The header shows only InkDeck and the release version, without
+development-build suffixes. See [release notes](docs/release-1.3.1.md).
 
-The LILYGO-only Paperboy-style app uses Peanut-GB with a new InkDeck adapter,
-not an unchanged copy of Zephray's Paperboy firmware. It has a native 160x144
-Game Boy viewport, multitouch controls and cartridge SRAM saves. No ROMs are
-included. Fast-refresh performance, touch alignment and power use require
-testing on the actual device before this target can be called stable.
+The LILYGO build adds **NES (Nofrendo)** and
+**Genesis (ClownMDEmu)** alongside the existing **CrankBoy DMG/CGB** core in Ink Boy.
+Its polished library shows Game Boy, NES and Sega tabs only for detected games,
+then launches the appropriate core. Web uploads accept `.gb`, `.gbc`, `.nes`,
+`.md`, `.gen` and `.bin` into `/roms` on MicroSD. Book32 and Sticky do not expose
+this feature. NES now preserves its native 256×240 image at exact 2× scaling
+(512×480), without the old 160×120 intermediate image. No games or BIOS files
+are bundled.
+
+**Experimental Genesis replacement:** ClownMDEmu and its original Clown68000 /
+ClownZ80 cores replace the non-commercial dependencies from local test builds.
+The combined firmware is AGPLv3-or-later: commercial use is allowed subject to
+its source-sharing and notice requirements, not a permissive-license release.
+Old Genesis saves are kept separate and cannot be loaded by the new core;
+GB/GBC and NES saves are unchanged. See [licensing](LICENSE.md),
+[core integration](lib/InkGenesis/README.md) and [third-party notices](THIRD_PARTY_NOTICES.md).
+
+On the tested LILYGO, NES emulation runs at about 60 FPS; measured display
+presentation varies around 51–60 FPS with an average near 56 FPS. These are
+different measurements, not a guarantee for every game. GB display scans have
+reached about 59 Hz. The replacement Genesis core has passed synthetic host
+tests and its device build, but hardware speed and compatibility are unmeasured. E-paper
+ghosting remains possible. Tap the game screen for a manual cleaning refresh.
 
 ## Controls
 

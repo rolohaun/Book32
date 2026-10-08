@@ -11,6 +11,9 @@
 #include <WiFi.h>
 #include "icon_update.h"
 #include "../Book32_Update/GitHubMgr.h"
+#if defined(BOARD_LILYGO_T5S3_PRO)
+#include "NetworkWork.h"
+#endif
 
 struct MenuDirtyRect {
     int x;
@@ -43,7 +46,7 @@ static MenuDirtyRect unionRect(MenuDirtyRect a, MenuDirtyRect b) {
 
 static bool isReaderActive() {
     App* current = AppMgr::getInstance().getCurrentApp();
-    return current && (strcmp(current->getName(), "eReader") == 0 || strcmp(current->getName(), "Paperboy") == 0);
+    return current && (strcmp(current->getName(), "eReader") == 0 || strcmp(current->getName(), "Ink Boy") == 0);
 }
 
 #if BOOK32_HAS_TOUCH
@@ -93,6 +96,9 @@ void AppMainMenu::updateCheckTask(void* parameter) {
     // Wait for connection (max 10s)
     int attempts = 0;
     while (WiFi.status() != WL_CONNECTED && attempts < 20) {
+#if defined(BOARD_LILYGO_T5S3_PRO)
+        if (NetworkWork::gate().paused()) break;
+#endif
         vTaskDelay(pdMS_TO_TICKS(500));
         attempts++;
     }
@@ -113,13 +119,29 @@ void AppMainMenu::updateCheckTask(void* parameter) {
 }
 
 void AppMainMenu::wifiWakeTask(void* parameter) {
+#if defined(BOARD_LILYGO_T5S3_PRO)
+    {
+        NetworkWork::Lease network;
+        if (network) wifiWakeWork(parameter);
+        else {
+            auto* self=static_cast<AppMainMenu*>(parameter);
+            self->_wifiStarting=false;
+            self->_wifiTaskHandle=nullptr;
+        }
+    } // Destroy the lease BEFORE vTaskDelete (which does not unwind C++).
+#else
+    wifiWakeWork(parameter);
+#endif
+    vTaskDelete(nullptr);
+}
+
+void AppMainMenu::wifiWakeWork(void* parameter) {
     AppMainMenu* self = (AppMainMenu*)parameter;
     Serial.println("Main menu WiFi wake task started");
 
     if (isReaderActive()) {
         self->_wifiStarting = false;
         self->_wifiTaskHandle = nullptr;
-        vTaskDelete(NULL);
         return;
     }
 
@@ -128,17 +150,30 @@ void AppMainMenu::wifiWakeTask(void* parameter) {
 
     int attempts = 0;
     while (WiFi.status() != WL_CONNECTED && attempts < 40) {
+#if defined(BOARD_LILYGO_T5S3_PRO)
+        if (NetworkWork::gate().paused()) {
+            self->_wifiStarting=false;
+            self->_wifiTaskHandle=nullptr;
+            return; // The offline app shuts down radio after all owners drain.
+        }
+#endif
 #if BOOK32_HAS_TOUCH
         App* current = AppMgr::getInstance().getCurrentApp();
         if (current && strcmp(current->getName(), "Settings") == 0) {
             self->_wifiStarting = false;
             self->_wifiTaskHandle = nullptr;
             Serial.println("Main menu WiFi wake handed radio to Settings app");
-            vTaskDelete(NULL);
             return;
         }
 #endif
         if (isReaderActive()) {
+#if defined(BOARD_LILYGO_T5S3_PRO)
+            App* owner=AppMgr::getInstance().getCurrentApp();
+            if (owner && strcmp(owner->getName(),"Ink Boy")==0) {
+                self->_wifiStarting=false;self->_wifiTaskHandle=nullptr;
+                return; // Ink Boy alone drains HTTPS then powers down radio.
+            }
+#endif
             WebMgr::getInstance().stop();
             WiFi.disconnect(false);
             WiFi.mode(WIFI_OFF);
@@ -147,7 +182,6 @@ void AppMainMenu::wifiWakeTask(void* parameter) {
         self->_needsRedraw = true;
         self->_wifiTaskHandle = nullptr;
             Serial.println("Main menu WiFi wake cancelled; eReader is active");
-            vTaskDelete(NULL);
             return;
         }
         vTaskDelay(pdMS_TO_TICKS(250));
@@ -169,7 +203,6 @@ void AppMainMenu::wifiWakeTask(void* parameter) {
         self->_wifiStarting = false;
         self->_footerOnlyRedraw = true;
         self->_needsRedraw = true;
-        vTaskDelete(NULL);
         return;
     }
 
@@ -177,7 +210,6 @@ void AppMainMenu::wifiWakeTask(void* parameter) {
     self->_footerOnlyRedraw = true;
     self->_needsRedraw = true;
     self->_wifiTaskHandle = nullptr;
-    vTaskDelete(NULL);
 }
 
 String AppMainMenu::getWifiFooterText() const {
@@ -502,7 +534,7 @@ void AppMainMenu::draw() {
             } else if (strcmp(app->getName(), "Settings") == 0) {
                 drawSettingsMenuIcon(display, x, y);
 #if defined(BOARD_LILYGO_T5S3_PRO)
-            } else if (strcmp(app->getName(), "Paperboy") == 0) {
+            } else if (strcmp(app->getName(), "Ink Boy") == 0) {
                 for (int line = 0; line < 4; ++line)
                     display.drawRoundRect(x+10+line,y+32+line,140-line*2,98-line*2,24,GxEPD_BLACK);
                 display.fillRoundRect(x+35,y+65,46,14,3,GxEPD_BLACK);

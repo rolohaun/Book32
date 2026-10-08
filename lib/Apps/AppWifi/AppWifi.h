@@ -31,6 +31,7 @@ private:
     enum View {
         SETTINGS_HOME,
         READER_DISPLAY,
+        LIGHT_BUTTONS,
         NETWORK_LIST,
         PASSWORD_KEYBOARD,
         MESSAGE_KEYBOARD,
@@ -78,6 +79,7 @@ private:
     void showReaderDisplay(const String& status = "");
     void drawSettingsHome();
     void drawReaderDisplay();
+    void drawLightButtons();
     void drawNetworkList();
     void drawKeyboard();
     void drawConnectionResult();

@@ -1,21 +1,26 @@
 #pragma once
 
 #if defined(BOARD_LILYGO_T5S3_PRO)
-#define SYSTEM_VERSION "1.3.0"
-#define DEVICE_NAME "LILYGO T5 S3 Pro (H752-01)"
+#define SYSTEM_VERSION "1.3.1"
+#define DEVICE_NAME "LILYGO T5 E-Paper S3 Pro Lite (H752-01)"
 #define SLEEP_TIMEOUT_DEFAULT_MINUTES 10
 #elif defined(BOARD_SEEED_STICKY)
-#define SYSTEM_VERSION "1.2.14"
+#define SYSTEM_VERSION "1.3.1"
 #define DEVICE_NAME "Seeed Studio Sticky"
 #define SLEEP_TIMEOUT_DEFAULT_MINUTES 10
 #else
-#define SYSTEM_VERSION "1.2.14"
+#define SYSTEM_VERSION "1.3.1"
 #define DEVICE_NAME "Book32"
 #define SLEEP_TIMEOUT_DEFAULT_MINUTES 0
 #endif
 
+#if defined(BOARD_LILYGO_T5S3_PRO)
+#define SLEEP_CONFIG_VERSION 3
+#define SLEEP_MESSAGE_DEFAULT "Press BOOT to wake"
+#else
 #define SLEEP_CONFIG_VERSION 2
 #define SLEEP_MESSAGE_DEFAULT "Press power to wake"
+#endif
 
 // Offline management hotspot (SoftAP). When the device can't reach a known
 // WiFi network, the main menu broadcasts this network so a phone can connect
@@ -25,14 +30,19 @@
 // Both supported panels are 800x480 natively and run the InkDeck UI in
 // 480x800 portrait orientation.
 #if defined(BOARD_LILYGO_T5S3_PRO)
-#define SCREEN_WIDTH 540
-#define SCREEN_HEIGHT 960
+#define SCREEN_WIDTH 524
+#define SCREEN_HEIGHT 944
 #else
 #define SCREEN_WIDTH 480
 #define SCREEN_HEIGHT 800
 #endif
+#if defined(BOARD_LILYGO_T5S3_PRO)
+#define PANEL_WIDTH 960
+#define PANEL_HEIGHT 540
+#else
 #define PANEL_WIDTH SCREEN_HEIGHT
 #define PANEL_HEIGHT SCREEN_WIDTH
+#endif
 #define FONT_SIZE_DEFAULT 28
 #define READER_FULL_REFRESH_INTERVAL_DEFAULT 15
 #if defined(BOARD_SEEED_STICKY) || defined(BOARD_LILYGO_T5S3_PRO)
@@ -43,7 +53,11 @@
 
 #if defined(BOARD_LILYGO_T5S3_PRO)
 // H752-01 ONLY. The older H752 has a different display and power pinout.
-#define PIN_BUTTON 0 // BOOT: back; hold two seconds for sleep, release to wake
+#define PIN_BUTTON 0 // BOOT: back; hold 2s to sleep, release, then press to wake
+#define PIN_FRONTLIGHT 11 // PT4103 enable: LOW off, HIGH on
+#define FRONTLIGHT_BUTTON_I2C_ADDRESS 0x20 // PCA9535, S3 on IO1_2 (active low)
+#define FRONTLIGHT_BUTTON_INPUT_REGISTER 1
+#define FRONTLIGHT_BUTTON_MASK (1u << 2)
 #define SD_CS 12
 #define SD_MISO 21
 #define SD_SCK 14

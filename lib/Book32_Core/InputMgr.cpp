@@ -2,6 +2,11 @@
 #include "BatteryMgr.h"
 #include "DisplayMgr.h"
 #include <cstdlib>
+#if defined(BOARD_LILYGO_T5S3_PRO)
+#include <Wire.h>
+#include "LilygoControls.h"
+#include "AppMgr.h"
+#endif
 
 #if defined(BOARD_SEEED_STICKY)
 InputMgr::InputMgr() : btn(PIN_BUTTON, true, true),
@@ -20,6 +25,9 @@ InputMgr& InputMgr::getInstance() {
 }
 
 void InputMgr::init() {
+#if defined(BOARD_LILYGO_T5S3_PRO)
+    LilygoControls::instance().init();
+#endif
     btn.setDebounceMs(30);
     btn.setClickMs(100);
 #if BOOK32_HAS_TOUCH
@@ -58,6 +66,10 @@ void InputMgr::init() {
 }
 
 void InputMgr::update() {
+#if defined(BOARD_LILYGO_T5S3_PRO)
+    LilygoControls::instance().apply();
+    pollFrontlightButton();
+#endif
     if (!_taskRunning) {
         btn.tick();
 #if defined(BOARD_SEEED_STICKY)
@@ -71,6 +83,14 @@ void InputMgr::update() {
 
     InputEvent event;
     while (dequeueEvent(event)) {
+#if defined(BOARD_LILYGO_T5S3_PRO)
+        if (!event.touch && event.action == INPUT_HOME) {
+            auto& apps = AppMgr::getInstance();
+            if (apps.getCurrentApp() && strcmp(apps.getCurrentApp()->getName(), "Main Menu") != 0)
+                apps.switchTo(0);
+            continue;
+        }
+#endif
         if (!event.touch && event.action == INPUT_POWER_SLEEP) {
             BatteryMgr::getInstance().enterIdleSleep();
             return;
@@ -192,9 +212,15 @@ void InputMgr::pollTouch() {
     // Poll on the display-owning loop: all H752-01 peripherals share Wire.
     uint16_t nx[5], ny[5];
     uint8_t count = 0;
-    if (!touch.readPoints(nx, ny, count)) return;
+    bool homePressed = false;
+    if (!touch.readPoints(nx, ny, count, homePressed)) return;
     _pointCount = 0;
     _pointsAt = millis();
+    if (homePressed) {
+        _touchDown = false; // Cancel any pending screen tap; bezel is separate.
+        mappedButton(true);
+        return;
+    }
     for (uint8_t i = 0; i < count; ++i) {
         uint16_t sx, sy;
         if (DisplayMgr::getInstance().mapNativeTouchToScreen(nx[i], ny[i], sx, sy))
@@ -237,6 +263,38 @@ void InputMgr::pollTouch() {
 }
 
 #if defined(BOARD_LILYGO_T5S3_PRO)
+void InputMgr::pollFrontlightButton() {
+    const uint32_t now = millis();
+    if (uint32_t(now - _frontlightPolledAt) < 20) return;
+    _frontlightPolledAt = now;
+    // Run only on the display-owning loop, never a second I2C task. FastEPD
+    // already configures IO1_2 as input; do not touch its cached power outputs.
+    Wire.beginTransmission(FRONTLIGHT_BUTTON_I2C_ADDRESS);
+    Wire.write(FRONTLIGHT_BUTTON_INPUT_REGISTER);
+    bool valid = Wire.endTransmission(false) == 0;
+    bool pressed = false;
+    if (valid) {
+        valid = Wire.requestFrom(uint8_t(FRONTLIGHT_BUTTON_I2C_ADDRESS), uint8_t(1)) == 1;
+        if (valid) pressed = (Wire.read() & FRONTLIGHT_BUTTON_MASK) == 0;
+        else while (Wire.available()) Wire.read();
+    }
+    if (_frontlightButton.update(valid, pressed, now)) {
+        mappedButton(false);
+    }
+}
+
+void InputMgr::mappedButton(bool front) {
+    const auto action = front ? LilygoControls::instance().frontAction() : LilygoControls::instance().sideAction();
+    BatteryMgr::getInstance().resetIdleTimer();
+    if (action == LilygoControls::HOME) enqueueAction(INPUT_HOME);
+    else if (action == LilygoControls::BACK) enqueueAction(INPUT_BACK);
+    else if (action == LilygoControls::LIGHT) {
+        auto& display = DisplayMgr::getInstance().getDisplay();
+        display.setFrontlight(!display.frontlightOn());
+        Serial.printf("Frontlight: %s (%s)\n", display.frontlightOn() ? "on" : "off", front ? "front touch key" : "S3 switch");
+    }
+}
+
 uint8_t InputMgr::heldTouches(TouchPoint* points) const {
     if (millis() - _pointsAt > 250) return 0;
     for (uint8_t i = 0; i < _pointCount; ++i) points[i] = _points[i];

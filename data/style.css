@@ -141,3 +141,10 @@ input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(63, 185, 1
 }
 
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; animation: none !important; transition-duration: .01ms !important; } }
+/* Native progress element remains readable on every browser theme. */
+.rom-progress { display: block; width: 100%; height: 12px; margin-top: 20px; accent-color: var(--accent); }
+.rom-row { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px 16px; padding: 14px 0; border-bottom: 1px solid var(--line); }
+.rom-row > span { min-width: 0; flex: 1 1 180px; overflow-wrap: anywhere; }
+.rom-actions { display: flex; align-items: center; gap: 14px; margin-left: auto; }
+.rom-actions small { flex-shrink: 0; color: var(--muted); white-space: nowrap; }
+.rom-delete:disabled, #rom-upload-button:disabled, #rom-refresh-button:disabled { opacity: .5; cursor: wait; transform: none; }

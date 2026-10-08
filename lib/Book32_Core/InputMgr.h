@@ -6,6 +6,9 @@
 #include <freertos/task.h>
 #include <functional>
 #include "Config.h"
+#if defined(BOARD_LILYGO_T5S3_PRO)
+#include "DebouncedPress.h"
+#endif
 #if BOOK32_HAS_TOUCH
 #include "StickyTouch.h"
 #endif
@@ -16,6 +19,7 @@ enum InputAction {
     INPUT_PREV,
     INPUT_SELECT,
     INPUT_BACK,
+    INPUT_HOME,
     INPUT_POWER_SLEEP
 };
 
@@ -58,6 +62,10 @@ private:
     TouchPoint _points[5] = {};
     uint8_t _pointCount = 0;
     unsigned long _pointsAt = 0;
+    DebouncedPress _frontlightButton;
+    uint32_t _frontlightPolledAt = 0;
+    void pollFrontlightButton();
+    void mappedButton(bool front);
 #endif
     InputCallback callback;
     TouchCallback touchCallback;

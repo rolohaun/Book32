@@ -43,6 +43,9 @@ bool StickyTouch::begin() {
 #endif
 
     _address = 0;
+#if defined(BOARD_LILYGO_T5S3_PRO)
+    _homeKeyDown = false;
+#endif
     resetWithInterruptLevel(LOW);
     if (!probe()) {
         resetWithInterruptLevel(HIGH);
@@ -124,20 +127,32 @@ bool StickyTouch::readFrame(bool& touching, uint16_t& nativeX, uint16_t& nativeY
 }
 
 #if defined(BOARD_LILYGO_T5S3_PRO)
-bool StickyTouch::readPoints(uint16_t* x, uint16_t* y, uint8_t& count) {
+bool StickyTouch::readPoints(uint16_t* x, uint16_t* y, uint8_t& count, bool& homePressed) {
+    homePressed = false;
     uint8_t status = 0;
     if (!readRegister(0x814E, &status, 1) || !(status & 0x80)) return false;
     count = status & 15;
     uint8_t data[40] = {};
     bool valid = count <= 5 && (!count || readRegister(0x814F, data, count * 8));
-    writeRegister(0x814E, 0);
-    if (!valid) return false;
+    const bool acknowledged = writeRegister(0x814E, 0);
+    if (!valid || !acknowledged) return false;
+    // The front-bottom capacitive button is GT911's HaveKey bit, not the
+    // separate PCA9535 S3 switch. Consume it before discarding the status.
+    // Only fresh, fully read/acknowledged packets change the latch: an idle
+    // register read or I2C failure must not re-arm a held key.
+    const bool homeDown = (status & 0x10) != 0;
+    homePressed = homeDown && !_homeKeyDown;
+    _homeKeyDown = homeDown;
+    if (homeDown) {
+        count = 0; // Never turn the bezel button into an on-screen app tap.
+        return true;
+    }
     for (uint8_t i = 0; i < count; ++i) {
         uint16_t rawX = data[i * 8 + 1] | (data[i * 8 + 2] << 8);
         uint16_t rawY = data[i * 8 + 3] | (data[i * 8 + 4] << 8);
         // Convert portrait digitizer coordinates into the native canvas;
         // DisplayMgr then applies the user's selected portrait rotation.
-        if (rawX >= SCREEN_WIDTH || rawY >= SCREEN_HEIGHT) {
+        if (rawX >= PANEL_HEIGHT || rawY >= PANEL_WIDTH) {
             x[i] = PANEL_WIDTH; y[i] = PANEL_HEIGHT; // rejected by DisplayMgr
         } else { x[i] = rawY; y[i] = PANEL_HEIGHT - 1 - rawX; }
     }

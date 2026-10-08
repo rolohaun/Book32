@@ -1,0 +1,2910 @@
+/*
+ * This file is templated between multiple systems (__dmg and __cgb).
+ * This allows cgb behavior to be implemented with ~zero cost to dmg.
+ *
+ * These functions are known as "core" functions, and will be copied to ITCM
+ * if ITCM acceleration is enabled. __core functions can only
+ * safely call __core, __shell, or FORCE_INLINE functions.
+ *
+ * ITCM is a small, fast region of memory. Small functions that are
+ * called very frequently -- many times per frame -- should be placed
+ * in ITCM (i.e. __core). Functions which are not called often, but are
+ * called from a __core function, should be desginated as __shell functions.
+ *
+ * Although it's not good practice, some of these functions are
+ * called from outside of the core. If the __dmg and __cgb
+ * implementations are the same, or the __cgb implementation is a
+ * superset of the __dmg implementation, then the __cgb implementation
+ * should be called. Otherwise, the caller should choose either the __dmg
+ * or __cgb implementation based on gb->is_cgb_mode.
+ */
+
+#ifndef PGB_TEMPLATE
+#error "PGB_TEMPLATE must be defined"
+#endif
+
+#include "InkDeckPlatform.h"
+
+/* Flag register bit positions (gb->cpu_reg.f). Computed as a byte rather than
+ * f_bits bitfields to avoid ubfx/bfi read-modify-write codegen in hot paths. */
+#define GB_FLAG_Z 0x80
+#define GB_FLAG_N 0x40
+#define GB_FLAG_H 0x20
+#define GB_FLAG_C 0x10
+
+/**
+ * Checks all STAT interrupt sources and requests an interrupt on a rising edge.
+ */
+__draw static void $(__gb_update_stat_irq)(gb_s* gb)
+{
+    /* No STAT interrupts can occur when the LCD is off. */
+    if (!(gb->gb_reg.LCDC & LCDC_ENABLE))
+    {
+        gb->direct.stat_line = 0;
+        return;
+    }
+
+    bool line_is_high =
+        ((gb->gb_reg.STAT & STAT_MODE_0_INTR) && (gb->lcd_mode == LCD_HBLANK)) ||
+        ((gb->gb_reg.STAT & STAT_MODE_1_INTR) && (gb->lcd_mode == LCD_VBLANK)) ||
+        ((gb->gb_reg.STAT & STAT_MODE_2_INTR) && (gb->lcd_mode == LCD_SEARCH_OAM)) ||
+        ((gb->gb_reg.STAT & STAT_LYC_INTR) && (gb->gb_reg.STAT & STAT_LYC_COINC));
+
+    /* On a rising edge (from low to high), request the interrupt. */
+    if (!gb->direct.stat_line && line_is_high)
+    {
+        gb->gb_reg.IF |= LCDC_INTR;
+        gb->direct.intr_pending = 1;  // may fire mid-batch via STAT write
+    }
+
+    gb->direct.stat_line = line_is_high;
+}
+
+/**
+ * Internal function to check for LY=LYC coincidence and update STAT.
+ * Note: this is used outside of core.
+ */
+__draw static void $(__gb_check_lyc)(gb_s* gb)
+{
+    if (gb->gb_reg.LY == gb->gb_reg.LYC)
+    {
+        gb->gb_reg.STAT |= STAT_LYC_COINC;
+    }
+    else
+    {
+        gb->gb_reg.STAT &= ~STAT_LYC_COINC;
+    }
+}
+
+__draw static void $(__gb_update_lyc_and_stat_irq)(gb_s* gb)
+{
+    if (gb->gb_reg.LY == gb->gb_reg.LYC)
+        gb->gb_reg.STAT |= STAT_LYC_COINC;
+    else
+        gb->gb_reg.STAT &= ~STAT_LYC_COINC;
+
+    if (!(gb->gb_reg.LCDC & LCDC_ENABLE))
+    {
+        gb->direct.stat_line = 0;
+        return;
+    }
+
+    bool line_is_high =
+        ((gb->gb_reg.STAT & STAT_MODE_0_INTR) && (gb->lcd_mode == LCD_HBLANK)) ||
+        ((gb->gb_reg.STAT & STAT_MODE_1_INTR) && (gb->lcd_mode == LCD_VBLANK)) ||
+        ((gb->gb_reg.STAT & STAT_MODE_2_INTR) && (gb->lcd_mode == LCD_SEARCH_OAM)) ||
+        ((gb->gb_reg.STAT & STAT_LYC_INTR) && (gb->gb_reg.STAT & STAT_LYC_COINC));
+
+    if (!gb->direct.stat_line && line_is_high)
+    {
+        gb->gb_reg.IF |= LCDC_INTR;
+        gb->direct.intr_pending = 1;  // may fire mid-batch via LYC/LCDC write
+    }
+
+    gb->direct.stat_line = line_is_high;
+}
+
+__core_section("short") static uint8_t $(__gb_read)(gb_s* gb, const uint16_t addr)
+{
+    uint8_t* ram_region_base = gb->ram_base[addr >> 12];
+    if (ram_region_base)
+    {
+        return ram_region_base[addr];
+    }
+    if likely (addr >= 0xFF80)  // no need to check upper bound -- gb->hram[0xFF] should match IE
+    {
+        uint8_t val = gb->hram[addr % 0x100];
+#if PGB_IS_CGB
+        // HLE is CGB-only (hle_enabled implies cgb_mode): games wait on HRAM
+        // flags set by ISRs ("ldh a,(x); and a; jr z").
+        if (gb->hle_enabled)
+            return HLE_CALL_READ(__gb_hle_read_shared, gb, addr, val);
+#endif
+        return val;
+    }
+    if likely (addr >= 0xA000 && addr < 0xC000 && gb->selected_cart_bank_addr)
+    {
+        return gb->selected_cart_bank_addr[addr];
+    }
+
+    // Hot IO reads: bypass read_full in polling loops. On CGB, HLE-gated
+    // regs (STAT/LY/IF) go through the verdict cache when HLE is active;
+    // cached NO verdicts return the synced value straight from the core
+    // section. HLE is CGB-only, so DMG keeps plain synced returns.
+    if (addr >= 0xFF00 && addr < 0xFF80)
+    {
+        switch (addr & 0xFF)
+        {
+#if PGB_IS_CGB
+        case 0x41:
+        {
+            uint8_t v = __gb_read_stat_synced(gb);
+            if (!gb->hle_enabled)
+                return v;
+            return HLE_CALL_READ(__gb_hle_read_shared, gb, addr, v);
+        }
+        case 0x44:
+        {
+            uint8_t v = __gb_read_ly_synced(gb);
+            if (!gb->hle_enabled)
+                return v;
+            return HLE_CALL_READ(__gb_hle_read_shared, gb, addr, v);
+        }
+        case 0x0F:
+        {
+            uint8_t tima_scratch;
+            uint8_t v = gb->gb_reg.IF | (__gb_timer_peek(gb, &tima_scratch) ? TIMER_INTR : 0);
+            if (!gb->hle_enabled)
+                return v;
+            return HLE_CALL_READ(__gb_hle_read_shared, gb, addr, v);
+        }
+#else
+        case 0x41:
+            return __gb_read_stat_synced(gb);
+        case 0x44:
+            return __gb_read_ly_synced(gb);
+        case 0x0F:
+        {
+            uint8_t tima_scratch;
+            return gb->gb_reg.IF | (__gb_timer_peek(gb, &tima_scratch) ? TIMER_INTR : 0);
+        }
+#endif
+        case 0x04:
+            return __gb_div_peek(gb);
+        case 0x05:
+        {
+            if (gb->gb_reg.tima_overflow_delay)
+                return gb->gb_reg.TMA;
+            uint8_t tima;
+            __gb_timer_peek(gb, &tima);
+            return tima;
+        }
+        case 0x45:
+            return gb->gb_reg.LYC;
+        }
+    }
+    return __gb_read_full(gb, addr);
+}
+
+__core_section("short") static void $(__gb_write)(gb_s* restrict gb, const uint16_t addr, uint8_t v)
+{
+    if likely (addr >= 0xC000 && addr < 0xF000)
+    {
+        gb->ram_base[addr >> 12][addr] = v;
+        return;
+    }
+    if likely (addr >= 0xFF80 && addr <= 0xFFFE)
+    {
+        gb->hram[addr % 0x100] = v;
+        return;
+    }
+    if likely (addr >= 0xA000 && addr < 0xC000 && gb->selected_cart_bank_addr)
+    {
+        u8* b = &gb->selected_cart_bank_addr[addr];
+        u8 prev = *b;
+        *b = v;
+        gb->direct.sram_updated |= prev != v;
+        return;
+    }
+    __gb_write_full(gb, addr, v);
+}
+
+__core_section("short") static uint16_t $(__gb_read16)(gb_s* restrict gb, u16 addr)
+{
+    if (addr % 0x1000 != 0xFFF)
+    {
+        // Fast path for ROM+WRAM+ECHO
+        uint8_t* ram_region_base = gb->ram_base[addr >> 12];
+        if (ram_region_base)
+        {
+            void* ptr = &ram_region_base[addr];
+            return inkRead16(ptr);
+        }
+        // Fast path for HRAM
+        else if (addr >= HRAM_ADDR && addr < (INTR_EN_ADDR - 1))
+        {
+            void* ptr = &gb->hram[addr - IO_ADDR];
+            return inkRead16(ptr);
+        }
+    }
+
+    // Fallback for all other cases (unaligned, I/O, etc.)
+    u16 v = $(__gb_read)(gb, addr);
+    v |= (u16)$(__gb_read)(gb, addr + 1) << 8;
+    return v;
+}
+
+__core_section("short") static uint32_t $(__gb_read32)(gb_s* restrict gb, u16 addr)
+{
+    if ((addr & 0xFFF) <= 0xFFC)
+    {
+        uint8_t* ram_region_base = gb->ram_base[addr >> 12];
+        if (ram_region_base)
+        {
+            void* ptr = &ram_region_base[addr];
+            return inkRead32(ptr);
+        }
+    }
+
+    uint32_t v = $(__gb_read)(gb, addr);
+    v |= (uint32_t)$(__gb_read)(gb, addr + 1) << 8;
+    v |= (uint32_t)$(__gb_read)(gb, addr + 2) << 16;
+    v |= (uint32_t)$(__gb_read)(gb, addr + 3) << 24;
+    return v;
+}
+
+__core_section("short") static void $(__gb_write16)(gb_s* restrict gb, u16 addr, u16 v)
+{
+    // Fast path for WRAM
+    if likely (
+        addr >= WRAM_0_ADDR && addr < 0xE000 - 1
+#if PGB_IS_CGB
+        && addr != 0xCFFF
+#endif
+    )
+    {
+        void* ptr = &gb->ram_base[addr >> 12][addr];
+        inkWrite16(ptr, v);
+        return;
+    }
+    // Fast path for HRAM
+    else if likely (addr >= HRAM_ADDR && addr < (INTR_EN_ADDR - 1))
+    {
+        void* ptr = &gb->hram[addr - IO_ADDR];
+        inkWrite16(ptr, v);
+        return;
+    }
+
+    // Fallback for other memory regions
+    $(__gb_write)(gb, addr, v & 0xFF);
+    pgb_write_cycle += 4;
+    $(__gb_write)(gb, addr + 1, v >> 8);
+}
+
+static inline __attribute__((always_inline)) uint8_t $(__gb_fetch8)(gb_s* restrict gb)
+{
+    u16 addr = gb->cpu_reg.pc++;
+    uint8_t* fetch_base = gb->ram_base[addr >> 12];
+    if likely (fetch_base)
+        return fetch_base[addr];
+    return $(__gb_read)(gb, addr);
+}
+
+__core_section("short") static uint16_t $(__gb_fetch16)(gb_s* restrict gb)
+{
+    u16 addr = gb->cpu_reg.pc;
+
+    uint8_t* rom_ptr;
+    if likely (addr < 0x7FFF && addr != 0x3FFF)
+    {
+        rom_ptr = &gb->ram_base[addr >> 12][addr];
+    }
+    else
+    {
+        gb->cpu_reg.pc += 2;
+        return $(__gb_read16)(gb, addr);
+    }
+
+    gb->cpu_reg.pc += 2;
+    return inkRead16(rom_ptr);
+}
+
+__core_section("short") static uint16_t $(__gb_pop16)(gb_s* restrict gb)
+{
+    u16 v;
+    if likely (gb->cpu_reg.sp >= HRAM_ADDR && gb->cpu_reg.sp < 0xFFFE)
+    {
+        v = gb->hram[gb->cpu_reg.sp - IO_ADDR];
+        v |= gb->hram[gb->cpu_reg.sp - IO_ADDR + 1] << 8;
+    }
+    else
+    {
+        v = $(__gb_read16)(gb, gb->cpu_reg.sp);
+    }
+    gb->cpu_reg.sp += 2;
+    return v;
+}
+
+__core_section("short") static void $(__gb_push16)(gb_s* restrict gb, u16 v)
+{
+    if likely (gb->cpu_reg.sp >= HRAM_ADDR + 2)
+    {
+        gb->cpu_reg.sp--;
+        gb->hram[gb->cpu_reg.sp - IO_ADDR] = v >> 8;
+
+        gb->cpu_reg.sp--;
+        gb->hram[gb->cpu_reg.sp - IO_ADDR] = v & 0xFF;
+    }
+    else
+    {
+        gb->cpu_reg.sp--;
+        $(__gb_write)(gb, gb->cpu_reg.sp, v >> 8);
+
+        gb->cpu_reg.sp--;
+        $(__gb_write)(gb, gb->cpu_reg.sp, v & 0xFF);
+    }
+}
+
+__rare static u8 $(__gb_rare_instruction)(gb_s* restrict gb, uint8_t opcode)
+{
+    switch (opcode)
+    {
+    case 0x08:  // ld (a16), SP
+        pgb_write_cycle = (uint16_t)(pgb_batch_elapsed + 4 * 4);
+        CORE_CALL_WRITE16(
+            $(__gb_write16), gb, CORE_CALL_FETCH16($(__gb_fetch16), gb), gb->cpu_reg.sp
+        );
+        return 5 * 4;
+    case 0x10:  // stop
+    {
+        unsigned cycles = 1 * 4;
+
+        // 1. Advance PC over the required operand byte (0x00).
+        gb->cpu_reg.pc++;  // PC is now at (PC_0x10 + 2)
+
+#if PGB_IS_CGB
+        // CGB speed switch
+        if (gb->cgb_fast_mode_armed)
+        {
+            gb->cgb_fast_mode_armed = false;
+            gb->gb_reg.DIV = 0;
+
+            gb->cgb_fast_mode = !gb->cgb_fast_mode;
+            gb->cgb_fast_mode_active = gb->cgb_fast_mode && (preferences_cgb_speed == 0);
+            /* Keep the combined vblank cycle shift at most >>2 (see game_scene):
+             * cap overclock at x2 the moment fast mode engages, not next frame. */
+            if (gb->cgb_fast_mode_active)
+                gb->overclock = MIN(gb->overclock, 1);
+            gb->gb_halt = 1;
+            gb->cgb_speed_switch_halt_period = CGB_SPEED_SWITCH_HALT_T_CYCLES;
+            return cycles;
+        }
+#else
+        // 2. Check for DMG Button Glitch (STOP becomes a 1-byte NOP)
+        if ((gb->direct.joypad != 0xFF) && ((gb->gb_reg.P1 & 0x30) != 0x30))
+        {
+            /* STOP Glitch: STOP acts as a 1-byte NOP.
+               PC must rewind to (PC_0x10 + 1) to point to the instruction *after* STOP. */
+            gb->cpu_reg.pc--;
+            // No STOP, no HALT, no DIV reset. Cycles remain 4.
+            return cycles;
+        }
+#endif
+
+        // 3. Check for Pending Interrupts / STOP Bug
+        gb->gb_reg.DIV = 0;
+
+        if (gb->gb_reg.IF & gb->gb_reg.IE & ANY_INTR)
+        {
+            if (gb->gb_ime == 0)
+            {
+                /* STOP/HALT Bug Triggered: CPU does not stop.
+                   PC must be set to the operand address (PC_0x10 + 1) to repeat it. */
+
+                // PC is currently at PC_0x10 + 2. Decrement to PC_0x10 + 1.
+                gb->cpu_reg.pc--;
+            }
+        }
+        else
+        {
+            /* 4. Normal STOP Operation: Enter low-power STOP mode. */
+            gb->gb_stop = 1;
+        }
+
+        return cycles;
+    }
+    case 0x76:
+        if ((gb->gb_reg.IF & gb->gb_reg.IE & ANY_INTR) != 0)
+        {
+            if (gb->gb_ime)
+            {
+                /* Interrupt pending with IME=1: the halt latch never sets.
+                 * The interrupt dispatch pushes HALT's own address, so the
+                 * handler returns to HALT, which then halts normally. */
+                gb->cpu_reg.pc--;
+            }
+            else if (gb->gb_ime_countdown > 0)
+            {
+                /* HALT bug (IME=0, pending interrupt) with active EI delay.
+                 * Rewind PC to HALT address so the pending interrupt returns to
+                 * HALT, which then re-executes and properly halts. */
+                gb->cpu_reg.pc--;
+                gb->gb_halt = 1;
+            }
+            else
+            {
+                /* HALT bug (IME=0, pending interrupt) without EI delay.
+                 * HALT reads the operand byte (hardware bus cycle), then the
+                 * same byte is read once as the next opcode: PC increment is
+                 * inhibited for one fetch. */
+                __gb_read_full(gb, gb->cpu_reg.pc);
+                gb->gb_halt_bug = 1;
+                gb->gb_halt_bug_pc = gb->cpu_reg.pc;
+            }
+        }
+        else
+        {
+            gb->gb_halt = 1;
+        }
+        return 1 * 4;
+    case 0xE8:
+    case 0xF8:
+    {
+        int8_t offset = (int8_t)CORE_CALL_READ($(__gb_read), gb, gb->cpu_reg.pc++);
+
+        if (opcode == 0xF8)
+        {
+            uint16_t sp = gb->cpu_reg.sp;
+            gb->cpu_reg.hl = sp + offset;
+
+            gb->cpu_reg.f = (((sp & 0xF) + (offset & 0xF) > 0xF) ? GB_FLAG_H : 0) |
+                            (((sp & 0xFF) + (offset & 0xFF) > 0xFF) ? GB_FLAG_C : 0);
+            return 3 * 4;
+        }
+        else
+        {
+            uint16_t old_sp = gb->cpu_reg.sp;
+            gb->cpu_reg.sp += offset;
+
+            gb->cpu_reg.f = (((old_sp & 0xF) + (offset & 0xF) > 0xF) ? GB_FLAG_H : 0) |
+                            (((old_sp & 0xFF) + (offset & 0xFF) > 0xFF) ? GB_FLAG_C : 0);
+            return 4 * 4;
+        }
+    }
+    default:
+        return __gb_invalid_instruction(gb, opcode);
+    }
+}
+
+/* CB sub-interpreter: per-instruction hot path, keep in the A (hot) block
+ * even if the compiler chooses not to inline it into micro. */
+__core_section("cb") static uint8_t $(__gb_execute_cb)(gb_s* gb)
+{
+    uint8_t inst_cycles;
+    uint8_t cbop = $(__gb_fetch8)(gb);
+    uint8_t r = (cbop & 0x7) ^ 1;
+    uint8_t b = (cbop >> 3) & 0x7;
+    uint8_t d = (cbop >> 3) & 0x1;
+    uint8_t val;
+    uint8_t writeback = 1;
+
+    inst_cycles = 8;
+    /* Add an additional 8 cycles to these sets of instructions. */
+    switch (cbop & 0xC7)
+    {
+    case 0x06:
+    case 0x86:
+    case 0xC6:
+        inst_cycles += 8;
+        break;
+    case 0x46:
+        inst_cycles += 4;
+        break;
+    }
+
+    if (r == 7)
+    {
+        val = $(__gb_read)(gb, gb->cpu_reg.hl);
+    }
+    else
+    {
+        val = gb->cpu_reg_raw[r];
+    }
+
+    /* switch based on highest 2 bits */
+    switch (cbop >> 6)
+    {
+    case 0x0:
+        cbop = (cbop >> 4) & 0x3;
+        {
+            const uint8_t oldc = (gb->cpu_reg.f >> 4) & 1;
+            uint8_t c;
+            switch (cbop)
+            {
+            case 0x0:  /* RLC R / RRC R */
+            case 0x1:  /* RL R / RR R */
+                if (d) /* RRC R / RR R */
+                {
+                    const uint8_t temp = val;
+                    val = (val >> 1) | ((cbop ? oldc : temp) << 7);
+                    c = temp & 0x01;
+                }
+                else /* RLC R / RL R */
+                {
+                    const uint8_t temp = val;
+                    val = (val << 1) | (cbop ? oldc : (temp >> 7));
+                    c = temp >> 7;
+                }
+                break;
+            case 0x2:  /* SLA R / SRA R */
+                if (d) /* SRA R */
+                {
+                    c = val & 0x01;
+                    val = (val >> 1) | (val & 0x80);
+                }
+                else /* SLA R */
+                {
+                    c = val >> 7;
+                    val <<= 1;
+                }
+                break;
+            case 0x3:  /* SWAP R / SRL R */
+                if (d) /* SRL R */
+                {
+                    c = val & 0x01;
+                    val >>= 1;
+                }
+                else /* SWAP R */
+                {
+                    c = 0;
+                    val = (val >> 4) | (val << 4);
+                }
+                break;
+            }
+            gb->cpu_reg.f = (c ? GB_FLAG_C : 0) | (val == 0 ? GB_FLAG_Z : 0);
+        }
+        break;
+
+    case 0x1: /* BIT B, R */
+        gb->cpu_reg.f =
+            (gb->cpu_reg.f & GB_FLAG_C) | GB_FLAG_H | (((val >> b) & 0x1) ? 0 : GB_FLAG_Z);
+        writeback = 0;
+        break;
+
+    case 0x2: /* RES B, R */
+        val &= (0xFE << b) | (0xFF >> (8 - b));
+        break;
+
+    case 0x3: /* SET B, R */
+        val |= (0x1 << b);
+        break;
+    }
+
+    if (writeback)
+    {
+        if (r == 7)
+        {
+            pgb_write_cycle = (uint16_t)(pgb_batch_elapsed + inst_cycles);
+            $(__gb_write)(gb, gb->cpu_reg.hl, val);
+        }
+        else
+        {
+            gb->cpu_reg_raw[r] = val;
+        }
+    }
+    return inst_cycles;
+}
+
+static inline __attribute__((always_inline)) void $(__gb_draw_pixel)(uint8_t* line, u8 x, u8 v)
+{
+    u8* pix = line + x / LCD_PACKING;
+    x = (x % LCD_PACKING) * (8 / LCD_PACKING);
+    *pix &= ~(((1 << LCD_BITS_PER_PIXEL) - 1) << x);
+    *pix |= (v & 3) << x;
+}
+
+static inline __attribute__((always_inline)) u8 $(__gb_get_pixel)(uint8_t* line, u8 x)
+{
+    u8* pix = line + x / LCD_PACKING;
+    x = (x % LCD_PACKING) * LCD_BITS_PER_PIXEL;
+    return (*pix >> x) % (1 << LCD_BITS_PER_PIXEL);
+}
+
+static inline int $(compare_sprites)(
+    const struct sprite_data* const sd1, const struct sprite_data* const sd2
+)
+{
+#if PGB_IS_CGB
+    return (int)sd1->sprite_number - (int)sd2->sprite_number;
+#else
+    int x_res = (int)sd1->x - (int)sd2->x;
+    if (x_res != 0)
+        return x_res;
+
+    return (int)sd1->sprite_number - (int)sd2->sprite_number;
+#endif
+}
+
+#if PGB_IS_CGB
+// Usage-histogram (Auto/Contrast gray mode) per-frame counters. The BG
+// hooks count distinct 4-pixel patterns per palette, sprites count
+// (palette,color); the frontend expands these into a luminance histogram
+// post-frame. Counters are cleared on consume (cgb_hist_build), not per
+// frame; cgb_bg_used marks palettes holding data.
+static uint16_t cgb_bg_usage[8][256];
+static uint16_t cgb_obj_usage[8][4];
+static uint8_t cgb_bg_used;
+
+// Line sampling: count usage on even lines only. The histogram shape is
+// preserved (scenes are vertically coherent); totals halve, which the
+// downstream math absorbs (percentiles/scores are relative).
+#define CGB_HIST_LINE_MASK 1  // 0 = off (every line), 1 = every 2nd, 3 = every 4th
+#endif
+
+__draw static void $(__gb_draw_line_sprites)(
+    gb_s* restrict gb, const uint8_t* oam_src, const uint32_t* line_priority,
+#if PGB_IS_CGB
+    const uint32_t* line_cgb_priority, bool cgb_master_priority,
+#endif
+    uint8_t* pixels
+)
+{
+    uint8_t number_of_sprites = 0;
+    struct sprite_data sprites_to_render[MAX_SPRITES_LINE];
+
+    /* Find up to 10 sprites on this line, sorted by priority.
+     * CGB: lower OAM index has higher priority.
+     * DMG: lower X-coordinate has higher priority. If X is the same,
+     * lower OAM index has higher priority. */
+
+    // Gather all visible sprites for this scanline (LY).
+    const uint8_t sprite_height = (gb->gb_reg.LCDC & LCDC_OBJ_SIZE) ? 16 : 8;
+    const int16_t current_ly = gb->gb_reg.LY;
+
+    for (uint8_t s = 0; s < NUM_SPRITES && number_of_sprites < MAX_SPRITES_LINE; s++)
+    {
+        const uint8_t* oam = &oam_src[s * 4];
+        const uint8_t oam_y = oam[0];
+        const uint8_t oam_x = oam[1];
+
+        if ((current_ly + 16 >= oam_y) && (current_ly + 16 < oam_y + sprite_height))
+        {
+            sprites_to_render[number_of_sprites].sprite_number = s;
+            sprites_to_render[number_of_sprites].x = oam_x;
+            number_of_sprites++;
+        }
+    }
+
+    // Sort the small list of found sprites.
+    if (number_of_sprites > 1)
+    {
+        for (int i = 1; i < number_of_sprites; i++)
+        {
+            struct sprite_data key = sprites_to_render[i];
+            int j = i - 1;
+            while (j >= 0 && $(compare_sprites)(&sprites_to_render[j], &key) > 0)
+            {
+                sprites_to_render[j + 1] = sprites_to_render[j];
+                j = j - 1;
+            }
+            sprites_to_render[j + 1] = key;
+        }
+    }
+
+    const uint16_t OBP = gb->gb_reg.OBP0 | ((uint16_t)gb->gb_reg.OBP1 << 8);
+
+    uint8_t column_decided[LCD_WIDTH];
+    if (number_of_sprites > 0)
+        for (int x = 0; x < LCD_WIDTH; x++)
+            column_decided[x] = 0;
+
+    for (int8_t i = 0; i < number_of_sprites; i++)
+    {
+        uint8_t s_idx = sprites_to_render[i].sprite_number;
+        uint8_t s_4 = s_idx * 4;
+
+        uint8_t OY = oam_src[s_4 + 0];
+        uint8_t OX = oam_src[s_4 + 1];
+
+        if (OX == 0 || OX >= 168)
+            continue;
+
+        uint8_t OT = oam_src[s_4 + 2] & (gb->gb_reg.LCDC & LCDC_OBJ_SIZE ? 0xFE : 0xFF);
+        uint8_t OF = oam_src[s_4 + 3];
+
+        unsigned bank = 0;
+#if PGB_IS_CGB
+        if (OF & OBJ_CGB_BANK)
+            bank = VRAM_SIZE;
+#endif
+
+        uint8_t py = gb->gb_reg.LY - (OY - 16);
+        if (OF & OBJ_FLIP_Y)
+            py = (sprite_height - 1) - py;
+
+        uint16_t t1_i = bank + VRAM_TILES_1 + OT * 0x10 + 2 * py;
+        uint8_t t1 = gb->vram[t1_i];
+        uint8_t t2 = gb->vram[t1_i + 1];
+        uint8_t t1_r = reverse_bits_u8(t1);
+        uint8_t t2_r = reverse_bits_u8(t2);
+
+        int dir, start, end;
+        if (OF & OBJ_FLIP_X)
+        {
+            dir = 1;
+            start = OX - 8;
+            end = OX;
+        }
+        else
+        {
+            dir = -1;
+            start = OX - 1;
+            end = OX - 9;
+        }
+
+#if PGB_IS_CGB
+        uint8_t cgb_obj_pal = gb->cgb_obj_palette_gray[OF & OBJ_CGB_PALETTE];
+#endif
+        uint8_t c_add = (OF & OBJ_PALETTE) ? 4 : 0;
+
+        for (int disp_x = start; disp_x != end; disp_x += dir)
+        {
+            if unlikely (disp_x < 0 || disp_x >= LCD_WIDTH)
+                goto next_sprite_pixel;
+
+            if (column_decided[disp_x])
+                goto next_sprite_pixel;
+
+            uint8_t c = (t2_r & 1) << 1 | (t1_r & 1);
+            if (c != 0)
+            {
+                column_decided[disp_x] = 1;
+
+                int P_segment_index = (unsigned)disp_x >> 5;
+                int P_bit_in_segment = disp_x & 31;
+#if PGB_IS_CGB
+                uint8_t bg_cgb_priority = 0;
+                if (cgb_master_priority)
+                    bg_cgb_priority = ~(line_cgb_priority[P_segment_index] >> P_bit_in_segment) & 1;
+                if (!(bg_cgb_priority ||
+                      (cgb_master_priority && (OF & OBJ_PRIORITY) &&
+                       !((line_priority[P_segment_index] >> P_bit_in_segment) & 1))))
+#else
+                uint8_t bg_is_transparent =
+                    (line_priority[P_segment_index] >> P_bit_in_segment) & 1;
+                if (!((OF & OBJ_PRIORITY) && !bg_is_transparent))
+#endif
+                {
+#if PGB_IS_CGB
+                    uint8_t color_value;
+                    if (pgb_blend_merged)
+                    {
+                        // merged blend: pre-averaged pal, dither phase by (x ^ y)
+                        color_value = (pgb_obj_blend_pal[(disp_x ^ gb->gb_reg.LY) & 1]
+                                                        [OF & OBJ_CGB_PALETTE] >>
+                                       (c * 2)) &
+                                      3;
+                    }
+                    else
+                    {
+                        color_value = (cgb_obj_pal >> (c * 2)) & 3;
+                    }
+#else
+                    uint8_t color_value = (OBP >> (c * 2 + c_add * 2)) & 3;
+#endif
+                    $(__gb_draw_pixel)(pixels, disp_x, color_value);
+#if PGB_IS_CGB
+                    if (cgb_hist_active && !(gb->gb_reg.LY & CGB_HIST_LINE_MASK))
+                        cgb_obj_usage[OF & OBJ_CGB_PALETTE][c]++;
+#endif
+                }
+            }
+        next_sprite_pixel:
+            t1_r >>= 1;
+            t2_r >>= 1;
+        }
+    }
+}
+
+#if PGB_IS_CGB
+static inline __attribute__((always_inline)) uint16_t
+__cgb_remap_tile(uint8_t lo_plane, uint8_t hi_plane, const uint8_t* restrict lut)
+{
+    uint8_t idx_lo = (lo_plane & 0x0F) | ((hi_plane & 0x0F) << 4);
+    uint8_t idx_hi = (lo_plane >> 4) | (hi_plane & 0xF0);
+    return ((uint16_t)lut[idx_hi] << 8) | lut[idx_lo];
+}
+
+static inline __attribute__((always_inline)) void __cgb_merge_tiles(
+    uint16_t tile_data_lo, uint16_t tile_data_hi, uint16_t pre_remapped_lo, bool has_pre_remapped,
+    const uint8_t* restrict lut_lo, const uint8_t* restrict lut_hi, int subx,
+    uint16_t* restrict out, uint8_t* restrict pri, uint16_t* restrict out_rm_hi
+)
+{
+    uint8_t lo_p = (uint8_t)tile_data_lo;
+    uint8_t hi_p = (uint8_t)(tile_data_lo >> 8);
+    uint8_t lo_hp = (uint8_t)tile_data_hi;
+    uint8_t hi_hp = (uint8_t)(tile_data_hi >> 8);
+
+    uint16_t rm_hi = __cgb_remap_tile(lo_hp, hi_hp, lut_hi);
+    *out_rm_hi = rm_hi;
+
+    uint16_t rm_lo = has_pre_remapped ? pre_remapped_lo : __cgb_remap_tile(lo_p, hi_p, lut_lo);
+
+    if (subx == 0)
+    {
+        *out = rm_lo;
+        *pri = lo_p | hi_p;
+        return;
+    }
+
+    *out = (rm_lo >> (subx * 2)) | (rm_hi << (16 - subx * 2));
+    *pri = (uint8_t)((lo_p | hi_p) >> subx) | (uint8_t)((lo_hp | hi_hp) << (8 - subx));
+}
+
+static inline __attribute__((always_inline)) uint16_t __cgb_fetch_tile(
+    uint8_t* restrict tile_map, uint8_t* restrict attr_map, uint16_t* restrict reg_data,
+    uint16_t* restrict flip_data, uint8_t map_idx, int tiledata_offset, uint8_t* out_palette
+)
+{
+    uint8_t tile_idx = tile_map[map_idx];
+    uint8_t attrs = attr_map[map_idx];
+    unsigned bank = (attrs & BG_MAP_ATTR_BANK) ? VRAM_SIZE / sizeof(uint16_t) : 0;
+    uint16_t* data = (attrs & BG_MAP_ATTR_Y_FLIP) ? flip_data : reg_data;
+    uint16_t tile = data[bank | (tile_idx < 0x80 ? tiledata_offset : 0) | (8 * (unsigned)tile_idx)];
+    *out_palette = attrs & (BG_MAP_ATTR_PALETTE | BG_MAP_ATTR_PRIORITY);
+    return reverse_bits_in_each_byte_conditional_u16(tile, !!(attrs & BG_MAP_ATTR_X_FLIP));
+}
+#endif
+
+#if PGB_IS_CGB
+#define CGB_LUT(gb, pal_idx) ((gb)->cgb_bg_palette + 64 + ((pal_idx) & BG_MAP_ATTR_PALETTE) * 256)
+// Merged pre-blended LUTs: 4 variants = line parity x subx parity.
+// Slot = 16 + ((line_par << 1) | subx_par) * 8 + palette.
+#define CGB_LUT_BLEND(gb, pal_idx, par_line, par_subx)                                          \
+    ((gb)->cgb_bg_palette + 64 +                                                                \
+     (16 +                                                                                      \
+      (((((par_line) & 1) << 1) | ((par_subx) & 1)) * 8 + ((pal_idx) & BG_MAP_ATTR_PALETTE))) * \
+         256)
+
+static inline __attribute__((always_inline)) void __cgb_draw_tile_strip(
+    gb_s* restrict gb, uint8_t* restrict tile_map, uint8_t* restrict attr_map,
+    uint16_t* restrict tile_data_y, uint16_t* restrict tile_data_y_flipped, int tiledata_offset,
+    int map_x_offset, int start_x, int end_x, int subx, int merge_subx, uint8_t* restrict pixels,
+    uint32_t* restrict line_priority, uint32_t* restrict line_cgb_priority, bool apply_bgmask
+)
+{
+    uint8_t tile_palette_lo;
+    uint16_t vram_tile_data_hi = __cgb_fetch_tile(
+        tile_map, attr_map, tile_data_y, tile_data_y_flipped, (map_x_offset + start_x) % 32,
+        tiledata_offset, &tile_palette_lo
+    );
+
+    const uint8_t* lut_lo = pgb_blend_merged
+                                ? CGB_LUT_BLEND(gb, tile_palette_lo, gb->gb_reg.LY, subx)
+                                : CGB_LUT(gb, tile_palette_lo);
+    uint8_t lo_p = (uint8_t)vram_tile_data_hi;
+    uint8_t hi_p = (uint8_t)(vram_tile_data_hi >> 8);
+    uint16_t rm_lo = __cgb_remap_tile(lo_p, hi_p, lut_lo);
+
+    uint32_t bgmask = 0;
+    if (apply_bgmask && subx != 0)
+        bgmask = 0xFFu >> subx;
+
+    for (int x = start_x; x < end_x; ++x)
+    {
+        uint16_t vram_tile_data_lo = vram_tile_data_hi;
+
+        if (cgb_hist_active && !(gb->gb_reg.LY & CGB_HIST_LINE_MASK))
+        {
+            // Usage histogram: count this tile's two 4-pixel patterns.
+            // Pattern = lo_half | (hi_half << 4), expanded post-frame.
+            uint8_t lo_byte = (uint8_t)vram_tile_data_lo;
+            uint8_t hi_byte = (uint8_t)(vram_tile_data_lo >> 8);
+            const uint8_t pal = tile_palette_lo & BG_MAP_ATTR_PALETTE;
+            cgb_bg_used |= (uint8_t)(1 << pal);
+            uint16_t* u = cgb_bg_usage[pal];
+            u[(lo_byte & 0x0F) | ((hi_byte & 0x0F) << 4)]++;
+            u[(lo_byte >> 4) | ((hi_byte >> 4) << 4)]++;
+        }
+
+        uint8_t tile_palette_hi_val;
+        vram_tile_data_hi = __cgb_fetch_tile(
+            tile_map, attr_map, tile_data_y, tile_data_y_flipped, (map_x_offset + x + 1) % 32,
+            tiledata_offset, &tile_palette_hi_val
+        );
+
+        uint8_t pri_lo = tile_palette_lo & BG_MAP_ATTR_PRIORITY;
+        uint8_t pri_hi = tile_palette_hi_val & BG_MAP_ATTR_PRIORITY;
+
+        const uint8_t* lut_hi = pgb_blend_merged
+                                    ? CGB_LUT_BLEND(gb, tile_palette_hi_val, gb->gb_reg.LY, subx)
+                                    : CGB_LUT(gb, tile_palette_hi_val);
+        uint8_t pri;
+        uint16_t rm_hi;
+        uint16_t bg_pixels = 0;
+        if (bgmask)
+        {
+            bg_pixels = *(uint16_t*)(pixels + x * 2);
+        }
+        __cgb_merge_tiles(
+            vram_tile_data_lo, vram_tile_data_hi, rm_lo, true, lut_lo, lut_hi, merge_subx,
+            (uint16_t*)(pixels + x * 2), &pri, &rm_hi
+        );
+
+        uint8_t pri_mask = pri_lo ? (uint8_t)(0xFF >> merge_subx) : 0;
+        if (pri_hi && merge_subx)
+            pri_mask |= (uint8_t)(0xFF << (8 - merge_subx));
+
+        if (bgmask)
+        {
+            // blended region shows BG pixels; keep BG's priority bits there
+            uint8_t win_bits = (uint8_t)~bgmask;
+            pri &= win_bits;
+            pri_mask &= win_bits;
+
+            uint8_t n_bg = 8 - subx;
+            uint8_t mask0_byte = (n_bg >= 4) ? 0xFFu : (uint8_t)((1u << (2 * n_bg)) - 1);
+            uint8_t mask2_byte = (n_bg <= 4) ? 0x00u : (uint8_t)((1u << (2 * (n_bg - 4))) - 1);
+            uint8_t* win_out = pixels + x * 2;
+            uint8_t bg0 = (uint8_t)bg_pixels;
+            uint8_t bg2 = (uint8_t)(bg_pixels >> 8);
+            win_out[0] = (bg0 & mask0_byte) | (win_out[0] & ~mask0_byte);
+            win_out[1] = (bg2 & mask2_byte) | (win_out[1] & ~mask2_byte);
+            bgmask = 0;
+        }
+
+        line_priority[x / 4] &= ~(((uint32_t)pri) << ((x * 8) & 31));
+        line_cgb_priority[x / 4] &= ~(((uint32_t)(pri & pri_mask)) << ((x * 8) & 31));
+
+        rm_lo = rm_hi;
+        lut_lo = lut_hi;
+        tile_palette_lo = tile_palette_hi_val;
+    }
+}
+#endif
+
+#if PGB_IS_DMG
+// Remap 16 background pixels (t0 = lo plane, t1 = hi plane) through BGP to
+// 2bpp via a 256-entry LUT (4 pixels per lookup). Rebuilt lazily when BGP
+// changes (checked per scanline).
+static uint8_t dmg_bg_lut[256];
+static uint8_t dmg_bg_lut_pal;
+static bool dmg_bg_lut_valid = false;
+
+static inline __attribute__((always_inline)) void __dmg_build_lut(uint8_t pal, uint8_t* out)
+{
+    for (int idx = 0; idx < 256; idx++)
+    {
+        uint8_t lo = idx & 0x0F;
+        uint8_t hi = idx >> 4;
+        uint8_t g0 = (pal >> (2 * (((lo >> 0) & 1) | (((hi >> 0) & 1) << 1)))) & 3;
+        uint8_t g1 = (pal >> (2 * (((lo >> 1) & 1) | (((hi >> 1) & 1) << 1)))) & 3;
+        uint8_t g2 = (pal >> (2 * (((lo >> 2) & 1) | (((hi >> 2) & 1) << 1)))) & 3;
+        uint8_t g3 = (pal >> (2 * (((lo >> 3) & 1) | (((hi >> 3) & 1) << 1)))) & 3;
+        out[idx] = (uint8_t)((g3 << 6) | (g2 << 4) | (g1 << 2) | g0);
+    }
+}
+
+static inline __attribute__((always_inline)) void __dmg_rebuild_bg_lut(uint8_t pal)
+{
+    __dmg_build_lut(pal, dmg_bg_lut);
+}
+
+/* Per-segment LUT cache; the spam alternates few values (normal + black).
+ * __draw: called from the relocated draw cluster, must share its section. */
+#define BGP_SEG_LUTS 4
+static uint8_t bgp_seg_lut[BGP_SEG_LUTS][256];
+static uint8_t bgp_seg_tag[BGP_SEG_LUTS];
+static bool bgp_seg_ok[BGP_SEG_LUTS];
+static uint8_t bgp_seg_next;
+
+__draw static uint8_t* __dmg_seg_lut(uint8_t pal)
+{
+    for (int i = 0; i < BGP_SEG_LUTS; i++)
+        if (bgp_seg_ok[i] && bgp_seg_tag[i] == pal)
+            return bgp_seg_lut[i];
+    uint8_t slot = bgp_seg_next;
+    bgp_seg_next = (bgp_seg_next + 1) % BGP_SEG_LUTS;
+    __dmg_build_lut(pal, bgp_seg_lut[slot]);
+    bgp_seg_tag[slot] = pal;
+    bgp_seg_ok[slot] = true;
+    return bgp_seg_lut[slot];
+}
+#endif  // PGB_IS_DMG
+
+// Per-line mode3/mode0 cycle lengths from the last rendered frame, replayed
+// during frame_skip to avoid the OAM latch + sprite-penalty scan.
+static uint16_t $(pgb_mode3_cache)[LCD_HEIGHT] = {
+    [0 ... LCD_HEIGHT - 1] = PPU_MODE_3_VRAM_MIN_CYCLES
+};
+static uint16_t $(pgb_mode0_cache)[LCD_HEIGHT] = {
+    [0 ... LCD_HEIGHT - 1] = LCD_LINE_CYCLES - PPU_MODE_2_OAM_CYCLES - PPU_MODE_3_VRAM_MIN_CYCLES
+};
+
+// renders one scanline
+// __draw (+noinline): dedicated relocatable section, kept out of the core
+// pocket; called from __gb_step_cpu via the offset-adjusted pointer.
+__draw __attribute__((noinline)) void $(__gb_draw_line)(gb_s* restrict gb)
+{
+    __builtin_prefetch(&gb->gb_reg.LCDC, 0);
+    __builtin_prefetch(&gb->gb_reg.WX, 0);
+    __builtin_prefetch(&gb->gb_reg.BGP, 0);
+    __builtin_prefetch(&gb->gb_reg.WY, 0);
+
+    uint8_t* dest_pixels = &gb->lcd[gb->gb_reg.LY * LCD_WIDTH_PACKED];
+
+    // render line to stack-buffer, then copy to dest
+    uint32_t line_stage[LCD_WIDTH_PACKED / 4];
+    uint8_t* pixels = (uint8_t*)line_stage;
+    uint32_t line_priority[((LCD_WIDTH + 31) / 32)];
+#if PGB_IS_CGB
+    uint32_t line_cgb_priority[((LCD_WIDTH + 31) / 32)];
+#endif
+
+    const uint32_t line_priority_len = PEANUT_GB_ARRAYSIZE(line_priority);
+
+    __builtin_prefetch(dest_pixels, 1);
+
+    for (int i = 0; i < line_priority_len; ++i)
+    {
+#if PGB_IS_CGB
+        line_priority[i] = ~0u;
+        line_cgb_priority[i] = ~0u;
+#else
+        line_priority[i] = 0;
+#endif
+    }
+
+    int wx = LCD_WIDTH;
+
+    if ((gb->gb_reg.LCDC & LCDC_WINDOW_ENABLE) &&
+#if PGB_IS_DMG
+        // non-CGB mode: window is also disabled if BG is disabled
+        (gb->gb_reg.LCDC & LCDC_BG_ENABLE) &&
+#endif
+        (gb->direct.wy_latched || gb->gb_reg.LY == gb->gb_reg.WY) &&
+        (gb->gb_reg.WX < LCD_WIDTH + 7))
+    {
+        // hardware Y condition: set once WY == LY at a scanline start,
+        // stays true for the rest of the frame
+        if (!gb->direct.wy_latched && gb->gb_reg.LY == gb->gb_reg.WY)
+            gb->direct.wy_latched = 1;
+#if PGB_IS_DMG
+        if (gb->gb_reg.WX == 166)
+        {
+            // DMG-only quirk: on monochrome, WX=166 makes the window span the
+            // whole screen offset by one scanline. Approximate it as fully
+            // off-screen to avoid artifacts. CGB renders it normally (a 1-px
+            // window column at the right edge).
+            wx = LCD_WIDTH;
+        }
+        else
+#endif
+            if (gb->gb_reg.WX < 7)
+        {
+            // WX=0 causes the window to "stutter" based on SCX scroll.
+            // Values 1-6 also seem to be unreliable
+            wx = 0;
+        }
+        else
+        {
+            wx = gb->gb_reg.WX - 7;
+        }
+    }
+
+    const int addr_mode_vram_tiledata_offset = (gb->gb_reg.LCDC & LCDC_TILE_SELECT) ? 0 : 0x800;
+
+    // clear row
+    for (int i = 0; i < LCD_WIDTH / 16; ++i)
+        ((uint32_t*)pixels)[i] = 0;
+
+    /* If background is enabled, draw it. */
+#if PGB_IS_CGB
+    if (wx > 0)
+#else
+    if ((gb->gb_reg.LCDC & LCDC_BG_ENABLE) && wx > 0)
+#endif
+    {
+        /* Calculate current background line to draw. Constant because
+         * this function draws only this one line each time it is
+         * called. */
+        const uint8_t bg_y = gb->gb_reg.LY + gb->display.latched_scy;
+
+        uint8_t bg_x = gb->display.latched_scx;
+
+        uint8_t* vram = gb->vram;
+
+        // tiles on this line
+        uint8_t* vram_line_tiles = gb->display.bg_map_base + (32 * (bg_y / 8));
+
+        // points to line data for pixel offset
+        uint16_t* vram_tile_data = (void*)&vram[2 * (bg_y % 8)];
+
+#if PGB_IS_CGB
+        uint8_t* vram_line_tile_attrs = vram_line_tiles + VRAM_SIZE;
+
+        // points to line data for flipped-y offset
+        uint16_t* vram_tile_data_flipped_y = (void*)&vram[2 * (7 - (bg_y % 8))];
+#endif
+
+        int subx = bg_x % 8;
+
+#if PGB_IS_CGB
+        __cgb_draw_tile_strip(
+            gb, vram_line_tiles, vram_line_tile_attrs, vram_tile_data, vram_tile_data_flipped_y,
+            addr_mode_vram_tiledata_offset, bg_x / 8, 0, (wx + 7) / 8, subx, subx, pixels,
+            line_priority, line_cgb_priority, false
+        );
+#else
+        unsigned bank_offset = 0;
+        uint8_t tile_hi = vram_line_tiles[(bg_x / 8) % 32];
+        uint16_t vram_tile_data_hi = vram_tile_data
+            [bank_offset | (tile_hi < 0x80 ? addr_mode_vram_tiledata_offset : 0) |
+             (8 * (unsigned)tile_hi)];
+
+        for (int x = 0; x < (wx + 7) / 8; ++x)
+        {
+            uint8_t* out = pixels + (x % 2) + (x / 2) * 4;
+            uint16_t vram_tile_data_lo = vram_tile_data_hi;
+            uint16_t tile_hi = vram_line_tiles[(bg_x / 8 + x + 1) % 32];
+
+            unsigned bank_offset = 0;
+            vram_tile_data_hi = vram_tile_data
+                [bank_offset | (tile_hi < 0x80 ? addr_mode_vram_tiledata_offset : 0) |
+                 (8 * (unsigned)tile_hi)];
+
+            uint8_t raw1 = (vram_tile_data_lo & 0x00FF) >> subx;
+            uint8_t raw2 = (uint16_t)vram_tile_data_lo >> (subx | 8);
+            raw1 |= (vram_tile_data_hi & 0x00FF) << (8 - subx);
+            raw2 |= ((vram_tile_data_hi & 0xFF00) >> subx) & 0xFF;
+
+            out[0] = raw1;
+            out[2] = raw2;
+        }
+#endif
+    }
+
+    /* draw window */
+    if (wx < LCD_WIDTH)
+    {
+        uint8_t bg_x = 256 - wx;
+        uint8_t bg_y = gb->display.window_clear;
+
+        uint8_t* vram = gb->vram;
+
+        // tiles on this line
+        uint8_t* vram_line_tiles = gb->display.window_map_base + (32 * (bg_y / 8));
+        int window_map_x_offset = (32 - (wx / 8)) % 32;
+
+        // points to line data for pixel offset
+        uint16_t* vram_tile_data = (void*)&vram[2 * (bg_y % 8)];
+
+#if PGB_IS_CGB
+        uint8_t* vram_line_tile_attrs = vram_line_tiles + VRAM_SIZE;
+
+        // points to line data for flipped-y offset
+        uint16_t* vram_tile_data_flipped_y = (void*)&vram[2 * (7 - (bg_y % 8))];
+#endif
+
+        int subx = bg_x % 8;
+
+#if PGB_IS_DMG
+        // Carry region of first block is always BG-masked, so preload 0
+        // instead of the previous column's tail (also avoids a VRAM fetch).
+        uint16_t vram_tile_data_hi = 0;
+        if (subx == 0)
+        {
+            unsigned bank_offset = 0;
+            uint8_t tile_hi = vram_line_tiles[(window_map_x_offset + wx / 8) % 32];
+            vram_tile_data_hi = vram_tile_data
+                [bank_offset | (tile_hi < 0x80 ? addr_mode_vram_tiledata_offset : 0) |
+                 (8 * (unsigned)tile_hi)];
+        }
+
+        uint32_t bgmask = 0xFF >> subx;
+
+        if (subx == 0)
+            bgmask = 0;
+#endif
+
+#if PGB_IS_CGB
+        __cgb_draw_tile_strip(
+            gb, vram_line_tiles, vram_line_tile_attrs, vram_tile_data, vram_tile_data_flipped_y,
+            addr_mode_vram_tiledata_offset,
+            subx ? (window_map_x_offset + 31) % 32 : window_map_x_offset, wx / 8, LCD_WIDTH / 8,
+            subx, subx, pixels, line_priority, line_cgb_priority, true
+        );
+#else
+        for (int x = wx / 8; x < LCD_WIDTH / 8; ++x)
+        {
+            uint8_t* out = pixels + (x % 2) + (x / 2) * 4;
+            uint16_t vram_tile_data_lo = vram_tile_data_hi;
+            uint16_t tile_hi = vram_line_tiles[(window_map_x_offset + x + (subx ? 0 : 1)) % 32];
+
+            unsigned bank_offset = 0;
+            vram_tile_data_hi = vram_tile_data
+                [bank_offset | (tile_hi < 0x80 ? addr_mode_vram_tiledata_offset : 0) |
+                 (8 * (unsigned)tile_hi)];
+
+            uint8_t raw1 = vram_tile_data_lo & 0x00FF;
+            uint8_t raw2 = (uint16_t)vram_tile_data_lo >> 8;
+            if (subx != 0)
+            {
+                raw1 = ((vram_tile_data_lo & 0x00FF) >> subx) |
+                       ((vram_tile_data_hi & 0x00FF) << (8 - subx));
+                raw2 = (((vram_tile_data_lo >> 8) & 0xFF) >> subx) |
+                       (((vram_tile_data_hi >> 8) & 0xFF) << (8 - subx));
+            }
+
+            uint32_t combined_mask = 0xFF00FF00 | (bgmask) | (bgmask << 16);
+            uint32_t combined_planes = (uint32_t)(raw1) | ((uint32_t)raw2 << 16);
+
+            out[0] = (out[0] & bgmask) | raw1;
+            out[2] = (out[2] & bgmask) | raw2;
+            // all further chunks should completely mask out the background
+            bgmask = 0;
+        }
+#endif
+        gb->display.window_clear++;
+    }
+
+#if PGB_IS_DMG
+    // remap background pixel by palette, and set priority
+    if (!dmg_bg_lut_valid || gb->gb_reg.BGP != dmg_bg_lut_pal)
+    {
+        __dmg_rebuild_bg_lut(gb->gb_reg.BGP);
+        dmg_bg_lut_pal = gb->gb_reg.BGP;
+        dmg_bg_lut_valid = true;
+    }
+
+    if likely (pgb_bgp_evt_count == 0)
+    {
+        for (int i = 0; i < LCD_WIDTH / 16; ++i)
+        {
+            uint16_t* p = (uint16_t*)(void*)pixels + (2 * i);
+            uint16_t t0 = p[0];
+            uint16_t t1 = p[1];
+
+            uint32_t rm =
+                ((uint32_t)dmg_bg_lut[((t0 >> 12) & 0xF) | (((t1 >> 12) & 0xF) << 4)] << 24) |
+                ((uint32_t)dmg_bg_lut[((t0 >> 8) & 0xF) | (((t1 >> 8) & 0xF) << 4)] << 16) |
+                ((uint32_t)dmg_bg_lut[((t0 >> 4) & 0xF) | (((t1 >> 4) & 0xF) << 4)] << 8) |
+                ((uint32_t)dmg_bg_lut[(t0 & 0xF) | ((t1 & 0xF) << 4)]);
+            *(uint32_t*)p = rm;
+            ((uint16_t*)line_priority)[i] = (t1 | t0) ^ 0xFFFF;
+        }
+    }
+    else
+    {
+        /* Mid-scanline BGP spam: remap per segment. 4px group g outputs at
+         * line-T = mode-2 end - 4 (pipeline fills in mode 2's tail;
+         * calibrated) + (SCX&7) + 4g. Sprites merge later, keep OBP. */
+        const int start_t = PPU_MODE_2_OAM_CYCLES - 4 + (gb->display.latched_scx & 7);
+        const uint8_t* grp_lut[LCD_WIDTH / 4];
+        uint8_t pal = pgb_bgp_line_init;
+        int e = 0;
+        for (int g = 0; g < LCD_WIDTH / 4; ++g)
+        {
+            const int pt = start_t + g * 4;
+            while (e < pgb_bgp_evt_count && (int)pgb_bgp_evt_t[e] <= pt)
+                pal = pgb_bgp_evt_v[e], e++;
+            grp_lut[g] = __dmg_seg_lut(pal);
+        }
+        /* Strip order per 16px word: <<24 -> group 4i+3, <<16 -> 4i+2,
+         * <<8 -> 4i+1, <<0 -> 4i+0 (nibble n -> group n; tile data is
+         * bit-reversed at VRAM write). */
+        for (int i = 0; i < LCD_WIDTH / 16; ++i)
+        {
+            uint16_t* p = (uint16_t*)(void*)pixels + (2 * i);
+            uint16_t t0 = p[0];
+            uint16_t t1 = p[1];
+            const uint8_t* l24 = grp_lut[4 * i + 3];
+            const uint8_t* l16 = grp_lut[4 * i + 2];
+            const uint8_t* l08 = grp_lut[4 * i + 1];
+            const uint8_t* l00 = grp_lut[4 * i + 0];
+
+            uint32_t rm = ((uint32_t)l24[((t0 >> 12) & 0xF) | (((t1 >> 12) & 0xF) << 4)] << 24) |
+                          ((uint32_t)l16[((t0 >> 8) & 0xF) | (((t1 >> 8) & 0xF) << 4)] << 16) |
+                          ((uint32_t)l08[((t0 >> 4) & 0xF) | (((t1 >> 4) & 0xF) << 4)] << 8) |
+                          ((uint32_t)l00[(t0 & 0xF) | ((t1 & 0xF) << 4)]);
+            *(uint32_t*)p = rm;
+            ((uint16_t*)line_priority)[i] = (t1 | t0) ^ 0xFFFF;
+        }
+    }
+#endif
+
+#if PGB_IS_CGB
+    bool cgb_master_priority = !!(gb->gb_reg.LCDC & LCDC_CGB_MASTER_PRIORITY);
+#endif
+
+    // draw sprites
+    if (gb->gb_reg.LCDC & LCDC_OBJ_ENABLE)
+    {
+        $(__gb_draw_line_sprites)(
+            gb, gb->display.oam_latch, line_priority,
+#if PGB_IS_CGB
+            line_cgb_priority, cgb_master_priority,
+#endif
+            pixels
+        );
+    }
+
+    uint32_t* restrict line_out = (uint32_t*)(void*)dest_pixels;
+#if PGB_IS_DMG
+    if (pgb_dirty_prev && !pgb_dirty_skip)
+    {
+        uint32_t* restrict prev_out = (uint32_t*)&pgb_dirty_prev[gb->gb_reg.LY * LCD_WIDTH_PACKED];
+        uint32_t changed = 0;
+        for (int i = 0; i < LCD_WIDTH_PACKED / 4; ++i)
+        {
+            uint32_t s = line_stage[i];
+            changed |= s ^ prev_out[i];
+            line_out[i] = s;
+            prev_out[i] = s;
+        }
+        if (changed && pgb_dirty_flags)
+            pgb_dirty_flags[gb->gb_reg.LY >> 4] |= (1 << (gb->gb_reg.LY & 0xF));
+    }
+    else
+#endif
+    {
+        for (int i = 0; i < LCD_WIDTH_PACKED / 4; ++i)
+            line_out[i] = line_stage[i];
+    }
+}
+
+#if PGB_IS_CGB
+#undef CGB_LUT
+#undef CGB_LUT_BLEND
+#endif
+
+// Per-scanline mode-3 setup: OAM latch, sprite penalties, window
+// visibility, mode3/mode0 cycle lengths. Lives in the draw cluster
+// (scanline cadence); called from the PPU step via DRAW_CALL.
+__draw static void $(__gb_ppu_mode3_setup)(gb_s* gb)
+{
+    uint16_t mode3_cycles = PPU_MODE_3_VRAM_MIN_CYCLES;
+    const bool besu_skip = gb->direct.first_scanline_besu_skip;
+    gb->direct.first_scanline_besu_skip = 0;
+
+    if (gb->direct.frame_skip)
+    {
+        // Skipped frame: no draw, so replay the cached cycle split. The
+        // 456-cycle line cadence is unchanged; BESU first line has no penalties.
+        if (besu_skip)
+        {
+            uint16_t m3 = PPU_MODE_3_VRAM_MIN_CYCLES + (gb->gb_reg.SCX & 7);
+            gb->display.current_mode3_cycles = m3;
+            gb->display.current_mode0_cycles = LCD_LINE_CYCLES - PPU_MODE_2_OAM_CYCLES - m3 - 2;
+        }
+        else
+        {
+            gb->display.current_mode3_cycles = $(pgb_mode3_cache)[gb->gb_reg.LY];
+            gb->display.current_mode0_cycles = $(pgb_mode0_cache)[gb->gb_reg.LY];
+        }
+        return;
+    }
+
+    if (besu_skip)
+    {
+        // First scanline after LCD-on: BESU never sets on hardware,
+        // so no OAM latch, no sprites, no sprite penalties.
+        // SCX/SCY are not latched either - use live values.
+        gb->display.latched_scx = gb->gb_reg.SCX;
+        gb->display.latched_scy = gb->gb_reg.SCY;
+        mode3_cycles += gb->display.latched_scx & 7;
+    }
+    else
+    {
+        for (int _i = 0; _i < OAM_SIZE >> 2; _i++)
+            ((uint32_t*)gb->display.oam_latch)[_i] = ((uint32_t*)gb->oam)[_i];
+        gb->display.latched_scx = gb->gb_reg.SCX;
+        gb->display.latched_scy = gb->gb_reg.SCY;
+
+        mode3_cycles += gb->display.latched_scx & 7;
+
+        // PPU sprite timing: dynamic per-sprite penalty.
+        // Stacked sprites at same X: first pays full alignment cost,
+        // subsequent sprites cost only the 6-dot core (combinational re-fire).
+        uint8_t sprites_found = 0;
+        uint8_t last_penalty_x = 0xFF;
+        const uint8_t sprite_height = (gb->gb_reg.LCDC & LCDC_OBJ_SIZE) ? 16 : 8;
+        static const uint8_t sprite_penalty_lut[8] = {11, 10, 9, 8, 7, 6, 6, 6};
+
+        for (uint8_t s = 0; s < NUM_SPRITES && sprites_found < MAX_SPRITES_LINE; s++)
+        {
+            const uint8_t y = gb->display.oam_latch[s * 4];
+            const uint8_t x = gb->display.oam_latch[s * 4 + 1];
+
+            // Check if sprite Y intersects current line
+            if (y <= gb->gb_reg.LY + 16 && gb->gb_reg.LY + 16 < y + sprite_height)
+            {
+                if (sprites_found > 0 && x == last_penalty_x)
+                {
+                    mode3_cycles += 6;
+                }
+                else
+                {
+                    const uint8_t alignment = ((gb->display.latched_scx & 7) + x) & 7;
+                    mode3_cycles += sprite_penalty_lut[alignment];
+                }
+                last_penalty_x = x;
+                sprites_found++;
+            }
+        }
+    }
+
+    bool win_visible = (gb->gb_reg.LCDC & LCDC_WINDOW_ENABLE) && (gb->gb_reg.WX <= 166) &&
+                       (gb->direct.wy_latched || gb->gb_reg.LY == gb->gb_reg.WY);
+#if PGB_IS_DMG
+    win_visible &= (gb->gb_reg.LCDC & LCDC_BG_ENABLE);
+#endif
+    if (win_visible)
+    {
+        mode3_cycles += 6;
+    }
+
+    gb->display.current_mode3_cycles = MIN(mode3_cycles, PPU_MODE_3_VRAM_MAX_CYCLES);
+    gb->display.current_mode0_cycles =
+        LCD_LINE_CYCLES - PPU_MODE_2_OAM_CYCLES - gb->display.current_mode3_cycles;
+    if (besu_skip)
+        gb->display.current_mode0_cycles -= 2;
+
+    $(pgb_mode3_cache)[gb->gb_reg.LY] = gb->display.current_mode3_cycles;
+    $(pgb_mode0_cache)[gb->gb_reg.LY] = gb->display.current_mode0_cycles;
+}
+
+__core_section("short") static bool $(__gb_get_op_flag)(gb_s* restrict gb, uint8_t op8)
+{
+    op8 %= 4;
+    bool flag = (op8 <= 1) ? (gb->cpu_reg.f & GB_FLAG_Z) != 0 : (gb->cpu_reg.f & GB_FLAG_C) != 0;
+    flag ^= (op8 % 2);
+    return flag;
+}
+
+__core_section("short") static u16 $(__gb_add16)(gb_s* restrict gb, u16 a, u16 b)
+{
+    unsigned temp = a + b;
+    gb->cpu_reg.f = (gb->cpu_reg.f & GB_FLAG_Z) | ((((temp ^ a ^ b) >> 12) & 1) ? GB_FLAG_H : 0) |
+                    ((temp >> 16) ? GB_FLAG_C : 0);
+    return temp;
+}
+
+/* PPU T-cycles to next TIMA overflow (0xFFFFFFFF if disabled). Shared with
+ * __gb_calc_halt_cycles so the batch and halt paths can't drift. */
+__core_section("short") static uint32_t $(__gb_timer_distance)(gb_s* gb)
+{
+    if (!gb->gb_reg.tac_enable)
+        return 0xFFFFFFFF;
+
+#if PGB_IS_CGB
+    uint16_t tima_threshold = gb->gb_reg.tac_cycles >> gb->cgb_fast_mode_active;
+#else
+    uint16_t tima_threshold = gb->gb_reg.tac_cycles;
+#endif
+    if (tima_threshold == 0)
+        tima_threshold = 1;
+
+    uint16_t cycles_until_next_tick = tima_threshold - (gb->counter.tima_count % tima_threshold);
+    if (cycles_until_next_tick == 0)
+        cycles_until_next_tick = tima_threshold;
+    uint16_t ticks_until_overflow = 0x100 - gb->gb_reg.TIMA;
+
+    if (gb->gb_reg.tima_overflow_delay)
+        return 1;
+
+    return ((uint32_t)(ticks_until_overflow - 1) * tima_threshold) + cycles_until_next_tick + 1;
+}
+
+/* Batch budget (CPU T): bound so the batch crosses <=1 PPU mode boundary by at
+ * most BATCH_CROSS_MAX (keeping STAT/LYC ISR latency bounded), never crosses the
+ * mode-3 -> HBlank boundary, and never runs past a pending TIMA overflow. */
+__core static unsigned $(__gb_batch_budget)(gb_s* gb)
+{
+    unsigned budget_ppu;
+
+    if (!(gb->gb_reg.LCDC & LCDC_ENABLE))
+    {
+        /* LCD off: no PPU mode boundaries (lcd_count free-runs), so bound
+         * explicitly to one line; the lcd_off_count frame tick and interrupt
+         * dispatch stay current. Do NOT route through the switch below: mode
+         * reads LCD_HBLANK and d1 underflows once lcd_count passes the stale
+         * mode-0 length. */
+        budget_ppu = LCD_LINE_CYCLES;
+    }
+    else
+    {
+        // PPU-domain distance to the *second* mode boundary.
+        unsigned d1, d2;
+        switch (gb->lcd_mode)
+        {
+        case LCD_SEARCH_OAM:  // mode 2 (80 T)
+            d1 = PPU_MODE_2_OAM_CYCLES - gb->counter.lcd_count;
+            d2 = PPU_MODE_3_VRAM_MIN_CYCLES;  // this line's mode 3 not computed yet
+            break;
+        case LCD_TRANSFER:  // mode 3 (172..289 T)
+            d1 = gb->display.current_mode3_cycles - gb->counter.lcd_count;
+            d2 = gb->display.current_mode0_cycles;
+            break;
+        case LCD_HBLANK:  // mode 0 (87..204 T)
+            d1 = gb->display.current_mode0_cycles - gb->counter.lcd_count;
+            d2 = PPU_MODE_2_OAM_CYCLES;
+            break;
+        case LCD_VBLANK:  // 456 T/line
+            d1 = LCD_LINE_CYCLES - gb->counter.lcd_count;
+            /* Last VBlank line: LY wraps 153->0 a few cycles in (short-line
+             * quirk), so test both. Second boundary is the line-0 mode3 latch. */
+            d2 = (gb->gb_reg.LY == 153 || gb->gb_reg.LY == 0) ? PPU_MODE_2_OAM_CYCLES
+                                                              : LCD_LINE_CYCLES;
+            break;
+        }
+        /* Distance to the second boundary, but run at most BATCH_CROSS_MAX past
+         * the first one. Mode 3 is the exception: it must end exactly at the
+         * mode-3 -> HBlank boundary so __gb_draw_line runs before any HBlank
+         * VRAM/OAM writes (a cross would leak those writes into the live-vram
+         * draw and corrupt the line). */
+        budget_ppu = (gb->lcd_mode == LCD_TRANSFER) ? d1 : (d1 + MIN(d2, BATCH_CROSS_MAX));
+    }
+
+    /* Timer clamp only matters when the timer can raise an interrupt.
+     * With TIMER_INTR disabled in IE, TIMA overflow processing happens at
+     * the next batch end anyway (same granularity as TIMA/IF reads), so the
+     * batch may run past it -- this avoids 2x batch churn in CGB double
+     * speed, where TIMA overflows twice as often per frame. */
+    if (gb->gb_reg.IE & TIMER_INTR)
+    {
+        uint32_t timer = $(__gb_timer_distance)(gb);
+        if (timer < budget_ppu)
+            budget_ppu = timer;
+    }
+
+    if (budget_ppu > BATCH_BUDGET_MAX)
+        budget_ppu = BATCH_BUDGET_MAX;
+
+    // CPU T-cycles: shift for CGB double-speed and overclocked VBlank
+    // (inst_cycles is shifted down by the same factors in __gb_step_cpu),
+    // then subtract the overshoot.
+    unsigned budget = budget_ppu << (PGB_IS_CGB ? gb->cgb_fast_mode_active : 0);
+    if (gb->lcd_mode == LCD_VBLANK)
+        budget <<= gb->overclock;
+    return (budget > BATCH_OVERSHOOT) ? (budget - BATCH_OVERSHOOT) : 1;
+}
+
+/* Micro interpreter: per-instruction hot loop, lives in the A (hot) block.
+ * step_cpu (B block) calls it through MICRO_CALL. */
+__core_section("micro") static unsigned $(__gb_run_instruction_micro)(gb_s* gb)
+{
+#define FETCH8(gb) $(__gb_fetch8)(gb)
+
+#define FETCH16(gb) $(__gb_fetch16)(gb)
+
+    /* halt-bug fixup + predecode op8 + jump to handler */
+#define NEXT_DISPATCH()                                                          \
+    do                                                                           \
+    {                                                                            \
+        if unlikely (gb->gb_halt_bug)                                            \
+        {                                                                        \
+            if (gb->gb_halt_bug == 1)                                            \
+                gb->cpu_reg.pc = gb->gb_halt_bug_pc;                             \
+            gb->gb_halt_bug--;                                                   \
+        }                                                                        \
+        op8 = ((opcode & ~0xC0) / 8) ^ 1;                                        \
+        goto*(void*)((char*)pgb_op_handlers[pgb_op_cluster[opcode]] + itcm_off); \
+    } while (0)
+
+    /* Batch tail: accumulate cycles, refresh pgb_batch_elapsed, decrement the
+     * IME countdown, then stop on halt/stop/HLE, a dispatchable interrupt, or
+     * the cycle budget -- else fetch the next opcode and dispatch. */
+#define BATCH_TAIL()            \
+    do                          \
+    {                           \
+        batch_cycles += cycles; \
+        goto next_instruction;  \
+    } while (0)
+
+#define BATCH_TAIL_HLADJ()                      \
+    do                                          \
+    {                                           \
+        gb->cpu_reg.hl += (opcode >= 0x20);     \
+        gb->cpu_reg.hl -= 2 * (opcode >= 0x30); \
+        batch_cycles += cycles;                 \
+        goto next_instruction;                  \
+    } while (0)
+
+#define TAIL_RARE()                                                  \
+    do                                                               \
+    {                                                                \
+        cycles = RARE_CALL_U8($(__gb_rare_instruction), gb, opcode); \
+        BATCH_TAIL();                                                \
+    } while (0)
+
+#define TAIL_CB()                        \
+    do                                   \
+    {                                    \
+        cycles = $(__gb_execute_cb)(gb); \
+        BATCH_TAIL();                    \
+    } while (0)
+
+    /* Opcode -> handler cluster. */
+    static const uint8_t pgb_op_cluster[256] = {
+        0,  2,  3,  4,  5,  5,  6,  7,  28, 8,  3,  4,  5,  5,  6,  7,  28, 2,  3,  4,  5,  5,
+        6,  7,  1,  8,  3,  4,  5,  5,  6,  7,  1,  2,  3,  4,  5,  5,  6,  7,  1,  8,  3,  4,
+        5,  5,  6,  7,  1,  2,  3,  4,  5,  5,  6,  7,  1,  8,  3,  4,  5,  5,  6,  7,  9,  9,
+        9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,
+        9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,
+        9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  10, 10, 10, 10,
+        10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10,
+        10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10,
+        10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 11, 12, 13, 14, 15, 16,
+        17, 18, 11, 19, 13, 20, 15, 21, 17, 18, 11, 12, 13, 14, 15, 16, 17, 18, 11, 19, 13, 20,
+        15, 21, 17, 18, 22, 12, 23, 25, 28, 16, 17, 18, 28, 24, 27, 26, 28, 28, 17, 18, 22, 12,
+        23, 25, 28, 16, 17, 18, 28, 24, 27, 26, 28, 28, 17, 18,
+    };
+
+    static const void* const pgb_op_handlers[] = {
+        &&h_nop,      &&h_jr,        &&h_ld_r16_d16, &&h_ld_a_r16, &&h_inc_dec_r16, &&h_inc_dec_r8,
+        &&h_ld_r8_d8, &&h_misc_flag, &&h_add_hl_r16, &&h_ld_x_x,   &&h_alu,         &&h_ret_cc,
+        &&h_pop,      &&h_jp_cc,     &&h_jp,         &&h_call_cc,  &&h_push,        &&h_alu_d8,
+        &&h_rst,      &&h_ret,       &&h_cb,         &&h_call,     &&h_ldh_a8,      &&h_ldh_c,
+        &&h_jp_hl,    &&h_di,        &&h_ei,         &&h_ld_a16,   &&h_rare,
+    };
+
+    u16 _pc = gb->cpu_reg.pc;
+    u8 opcode;
+    u8 op8;
+    // Fast path: any region mapped in ram_base (ROM, WRAM, echo) + HRAM.
+    // VRAM/IO/cart-RAM fetches fall through to preserve read side effects.
+    uint8_t* fetch_base = gb->ram_base[_pc >> 12];
+    if likely (fetch_base)
+        opcode = fetch_base[_pc];
+    else if (_pc >= 0xFF80)
+        opcode = gb->hram[_pc & 0xFF];
+    else
+        opcode = $(__gb_read)(gb, _pc);
+    gb->cpu_reg.pc++;
+    unsigned cycles = 4;  // T-cycles (was float M-cycles)
+    unsigned src;
+    u8 srcidx;
+
+    // accumulated T-cycles this invocation + the cycle budget
+    unsigned batch_cycles = 0;
+    const unsigned batch_budget = $(__gb_batch_budget)(gb);
+
+    /* Exact refresh at batch start: covers all IF/IE/ime changes made
+     * between batches (step tail, draw cluster, interrupt dispatch). */
+    gb->direct.intr_pending = gb->gb_ime && (gb->gb_reg.IF & gb->gb_reg.IE & ANY_INTR);
+
+    /* Rebase offset for the computed-goto handler table. Label addresses are
+     * link-time flash addresses; the core cluster may run from a DTCM copy,
+     * so every dispatch adds this offset (0 when running from flash). */
+#if ITCM_CORE
+    const intptr_t itcm_off = core_itcm_offset;
+#else
+    const intptr_t itcm_off = 0;
+#endif
+
+    NEXT_DISPATCH();
+
+h_nop:
+    BATCH_TAIL();
+
+h_jr:
+    {
+        // jr
+        cycles = 8;
+        bool flag = $(__gb_get_op_flag)(gb, op8);
+        if (opcode == 0x18)
+            flag = 1;
+        if (flag)
+        {
+            cycles = 12;
+            gb->cpu_reg.pc += (s8)FETCH8(gb);
+        }
+        else
+        {
+            gb->cpu_reg.pc++;
+        }
+    }
+    BATCH_TAIL();
+
+h_ld_r16_d16:
+    {
+        int reg8 = 2 * (opcode / 16) | (op8 & 1);
+        int reg16 = reg8 / 2;
+        if (reg16 == 3)
+            reg16 = 4;
+        cycles = 12;
+        gb->cpu_reg_raw16[reg16] = FETCH16(gb);
+    }
+    BATCH_TAIL();
+
+h_ld_a_r16:
+    {
+        int reg8 = 2 * (opcode / 16) | (op8 & 1);
+        int reg16 = reg8 / 2;
+        if (reg16 == 3)
+            reg16 = 4;
+        cycles = 8;
+        if (reg16 == 4)
+            reg16 = 2;
+
+        if (op8 % 2 == 1)
+        {
+            pgb_write_cycle = (uint16_t)(batch_cycles + cycles);
+            $(__gb_write)(gb, gb->cpu_reg_raw16[reg16], gb->cpu_reg.a);
+        }
+        else
+        {
+            gb->cpu_reg.a = $(__gb_read)(gb, gb->cpu_reg_raw16[reg16]);
+        }
+    }
+    BATCH_TAIL_HLADJ();
+
+h_inc_dec_r16:
+    {
+        int reg8 = 2 * (opcode / 16) | (op8 & 1);
+        int reg16 = reg8 / 2;
+        if (reg16 == 3)
+            reg16 = 4;
+        s16 offset = (op8 % 2 == 1) ? 1 : -1;
+        gb->cpu_reg_raw16[reg16] += offset;
+        cycles = 8;
+    }
+    BATCH_TAIL();
+
+h_inc_dec_r8:
+    {
+        int reg8 = 2 * (opcode / 16) | (op8 & 1);
+        const u8 is_dec = opcode & 1;
+        const s8 offset = is_dec ? -1 : 1;
+
+        u8 src = (reg8 == 7) ? $(__gb_read)(gb, gb->cpu_reg.hl) : gb->cpu_reg_raw[reg8];
+        u8 tmp = src + offset;
+
+        // preserve C (and the unused nibble, always 0)
+        u8 f = gb->cpu_reg.f & 0x1F;
+        f |= (tmp == 0) ? GB_FLAG_Z : 0;
+        f |= is_dec ? GB_FLAG_N : 0;
+        f |= ((tmp & 0x0F) == (is_dec ? 0x0F : 0x00)) ? GB_FLAG_H : 0;
+        gb->cpu_reg.f = f;
+
+        if (reg8 == 7)
+        {
+            cycles = 12;
+            pgb_write_cycle = (uint16_t)(batch_cycles + cycles);
+            $(__gb_write)(gb, gb->cpu_reg.hl, tmp);
+        }
+        else
+        {
+            gb->cpu_reg_raw[reg8] = tmp;
+        }
+    }
+    BATCH_TAIL();
+
+h_ld_r8_d8:
+    srcidx = 0;
+    src = FETCH8(gb);
+    cycles = 8;
+    goto ld_x_x;
+
+h_misc_flag:
+    // misc flag ops
+    if (opcode < 0x20)
+    {
+        // rlca / rrca / rla / rra
+        u32 v = gb->cpu_reg.a << 8;
+        if (op8 & 2)
+        {
+            u32 c = (gb->cpu_reg.f >> 4) & 1;
+            v |= (c << 7) | (c << 16);
+        }
+        else
+        {
+            v = v | (v << 8);
+            v = v | (v >> 8);
+        }
+        if (op8 & 1)
+        {
+            v <<= 1;
+        }
+        else
+        {
+            v >>= 1;
+        }
+        gb->cpu_reg.f = ((v >> (7 + 9 * (op8 & 1))) & 1) ? GB_FLAG_C : 0;
+        gb->cpu_reg.a = (v >> 8) & 0xFF;
+    }
+    else if unlikely (opcode == 0x27)  // daa
+    {
+        u16 a = gb->cpu_reg.a;
+        const u8 f = gb->cpu_reg.f;
+        u8 c = (f >> 4) & 1;
+        if (f & GB_FLAG_N)
+        {
+            if (f & GB_FLAG_H)
+                a = (a - 0x06) & 0xFF;
+            if (c)
+                a -= 0x60;
+        }
+        else
+        {
+            if ((f & GB_FLAG_H) || (a & 0x0F) > 9)
+                a += 0x06;
+            if (c || a > 0x9F)
+                a += 0x60;
+        }
+        if ((a & 0x100) == 0x100)
+            c = 1;
+        gb->cpu_reg.a = a;
+        gb->cpu_reg.f =
+            (f & GB_FLAG_N) | (c ? GB_FLAG_C : 0) | (gb->cpu_reg.a == 0 ? GB_FLAG_Z : 0);
+    }
+    else if (opcode == 0x2F)
+    {
+        gb->cpu_reg.a ^= 0xFF;
+        gb->cpu_reg.f = (gb->cpu_reg.f & (GB_FLAG_Z | GB_FLAG_C)) | GB_FLAG_N | GB_FLAG_H;
+    }
+    else if (op8 % 2 == 1)
+    {
+        gb->cpu_reg.f = (gb->cpu_reg.f & GB_FLAG_Z) | GB_FLAG_C;
+    }
+    else if (op8 % 2 == 0)
+    {
+        gb->cpu_reg.f = (gb->cpu_reg.f & GB_FLAG_Z) | ((gb->cpu_reg.f & GB_FLAG_C) ? 0 : GB_FLAG_C);
+    }
+    BATCH_TAIL();
+
+h_add_hl_r16:
+    {
+        int reg8 = 2 * (opcode / 16) | (op8 & 1);
+        int reg16 = reg8 / 2;
+        if (reg16 == 3)
+            reg16 = 4;
+        cycles = 8;
+        gb->cpu_reg.hl = $(__gb_add16)(gb, gb->cpu_reg.hl, gb->cpu_reg_raw16[reg16]);
+    }
+    BATCH_TAIL();
+
+h_ld_x_x:
+    srcidx = (opcode % 8) ^ 1;
+    if (srcidx == 7)
+    {
+        src = $(__gb_read)(gb, gb->cpu_reg.hl);
+        cycles = 8;
+    }
+    else
+        src = gb->cpu_reg_raw[srcidx];
+    goto ld_x_x;
+
+h_alu:
+    srcidx = (opcode % 8) ^ 1;
+    if (srcidx == 7)
+    {
+        src = $(__gb_read)(gb, gb->cpu_reg.hl);
+        cycles = 8;
+    }
+    else
+        src = gb->cpu_reg_raw[srcidx];
+    goto arithmetic;
+
+ld_x_x:
+    {
+        u8 dstidx = op8;
+        if (dstidx == 7)
+        {
+            if unlikely (srcidx == 7)
+            {
+                TAIL_RARE();
+            }
+            else
+            {
+                cycles += 4;
+                pgb_write_cycle = (uint16_t)(batch_cycles + cycles);
+                $(__gb_write)(gb, gb->cpu_reg.hl, src);
+            }
+        }
+        else
+        {
+            gb->cpu_reg_raw[dstidx] = src;
+        }
+    }
+    BATCH_TAIL();
+
+arithmetic:
+    switch (op8)
+    {
+    case 0:  // ADC
+    case 1:  // ADD
+    case 2:  // SBC
+    case 3:  // SUB
+    case 6:  // CP
+    {
+        // carry bit
+        unsigned v = src;
+        if (op8 % 2 == 0 && op8 != 6)
+        {
+            v += (gb->cpu_reg.f >> 4) & 1;
+        }
+
+        // subtraction
+        const bool n = (op8 & 2) != 0;
+        if (n)
+            v = -v;
+
+        // adder
+        const u16 temp = gb->cpu_reg.a + v;
+        gb->cpu_reg.f = (n ? GB_FLAG_N : 0) | (((temp & 0xFF) == 0x00) ? GB_FLAG_Z : 0) |
+                        ((((gb->cpu_reg.a ^ src ^ temp) >> 4) & 1) ? GB_FLAG_H : 0) |
+                        ((temp >> 8) ? GB_FLAG_C : 0);
+
+        if (op8 != 6)
+        {
+            gb->cpu_reg.a = temp & 0xFF;
+        }
+    }
+    break;
+    case 4:  // XOR
+        gb->cpu_reg.a ^= src;
+        gb->cpu_reg.f = gb->cpu_reg.a == 0 ? GB_FLAG_Z : 0;
+        break;
+    case 5:  // AND
+        gb->cpu_reg.a &= src;
+        gb->cpu_reg.f = GB_FLAG_H | (gb->cpu_reg.a == 0 ? GB_FLAG_Z : 0);
+        break;
+    case 7:  // OR
+        gb->cpu_reg.a |= src;
+        gb->cpu_reg.f = gb->cpu_reg.a == 0 ? GB_FLAG_Z : 0;
+        break;
+    default:
+        __builtin_unreachable();
+    }
+    BATCH_TAIL();
+
+h_ret_cc:
+    cycles = 8;
+    {
+        bool flag = $(__gb_get_op_flag)(gb, op8);
+        if (flag)
+            goto ret;
+    }
+    BATCH_TAIL();
+
+h_pop:
+    cycles = 12;
+    src = $(__gb_pop16)(gb);
+    if (op8 / 2 == 3)
+    {
+        gb->cpu_reg.a = src >> 8;
+        gb->cpu_reg.f = src & 0xF0;
+    }
+    else
+    {
+        gb->cpu_reg_raw16[op8 / 2] = src;
+    }
+    BATCH_TAIL();
+
+h_jp_cc:
+    cycles = 12;
+    {
+        bool flag = $(__gb_get_op_flag)(gb, op8);
+        if (flag)
+            goto jp;
+    }
+    gb->cpu_reg.pc += 2;
+    BATCH_TAIL();
+
+h_jp:
+    if unlikely (opcode == 0xD3)
+    {
+        TAIL_RARE();
+    }
+jp:
+    cycles = 16;
+    gb->cpu_reg.pc = FETCH16(gb);
+    BATCH_TAIL();
+
+h_call_cc:
+    cycles = 12;
+    {
+        bool flag = $(__gb_get_op_flag)(gb, op8);
+        if (flag)
+            goto call;
+    }
+    gb->cpu_reg.pc += 2;
+    BATCH_TAIL();
+
+h_push:
+    cycles = 16;
+    src = gb->cpu_reg_raw16[op8 / 2];
+    if (op8 / 2 == 3)
+    {
+        src = (gb->cpu_reg.a << 8) | (gb->cpu_reg.f & 0xF0);
+    }
+    $(__gb_push16)(gb, src);
+    BATCH_TAIL();
+
+h_alu_d8:
+    cycles = 8;
+    src = FETCH8(gb);
+    goto arithmetic;
+
+h_rst:
+    cycles = 16;
+    $(__gb_push16)(gb, gb->cpu_reg.pc);
+    gb->cpu_reg.pc = 8 * (op8 ^ 1);
+    BATCH_TAIL();
+
+h_ret:
+    if unlikely (opcode == 0xD9)
+    {
+        gb->gb_ime = 1;
+        gb->gb_ime_countdown = 0;
+        gb->direct.intr_pending = (gb->gb_reg.IF & gb->gb_reg.IE & ANY_INTR) != 0;
+        goto ret_common;
+    }
+ret:
+ret_common:
+    cycles += 12;
+    gb->cpu_reg.pc = $(__gb_pop16)(gb);
+    BATCH_TAIL();
+
+h_cb:
+    if likely (opcode == 0xCB)
+        TAIL_CB();
+    TAIL_RARE();
+
+h_call:
+    if unlikely (op8 & 2)
+    {
+        TAIL_RARE();
+    }
+call:
+    cycles = 24;
+    {
+        u16 tmp = FETCH16(gb);
+        $(__gb_push16)(gb, gb->cpu_reg.pc);
+        gb->cpu_reg.pc = tmp;
+    }
+    BATCH_TAIL();
+
+h_ldh_a8:
+    cycles = 12;
+    srcidx = (FETCH8(gb));
+    goto hram_op;
+
+h_ldh_c:
+    cycles = 8;
+    srcidx = gb->cpu_reg.c;
+    goto hram_op;
+
+hram_op:
+    {
+        u16 addr = 0xFF00 | srcidx;
+        if (opcode & 0x10)
+        {
+            u8 v = $(__gb_read)(gb, addr);
+            gb->cpu_reg.a = v;
+        }
+        else
+        {
+            pgb_write_cycle = (uint16_t)(batch_cycles + cycles);
+            $(__gb_write)(gb, addr, gb->cpu_reg.a);
+        }
+    }
+    BATCH_TAIL();
+
+h_jp_hl:
+    if (opcode == 0xF9)
+    {
+        gb->cpu_reg.sp = gb->cpu_reg.hl;
+        cycles = 8;
+    }
+    else  // 0xE9
+    {
+        gb->cpu_reg.pc = gb->cpu_reg.hl;
+        cycles = 4;
+    }
+    BATCH_TAIL();
+
+h_di:
+    if unlikely (opcode != 0xF3)
+        TAIL_RARE();
+    cycles = 4;
+    gb->gb_ime = 0;
+    gb->gb_ime_countdown = 0;
+    gb->direct.intr_pending = 0;
+    BATCH_TAIL();
+
+h_ei:
+    if unlikely (opcode != 0xFB)
+        TAIL_RARE();
+    cycles = 4;
+    gb->gb_ime_countdown = 2;
+    BATCH_TAIL();
+
+h_ld_a16:
+    cycles = 16;
+    {
+        u16 v = FETCH16(gb);
+        if (op8 & 2)
+            gb->cpu_reg.a = $(__gb_read)(gb, v);
+        else
+        {
+            pgb_write_cycle = (uint16_t)(batch_cycles + cycles);
+            $(__gb_write)(gb, v, gb->cpu_reg.a);
+        }
+    }
+    BATCH_TAIL();
+
+h_rare:
+    TAIL_RARE();
+
+next_instruction:
+    pgb_batch_elapsed = batch_cycles;
+    pgb_write_cycle = (uint16_t)batch_cycles;
+    if unlikely (gb->gb_ime_countdown > 0 && --gb->gb_ime_countdown == 0)
+    {
+        gb->gb_ime = 1;
+        gb->direct.intr_pending = (gb->gb_reg.IF & gb->gb_reg.IE & ANY_INTR) != 0;
+    }
+    if unlikely (
+        gb->gb_halt || gb->gb_stop || (PGB_IS_CGB ? gb->gb_hle : false) || gb->direct.intr_pending
+    )
+        goto batch_done;
+    if (batch_cycles >= batch_budget)
+        goto batch_done;
+    cycles = 4;
+    opcode = FETCH8(gb);
+    NEXT_DISPATCH();
+
+batch_done:
+#ifdef TARGET_SIMULATOR
+    /* intr_pending may over-report (shell IF/IE writers set it
+     * conservatively) but must never under-report. */
+    CB_ASSERT(
+        !(gb->gb_ime && (gb->gb_reg.IF & gb->gb_reg.IE & ANY_INTR)) || gb->direct.intr_pending
+    );
+#endif
+    pgb_batch_elapsed = 0;
+    pgb_write_cycle = 0;
+    return batch_cycles;
+}
+
+__core static uint16_t $(__gb_calc_halt_cycles)(gb_s* gb)
+{
+    // In STOP mode, the CPU is paused until a button is pressed.
+    if (gb->gb_stop && gb->direct.joypad != 0xFF)
+    {
+        gb->gb_stop = 0;
+#if PGB_IS_CGB
+        gb->gb_hle = false;  // paranoia
+#endif
+        return 16;
+    }
+
+#if PGB_IS_CGB
+    gb->gb_hle = false;
+#endif
+
+    uint32_t src[3] = {0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF};
+
+    /* Timer term only if the timer interrupt is enabled (a disabled TIMA
+     * overflow cannot wake HALT; the step-tail catch-up loop absorbs the
+     * missed ticks). */
+    if (gb->gb_reg.IE & TIMER_INTR)
+        src[1] = CORE_CALL_U32($(__gb_timer_distance), gb);
+
+    // PPU event calculation
+    uint16_t ppu_cycles_remaining = __gb_ppu_cycles_remaining(gb, 0);
+
+    if ((int16_t)ppu_cycles_remaining <= 0)
+    {
+        ppu_cycles_remaining = 1;
+    }
+    src[2] = (uint32_t)ppu_cycles_remaining;
+
+#if PGB_IS_CGB
+    // Register-specific HLE: LY polling waits for LY change, not just mode change
+    // (CGB-only: hle_ioaddr is never set on DMG)
+    if (gb->hle_ioaddr == 0x44)
+    {
+        uint16_t ly_cycles;
+        switch (gb->lcd_mode)
+        {
+        case LCD_HBLANK:  // already optimal, LY++ at end of HBlank
+            ly_cycles = ppu_cycles_remaining;
+            break;
+        case LCD_TRANSFER:
+            // skip remaining mode3 + all of mode0
+            ly_cycles = LCD_LINE_CYCLES - PPU_MODE_2_OAM_CYCLES - gb->counter.lcd_count;
+            break;
+        default:
+            // LCD_VBLANK, LCD_SEARCH_OAM, or LCD off: wait for scanline end
+            ly_cycles = LCD_LINE_CYCLES - gb->counter.lcd_count;
+            break;
+        }
+        src[2] = ly_cycles;
+    }
+#endif
+
+    // Find the minimum cycles until the next event
+    uint32_t cycles = src[0];
+    if (src[1] < cycles)
+        cycles = src[1];
+    if (src[2] < cycles)
+        cycles = src[2];
+
+    // ensure positive
+    cycles = (cycles < 16) ? 16 : cycles;
+
+#if PGB_IS_CGB
+    /* Speed-switch settle: CGB-only (KEY1), never set on DMG. */
+    if (gb->cgb_speed_switch_halt_period)
+    {
+        uint32_t max_cycles = gb->cgb_speed_switch_halt_period;
+        if (cycles > max_cycles)
+            cycles = max_cycles;
+
+        gb->cgb_speed_switch_halt_period = max_cycles - cycles;
+        if (gb->cgb_speed_switch_halt_period == 0)
+            gb->gb_halt = 0;
+    }
+
+    /* GDMA stall drain: halt-path cycles are PPU-domain (skip fast-mode >>1). */
+    if (gb->cgb_gdma_halt_period)
+    {
+        uint32_t max_cycles = gb->cgb_gdma_halt_period;
+        if (cycles > max_cycles)
+            cycles = max_cycles;
+
+        gb->cgb_gdma_halt_period = max_cycles - cycles;
+        if (gb->cgb_gdma_halt_period == 0)
+            gb->gb_halt = 0;
+    }
+#endif
+
+    return (uint16_t)cycles;
+}
+
+#if CPU_VALIDATE == 1
+/* Batch-aware reference: replay the micro's batch loop one instruction at a
+ * time via __gb_run_instruction, mirroring the tail exactly, so the final
+ * state can be diffed against the micro batch. Validation-only (simulator). */
+static unsigned $(__gb_run_instruction_reference_batch)(gb_s* gb)
+{
+    unsigned batch_cycles = 0;
+    const unsigned batch_budget = $(__gb_batch_budget)(gb);
+
+    gb->direct.intr_pending = gb->gb_ime && (gb->gb_reg.IF & gb->gb_reg.IE & ANY_INTR);
+
+    u8 opcode = $(__gb_fetch8)(gb);
+
+    for (;;)
+    {
+        /* halt-bug fixup (mirrors NEXT_DISPATCH) */
+        if unlikely (gb->gb_halt_bug)
+        {
+            if (gb->gb_halt_bug == 1)
+                gb->cpu_reg.pc = gb->gb_halt_bug_pc;
+            gb->gb_halt_bug--;
+        }
+
+        unsigned cycles = __gb_run_instruction(gb, opcode);
+        batch_cycles += cycles;
+
+        /* Mirror the micro's intr_pending cache maintenance: __gb_run_instruction
+         * predates the cache and only updates ime/ime_countdown for DI/RETI. */
+        if (opcode == 0xF3) /* DI */
+            gb->direct.intr_pending = 0;
+        else if (opcode == 0xD9) /* RETI */
+            gb->direct.intr_pending = (gb->gb_reg.IF & gb->gb_reg.IE & ANY_INTR) != 0;
+
+        /* batch tail (mirrors next_instruction, duplicated by design) */
+        pgb_batch_elapsed = batch_cycles;
+        pgb_write_cycle = (uint16_t)batch_cycles;
+        if unlikely (gb->gb_ime_countdown > 0 && --gb->gb_ime_countdown == 0)
+        {
+            gb->gb_ime = 1;
+            gb->direct.intr_pending = (gb->gb_reg.IF & gb->gb_reg.IE & ANY_INTR) != 0;
+        }
+        if unlikely (
+            gb->gb_halt || gb->gb_stop || (PGB_IS_CGB ? gb->gb_hle : false) ||
+            gb->direct.intr_pending
+        )
+            break;
+        if (batch_cycles >= batch_budget)
+            break;
+
+        opcode = $(__gb_fetch8)(gb);
+    }
+
+    pgb_batch_elapsed = 0;
+    pgb_write_cycle = 0;
+    return batch_cycles;
+}
+#endif
+
+/**
+ * Internal function used to step the CPU.
+ */
+__core unsigned int $(__gb_step_cpu)(gb_s* gb)
+{
+    unsigned inst_cycles = 16;
+
+    /* Handle interrupts */
+    if unlikely (
+        (gb->gb_ime || gb->gb_halt || gb->gb_stop) && (gb->gb_reg.IF & gb->gb_reg.IE & ANY_INTR) &&
+        (PGB_IS_CGB ? gb->cgb_gdma_halt_period == 0 : true)
+    )
+    {
+        /* Timer-sourced HALT wake takes 6 M-cycles (all other sources: 5).
+         * The timer's CLK9-aligned DFF misses one setup window. */
+        if (gb->gb_halt && !gb->gb_ime)
+        {
+            uint8_t pending = gb->gb_reg.IF & gb->gb_reg.IE;
+            if (pending & TIMER_INTR)
+                inst_cycles += 4;
+        }
+        __gb_interrupt(gb);
+    }
+
+    if unlikely (gb->gb_halt || gb->gb_stop || (PGB_IS_CGB ? gb->gb_hle : false))
+    {
+        inst_cycles = $(__gb_calc_halt_cycles)(gb);
+        goto done_instr_timing;
+    }
+
+#if CPU_VALIDATE == 0
+    // __gb_run_instruction_micro runs the whole cycle-budget batch internally.
+    inst_cycles = MICRO_CALL($(__gb_run_instruction_micro), gb);
+#else
+    // Run the micro batch, then replay it via the batch-aware reference and
+    // diff the final state.
+
+    if (gb->cpu_reg.pc < 0x8000 && __gb_read_full(gb, gb->cpu_reg.pc) == CB_HW_BREAKPOINT_OPCODE)
+    {
+        // can't validate if breakpoint
+        inst_cycles = MICRO_CALL($(__gb_run_instruction_micro), gb);
+    }
+    else
+    {
+        const u16 pc = gb->cpu_reg.pc;
+        static u8 _wram[2][WRAM_SIZE_CGB];
+        static u8 _vram[2][VRAM_SIZE_CGB];
+        static u8 _cart_ram[2][0x20000];
+        static gb_s _gb[2];
+
+        memcpy(_wram[0], gb->wram, WRAM_SIZE_CGB);
+        memcpy(_vram[0], gb->vram, VRAM_SIZE_CGB);
+        if (gb->gb_cart_ram_size > 0)
+            memcpy(_cart_ram[0], gb->gb_cart_ram, gb->gb_cart_ram_size);
+        memcpy(&_gb[0], gb, sizeof(_gb));
+
+        // reference first: replay the batch one instruction at a time
+        // (pgb_in_reference keeps render-only side effects out of the replay)
+#ifdef TARGET_SIMULATOR
+        pgb_in_reference = true;
+#endif
+        unsigned inst_cycles_ref = $(__gb_run_instruction_reference_batch)(gb);
+#ifdef TARGET_SIMULATOR
+        pgb_in_reference = false;
+#endif
+
+        gb->cpu_reg.f &= 0xF0;
+
+        memcpy(_wram[1], gb->wram, WRAM_SIZE_CGB);
+        memcpy(_vram[1], gb->vram, VRAM_SIZE_CGB);
+        memcpy(&_gb[1], gb, sizeof(gb_s));
+        if (gb->gb_cart_ram_size > 0)
+            memcpy(_cart_ram[1], gb->gb_cart_ram, gb->gb_cart_ram_size);
+
+        memcpy(gb->wram, _wram[0], WRAM_SIZE_CGB);
+        memcpy(gb->vram, _vram[0], VRAM_SIZE_CGB);
+        memcpy(gb, &_gb[0], sizeof(gb_s));
+        if (gb->gb_cart_ram_size > 0)
+            memcpy(gb->gb_cart_ram, _cart_ram[0], gb->gb_cart_ram_size);
+
+        // micro last, so gb ends as the micro result (the on-device state)
+        inst_cycles = MICRO_CALL($(__gb_run_instruction_micro), gb);
+
+        gb->cpu_reg.f &= 0xF0;
+
+        if (memcmp(gb->wram, _wram[1], WRAM_SIZE_CGB))
+        {
+            gb->gb_frame = 1;
+            playdate->system->error("difference in wram after batch (pc=%x)", pc);
+        }
+        if (memcmp(gb->vram, _vram[1], VRAM_SIZE_CGB))
+        {
+            gb->gb_frame = 1;
+            playdate->system->error("difference in vram after batch (pc=%x)", pc);
+        }
+        if (memcmp(gb->gb_cart_ram, _cart_ram[1], gb->gb_cart_ram_size))
+        {
+            gb->gb_frame = 1;
+            playdate->system->error("difference in cart ram after batch (pc=%x)", pc);
+        }
+
+        if (memcmp(&gb->cpu_reg, &_gb[1].cpu_reg, sizeof(struct PGB_VERSIONED(cpu_registers_s))))
+        {
+            gb->gb_frame = 1;
+            playdate->system->error("difference in CPU regs after batch (pc=%x)", pc);
+            if (gb->cpu_reg.af != _gb[1].cpu_reg.af)
+            {
+                playdate->system->error(
+                    "AF, was %x, expected %x", gb->cpu_reg.af, _gb[1].cpu_reg.af
+                );
+            }
+            if (gb->cpu_reg.bc != _gb[1].cpu_reg.bc)
+            {
+                playdate->system->error(
+                    "BC, was %x, expected %x", gb->cpu_reg.bc, _gb[1].cpu_reg.bc
+                );
+            }
+            if (gb->cpu_reg.de != _gb[1].cpu_reg.de)
+            {
+                playdate->system->error(
+                    "DE, was %x, expected %x", gb->cpu_reg.de, _gb[1].cpu_reg.de
+                );
+            }
+            if (gb->cpu_reg.hl != _gb[1].cpu_reg.hl)
+            {
+                playdate->system->error(
+                    "HL, was %x, expected %x", gb->cpu_reg.hl, _gb[1].cpu_reg.hl
+                );
+            }
+            if (gb->cpu_reg.sp != _gb[1].cpu_reg.sp)
+            {
+                playdate->system->error(
+                    "SP, was %x, expected %x", gb->cpu_reg.sp, _gb[1].cpu_reg.sp
+                );
+            }
+            if (gb->cpu_reg.pc != _gb[1].cpu_reg.pc)
+            {
+                playdate->system->error(
+                    "PC, was %x, expected %x", gb->cpu_reg.pc, _gb[1].cpu_reg.pc
+                );
+            }
+            goto printregs;
+        }
+
+        // assert audio data is final member of gb_s
+        CB_ASSERT(sizeof(gb_s) - sizeof(audio_data) == offsetof(gb_s, audio));
+        const size_t gb_cmp_len = offsetof(gb_s, audio);
+        size_t gb_off = 0;
+        const uint8_t* gb_pa = (const uint8_t*)gb;
+        const uint8_t* gb_pb = (const uint8_t*)&_gb[1];
+        while (gb_off < gb_cmp_len && gb_pa[gb_off] == gb_pb[gb_off])
+            gb_off++;
+        if (gb_off < gb_cmp_len)
+        {
+            gb->gb_frame = 1;
+            playdate->system->error(
+                "difference in gb struct after batch (pc=%x, off=%u)", pc, (unsigned)gb_off
+            );
+            goto printregs;
+        }
+
+        if (false)
+        {
+        printregs:
+            playdate->system->logToConsole("AF %x -> %x", _gb[0].cpu_reg.af, gb->cpu_reg.af);
+            playdate->system->logToConsole("BC %x -> %x", _gb[0].cpu_reg.bc, gb->cpu_reg.bc);
+            playdate->system->logToConsole("DE %x -> %x", _gb[0].cpu_reg.de, gb->cpu_reg.de);
+            playdate->system->logToConsole("HL %x -> %x", _gb[0].cpu_reg.hl, gb->cpu_reg.hl);
+            playdate->system->logToConsole("SP %x -> %x", _gb[0].cpu_reg.sp, gb->cpu_reg.sp);
+            playdate->system->logToConsole("PC %x -> %x", _gb[0].cpu_reg.pc, gb->cpu_reg.pc);
+        }
+
+        if (inst_cycles != inst_cycles_ref)
+        {
+            gb->gb_frame = 1;
+            playdate->system->error(
+                "cycle difference after batch (pc=%x, expected %d, was %d)", pc, inst_cycles_ref,
+                inst_cycles
+            );
+        }
+    }
+#endif
+
+    /* OAM DMA transfer: 1 byte per M-cycle (4 T-cycles) */
+    if (gb->dma_active && !gb->gb_halt && !gb->gb_stop)
+    {
+        unsigned dma_bytes = inst_cycles >> 2;
+
+        while (dma_bytes > 0 && gb->dma_dest < 0xA0)
+        {
+            /* CORE_CALL_READ: step tail lives in the B block, __gb_read in A;
+             * the blocks relocate independently. */
+            gb->oam[gb->dma_dest++] = CORE_CALL_READ($(__gb_read), gb, gb->dma_src++);
+            dma_bytes--;
+        }
+
+        if (gb->dma_dest >= 0xA0)
+            gb->dma_active = false;
+    }
+
+    // cycles are halved/quartered during overclocked vblank
+    if (gb->lcd_mode == LCD_VBLANK)
+    {
+        inst_cycles >>= gb->overclock;
+    }
+
+#if PGB_IS_CGB
+    /* Fast-mode halving is exact: inst_cycles is in T-cycles, always a
+     * multiple of 4 (GB instructions take whole M-cycles). No clamp needed:
+     * overclock is capped at x2 while fast mode is active (see the STOP
+     * speed-switch handler and game_scene), so the combined shift is at
+     * most >>2 and the result is at least 1. */
+    inst_cycles >>= gb->cgb_fast_mode_active;
+#endif
+
+done_instr_timing:
+    {
+#if PGB_IS_CGB
+        unsigned cgb_fast = gb->cgb_fast_mode_active;
+#endif
+        if (gb->counter.serial_count > 0)
+        {
+            /* Overshoot-safe expiry: subtracting inst_cycles can skip past zero
+             * (an interrupt mid-wait shifts the cycle grid), and with an unsigned
+             * counter that wraps to a huge value and never completes, hanging any
+             * game that polls SC bit 7 (F-1 Pole Position on hardware). */
+            if (gb->counter.serial_count <= inst_cycles)
+            {
+                if ((gb->gb_reg.SC & SERIAL_SC_TX_START) && (gb->gb_reg.SC & SERIAL_SC_CLOCK_SRC))
+                {
+                    // Simulate disconnected cable input
+                    gb->gb_reg.SB = 0xFF;
+                    // Request Serial interrupt
+                    gb->gb_reg.IF |= SERIAL_INTR;
+                    // Clear transfer start flag
+                    gb->gb_reg.SC &= ~SERIAL_SC_TX_START;
+                }
+                gb->counter.serial_count = 0;
+            }
+            else
+            {
+                gb->counter.serial_count -= inst_cycles;
+            }
+        }
+
+        if (gb->direct.joypad_interrupt_delay > 0)
+        {
+            if (gb->direct.joypad_interrupt_delay <= (int)inst_cycles)
+            {
+                gb->gb_reg.IF |= CONTROL_INTR;
+                gb->direct.joypad_interrupt_delay = 0;
+            }
+            else
+            {
+                gb->direct.joypad_interrupt_delay -= inst_cycles;
+            }
+        }
+
+        /* Handle delayed TIMA reload from the previous cycle. The IF bit was
+         * already set when the overflow was detected (same tail); only the
+         * read-side reload window (TIMA reads as TMA, TMA-write quirk) is
+         * tracked by this flag, so just clear it here. */
+        if (gb->gb_reg.tima_overflow_delay)
+        {
+            gb->gb_reg.tima_overflow_delay = 0;
+        }
+
+        /* TIMA register timing */
+        if (gb->gb_reg.tac_enable)
+        {
+            uint16_t tima_threshold = gb->gb_reg.tac_cycles;
+#if PGB_IS_CGB
+            tima_threshold >>= cgb_fast;
+#endif
+            gb->counter.tima_count += inst_cycles;
+            while (gb->counter.tima_count >= tima_threshold)
+            {
+                gb->counter.tima_count -= tima_threshold;
+                gb->gb_reg.TIMA++;
+
+                if (gb->gb_reg.TIMA == 0x00)
+                {
+                    gb->gb_reg.TIMA = gb->gb_reg.TMA;
+                    gb->gb_reg.tima_overflow_delay = 1;
+                    /* Set IF.TIMER immediately (hardware latches it 4 T after
+                     * the overflow). Deferring to the next step's tail left
+                     * the pending bit outside the IF register for up to two
+                     * batch lengths, where a game's IF write (e.g. Yu-Gi-Oh!'s
+                     * far-call trampoline does res 2,(IF) around every banked
+                     * call) could eat it; the missed timer IRQ deadlocks the
+                     * fresh-boot init on a white screen. IF reads already
+                     * project this bit via __gb_timer_peek, so register state
+                     * now matches what reads reported. */
+                    gb->gb_reg.IF |= TIMER_INTR;
+                }
+            }
+        }
+
+        /* DIV register timing */
+        // update DIV timer
+        uint16_t div_threshold = DIV_CYCLES;
+#if PGB_IS_CGB
+        div_threshold >>= cgb_fast;
+#endif
+        gb->counter.div_count += inst_cycles;
+
+        if (gb->counter.div_count >= div_threshold)
+        {
+#if PGB_IS_CGB
+            if (cgb_fast)
+            {
+                uint8_t old_div = gb->gb_reg.DIV;
+                uint8_t div_inc = gb->counter.div_count >> 7;
+                gb->gb_reg.DIV += div_inc;
+                gb->counter.div_count &= 0x7F;
+
+                if (preferences_sound_mode == 1)
+                    __apu_div_tick_detect(&gb->audio, old_div, div_inc, 0x20u);
+                else if (preferences_sound_mode == 2)
+                    __apu_div_step_track(old_div, div_inc, 0x20u);
+            }
+            else
+#endif
+            {
+                uint8_t old_div = gb->gb_reg.DIV;
+                uint8_t div_inc = gb->counter.div_count >> 8;
+                gb->gb_reg.DIV += div_inc;
+                gb->counter.div_count &= 0xFF;
+
+                if (preferences_sound_mode == 1)
+                    __apu_div_tick_detect(&gb->audio, old_div, div_inc, 0x10u);
+                else if (preferences_sound_mode == 2)
+                    __apu_div_step_track(old_div, div_inc, 0x10u);
+            }
+        }
+
+        gb->counter.lcd_count += inst_cycles;
+        gb->counter.apu_count += inst_cycles;
+
+        if (!(gb->gb_reg.LCDC & LCDC_ENABLE))
+        {
+            gb->counter.lcd_off_count += inst_cycles;
+            if (gb->counter.lcd_off_count >= LCD_FRAME_CYCLES)
+            {
+                gb->counter.lcd_off_count -= LCD_FRAME_CYCLES;
+                gb->gb_frame = 1;
+                if (!gb->direct.frame_skip)
+                {
+                    uint8_t fill = (gb->gb_reg.BGP & 3) * 0x55;
+                    uint32_t fill_word = (uint32_t)fill * 0x01010101u;
+                    for (int i = 0; i < LCD_BUFFER_BYTES / 4; i++)
+                        ((uint32_t*)gb->lcd)[i] = fill_word;
+                    if (pgb_dirty_prev && pgb_dirty_flags && !pgb_dirty_skip)
+                    {
+                        for (int i = 0; i < LCD_BUFFER_BYTES / 4; i++)
+                            ((uint32_t*)pgb_dirty_prev)[i] = fill_word;
+                        for (int i = 0; i < LCD_HEIGHT / 16; i++)
+                            pgb_dirty_flags[i] = 0xFFFF;
+                    }
+                }
+            }
+        }
+        else
+        {
+            /* LCD Timing */
+            bool ticked;
+            do
+            {
+                ticked = false;
+                switch (gb->lcd_mode)
+                {
+                // Mode 2: OAM Search (80 cycles)
+                // The PPU is reading OAM (Sprite Attribute Table) to find sprites for the current
+                // line.
+                case LCD_SEARCH_OAM:
+                    if (gb->counter.lcd_count >= PPU_MODE_2_OAM_CYCLES)
+                    {
+                        gb->counter.lcd_count -= PPU_MODE_2_OAM_CYCLES;
+                        gb->lcd_mode = LCD_TRANSFER;
+                        gb->gb_reg.STAT = (gb->gb_reg.STAT & ~STAT_MODE) | LCD_TRANSFER;
+
+#if PGB_IS_CGB
+                        /* Flush batched palette gray-LUT rebuilds. Palette
+                         * writes only land outside mode 3, so rebuilding here
+                         * matches per-write update timing. */
+                        if unlikely (
+                            !gb->direct.frame_skip && (pgb_cgb_bg_pal_dirty | pgb_cgb_obj_pal_dirty)
+                        )
+                            __cgb_flush_pal_dirty(gb);
+#endif
+
+                        DRAW_CALL($(__gb_ppu_mode3_setup), gb);
+                        DRAW_CALL($(__gb_update_stat_irq), gb);
+                        ticked = true;
+                    }
+                    break;
+
+                // Mode 3: Pixel Transfer (variable, 172-289 cycles on hardware).
+                case LCD_TRANSFER:
+                    if (gb->counter.lcd_count >= gb->display.current_mode3_cycles)
+                    {
+                        gb->counter.lcd_count -= gb->display.current_mode3_cycles;
+
+                        if likely (!gb->direct.frame_skip && gb->lcd_master_enable)
+                        {
+                            // draw cluster may be relocated into the main DTCM
+                            // pool (rev A); call via the offset-adjusted pointer.
+                            void (*draw_line)(gb_s*) =
+                                (void (*)(gb_s*))((char*)$(__gb_draw_line) + pgb_draw_reloc_offset);
+                            draw_line(gb);
+                        }
+
+                        gb->lcd_mode = LCD_HBLANK;
+                        gb->gb_reg.STAT = (gb->gb_reg.STAT & ~STAT_MODE) | LCD_HBLANK;
+                        DRAW_CALL($(__gb_update_stat_irq), gb);
+#if PGB_IS_CGB
+                        if (gb->cgb_hdma_active)
+                            RARE_CALL(__gb_do_hdma, gb);
+#endif
+                        ticked = true;
+                    }
+                    break;
+
+                // Mode 0: H-Blank (remaining cycles of the 456 total)
+                // The PPU is idle until the end of the scanline.
+                case LCD_HBLANK:
+                    if (gb->counter.lcd_count >= gb->display.current_mode0_cycles)
+                    {
+                        gb->counter.lcd_count -= gb->display.current_mode0_cycles;
+                        gb->gb_reg.LY++;
+
+                        if (gb->gb_reg.LY == LCD_HEIGHT)
+                        {
+                            gb->lcd_mode = LCD_VBLANK;
+                            gb->gb_reg.STAT = (gb->gb_reg.STAT & ~STAT_MODE) | LCD_VBLANK;
+                            gb->gb_frame = 1;
+                            gb->gb_reg.IF |= VBLANK_INTR;
+                            gb->direct.wy_latched = 0;
+
+                            // VBlank entry STAT glitch (Case 1): if LYC and Mode 1
+                            // interrupts are both enabled, the LYC leg drops (fast)
+                            // before Mode 1 rises (slow), creating a brief through-zero.
+                            if ((gb->gb_reg.STAT & STAT_LYC_COINC) &&
+                                (gb->gb_reg.STAT & STAT_LYC_INTR) &&
+                                (gb->gb_reg.STAT & STAT_MODE_1_INTR))
+                            {
+                                gb->gb_reg.IF |= LCDC_INTR;
+                                gb->direct.stat_line = 1;
+                            }
+
+                            DRAW_CALL($(__gb_update_stat_irq), gb);
+
+                            DRAW_CALL($(__gb_update_lyc_and_stat_irq), gb);
+                        }
+                        else
+                        {
+                            gb->lcd_mode = LCD_SEARCH_OAM;
+                            gb->gb_reg.STAT = (gb->gb_reg.STAT & ~STAT_MODE) | LCD_SEARCH_OAM;
+                            pgb_bgp_evt_count = 0;
+                            pgb_bgp_line_init = gb->gb_reg.BGP;
+
+                            DRAW_CALL($(__gb_update_lyc_and_stat_irq), gb);
+                        }
+                        ticked = true;
+                    }
+                    break;
+
+                // Mode 1: V-Blank (10 lines, 4560 cycles total)
+                // The PPU is idle, giving the CPU time to update VRAM.
+                case LCD_VBLANK:
+                    if (gb->counter.lcd_count >= LCD_LINE_CYCLES)
+                    {
+                        gb->counter.lcd_count -= LCD_LINE_CYCLES;
+
+#if PGB_IS_CGB
+                        /* HBlank HDMA continues during VBlank: one block per line. */
+                        if (gb->cgb_hdma_active)
+                            RARE_CALL(__gb_do_hdma, gb);
+#endif
+
+                        if (gb->gb_reg.LY == 0)
+                        {
+                            gb->lcd_mode = LCD_SEARCH_OAM;
+                            gb->gb_reg.STAT = (gb->gb_reg.STAT & ~STAT_MODE) | LCD_SEARCH_OAM;
+                            pgb_bgp_evt_count = 0;
+                            pgb_bgp_line_init = gb->gb_reg.BGP;
+
+                            // VBlank exit STAT glitch (Case 4): if Mode 1 and Mode 2
+                            // interrupts are both enabled, Mode 1 drops (fast) before
+                            // Mode 2 rises (slow), creating a brief through-zero.
+                            if ((gb->gb_reg.STAT & STAT_MODE_1_INTR) &&
+                                (gb->gb_reg.STAT & STAT_MODE_2_INTR))
+                            {
+                                gb->gb_reg.IF |= LCDC_INTR;
+                                gb->direct.stat_line = 1;
+                            }
+
+                            gb->display.window_clear = 0;
+
+                            DRAW_CALL($(__gb_update_lyc_and_stat_irq), gb);
+                        }
+                        else
+                        {
+                            gb->gb_reg.LY++;
+                            DRAW_CALL($(__gb_update_lyc_and_stat_irq), gb);
+                        }
+                        ticked = true;
+                    }
+                    // "Short Line 153" Fix: during VBlank line 153, LY wraps to 0 very early
+                    // (after just a few cycles), but the PPU remains in VBlank for the full
+                    // line duration. Placed inside the case so the check only evaluates
+                    // during VBlank steps, not every CPU step.
+                    else if (gb->gb_reg.LY == 153)
+                    {
+                        gb->gb_reg.LY = 0;
+                        DRAW_CALL($(__gb_update_lyc_and_stat_irq), gb);
+                        ticked = true;
+                    }
+                    break;
+                }
+            } while (ticked);
+        }
+        return inst_cycles;
+    }
+}
+
+__core void $(gb_run_frame)(gb_s* gb)
+{
+    gb->direct.has_read_accelerometer_this_frame = false;
+
+#if PGB_IS_CGB
+    gb->cgb_fast_mode_active = gb->cgb_fast_mode && (preferences_cgb_speed == 0);
+#endif
+
+    gb->gb_frame = 0;
+    gb->counter.apu_count = 0;
+
+    unsigned int total_cycles = 0;
+
+#ifdef TARGET_SIMULATOR
+    bool trace_this_frame = (g_trace_frames_remaining > 0);
+    if (trace_this_frame)
+    {
+        playdate->system->logToConsole(
+            "=== TRACE frame begin (rom_bank=%x pc=%04x) ===", gb->selected_rom_bank, gb->cpu_reg.pc
+        );
+    }
+#endif
+
+    while (!gb->gb_frame && total_cycles < SCREEN_REFRESH_CYCLES)
+    {
+#ifdef TARGET_SIMULATOR
+        if (trace_this_frame)
+        {
+            playdate->system->logToConsole(
+                "%x:%04x op=%02x af=%02x%02x bc=%02x%02x de=%02x%02x hl=%02x%02x sp=%04x ime=%d "
+                "ly=%02x",
+                gb->selected_rom_bank, gb->cpu_reg.pc, __gb_read_full(gb, gb->cpu_reg.pc),
+                gb->cpu_reg.a, gb->cpu_reg.f, gb->cpu_reg.b, gb->cpu_reg.c, gb->cpu_reg.d,
+                gb->cpu_reg.e, gb->cpu_reg.h, gb->cpu_reg.l, gb->cpu_reg.sp, gb->gb_ime,
+                gb->gb_reg.LY
+            );
+        }
+#endif
+        total_cycles += $(__gb_step_cpu)(gb);
+    }
+
+    /* Mark the frame's end in the APU write-event stream (accurate sound
+     * mode): gives audio event replay an explicit frame boundary even
+     * when the frame had no register writes. */
+    if (gb->direct.sound)
+        audio_note_frame_end(&gb->audio, gb->counter.apu_count);
+
+#ifdef TARGET_SIMULATOR
+    if (trace_this_frame)
+    {
+        playdate->system->logToConsole("=== TRACE frame end (cycles=%u) ===", total_cycles);
+        g_trace_frames_remaining--;
+    }
+#endif
+}
+
+#undef PGB_TEMPLATE

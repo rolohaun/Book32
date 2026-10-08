@@ -334,6 +334,14 @@ static uint8_t u8Cache[1024]; // used also for masking a row of 2-bit codes, nee
 #ifndef __LINUX__
 static gpio_num_t u8CKV, u8SPH;
 static uint8_t bSlowSPH = 0;
+#if defined(BOARD_LILYGO_T5S3_PRO)
+// Used only by videoScan's exclusive queued transport. Scalar atomics are
+// lock-free on ESP32-S3; publish pins/count before enabling the ISR branch.
+static_assert(__atomic_always_lock_free(sizeof(uint32_t), nullptr), "video ISR counters must be lock-free");
+static uint32_t video_queue_active = 0, video_queue_completed = 0;
+static uint32_t video_queue_total = 0;
+static gpio_num_t video_queue_ckv, video_queue_le;
+#endif
 
 #ifdef CONFIG_IDF_TARGET_ESP32C5
 parlio_tx_unit_config_t parlio_tx_config;
@@ -347,8 +355,27 @@ static bool c5_notify_dma_ready(parlio_tx_unit_handle_t handle, const parlio_tx_
     return false;
 }
 #elif !defined(__LINUX__)
-static bool s3_notify_dma_ready(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_io_event_data_t *edata, void *user_ctx)
+static bool IRAM_ATTR s3_notify_dma_ready(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_io_event_data_t *edata, void *user_ctx)
 {           
+#if defined(BOARD_LILYGO_T5S3_PRO)
+    if (__atomic_load_n(&video_queue_active, __ATOMIC_ACQUIRE)) {
+        const uint32_t completed = __atomic_load_n(&video_queue_completed, __ATOMIC_RELAXED) + 1;
+        // IDF's I80 ISR invokes this callback BEFORE starting the next queued
+        // transaction. Latch the completed row, then select the next gate just
+        // as bbepWriteRow does. No queue or task API may run in this callback.
+        if (completed < video_queue_total) {
+            gpio_set_level(video_queue_ckv, 0);
+            gpio_set_level(video_queue_le, 1);
+            gpio_set_level(video_queue_le, 0);
+            gpio_set_level(video_queue_ckv, 1);
+        } else {
+            dma_is_done = true;
+        }
+        // Buffers become reusable only after the last DMA read and row latch.
+        __atomic_store_n(&video_queue_completed, completed, __ATOMIC_RELEASE);
+        return false;
+    }
+#endif
     if (bSlowSPH) {
         gpio_set_level(u8SPH, 1); // CS deactivate
     }

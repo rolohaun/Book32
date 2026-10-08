@@ -83,6 +83,9 @@ void DisplayMgr::setRotation(int rotation) {
 
 bool DisplayMgr::mapNativeTouchToScreen(uint16_t nativeX, uint16_t nativeY,
                                         uint16_t& screenX, uint16_t& screenY) const {
+#if defined(BOARD_LILYGO_T5S3_PRO)
+    return LilygoLayout::mapTouch(nativeX, nativeY, _rotation, screenX, screenY);
+#else
     // Native panel coordinates are 800x480. These transformations mirror
     // Adafruit_GFX's rotation mapping into Book32's 480x800 portrait space.
     if (nativeX >= PANEL_WIDTH || nativeY >= PANEL_HEIGHT) return false;
@@ -94,6 +97,7 @@ bool DisplayMgr::mapNativeTouchToScreen(uint16_t nativeX, uint16_t nativeY,
         screenY = nativeX;
     }
     return screenX < SCREEN_WIDTH && screenY < SCREEN_HEIGHT;
+#endif
 }
 
 void DisplayMgr::loadDisplaySettings() {

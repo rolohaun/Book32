@@ -1,4 +1,5 @@
 #include "BatteryMgr.h"
+#include "SleepDefaults.h"
 #include "../../include/Config.h"
 #include "Config.h"
 #include <esp_sleep.h>
@@ -6,6 +7,7 @@
 #include "DisplayMgr.h"
 #include "InputMgr.h"
 #include "AppMgr.h"
+#include "RomStorage.h"
 #include "../Book32_Web/WebMgr.h"
 #include <ArduinoJson.h>
 #include <Fonts/FreeSans18pt7b.h>
@@ -390,6 +392,9 @@ void BatteryMgr::loadSleepSettings() {
                 int configVersion = doc["configVersion"] | 1;
                 _sleepTimeoutMinutes = doc["sleepTimeout"] | SLEEP_TIMEOUT_DEFAULT_MINUTES;
                 _sleepMessage = doc["sleepMessage"] | SLEEP_MESSAGE_DEFAULT;
+                if (sleepMessageNeedsMigration(configVersion, _sleepMessage.c_str())) {
+                    _sleepMessage = SLEEP_MESSAGE_DEFAULT;
+                }
 #if defined(BOARD_SEEED_STICKY)
                 if (configVersion < SLEEP_CONFIG_VERSION && _sleepTimeoutMinutes == 0) {
                     _sleepTimeoutMinutes = SLEEP_TIMEOUT_DEFAULT_MINUTES;
@@ -441,6 +446,9 @@ void BatteryMgr::setReaderActive(bool active) {
 }
 
 void BatteryMgr::enterIdleSleep() {
+#if defined(BOARD_LILYGO_T5S3_PRO)
+    if (RomStorage::uploading()) { resetIdleTimer(); return; }
+#endif
     if (_sleeping) return;
     _sleeping = true;
     Serial.println("Entering idle sleep...");

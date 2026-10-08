@@ -12,11 +12,14 @@ public:
     bool readFrame(bool& touching, uint16_t& nativeX, uint16_t& nativeY);
     bool available() const { return _address != 0; }
 #if defined(BOARD_LILYGO_T5S3_PRO)
-    bool readPoints(uint16_t* x, uint16_t* y, uint8_t& count);
+    bool readPoints(uint16_t* x, uint16_t* y, uint8_t& count, bool& homePressed);
 #endif
 
 private:
     uint8_t _address = 0;
+#if defined(BOARD_LILYGO_T5S3_PRO)
+    bool _homeKeyDown = false;
+#endif
 
     bool probe();
     bool readRegister(uint16_t reg, uint8_t* data, uint8_t length);

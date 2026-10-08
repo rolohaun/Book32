@@ -465,6 +465,17 @@ void AppReader::loadBookCover(BookEntry& book, int width, int height) {
 
 void AppReader::handleInput(InputAction action) {
     if (action == INPUT_NONE) return;
+#if defined(BOARD_LILYGO_T5S3_PRO)
+    if (action == INPUT_BACK) {
+        if (_state == VIEW_READING) {
+            closeBook(); _state = VIEW_LIBRARY;
+            _libraryFirstDraw = true; _librarySelectionOnlyRedraw = false; _needsRedraw = true;
+        } else {
+            markProgressInactive(); AppMgr::getInstance().switchTo(0);
+        }
+        return;
+    }
+#endif
     if (_state == VIEW_LIBRARY) {
         // Index -1 = "Back to Menu", 0+ = books
         int maxIndex = (int)_books.size() - 1;

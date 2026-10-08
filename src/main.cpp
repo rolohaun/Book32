@@ -2,6 +2,9 @@
 #include <WiFi.h>
 #include "Config.h"
 #include "NetworkState.h"
+#if defined(BOARD_LILYGO_T5S3_PRO)
+#include "NetworkWork.h"
+#endif
 
 #include "DisplayMgr.h"
 #include "InputMgr.h"
@@ -33,7 +36,7 @@ volatile bool gNetworkStartupInProgress = false;
 static WiFiManager* gWifiManager = nullptr;
 #endif
 
-static void networkStartupTask(void* parameter) {
+static void networkStartupWork(void* parameter) {
     (void)parameter;
 
     Serial.println("Network startup task started");
@@ -44,11 +47,16 @@ static void networkStartupTask(void* parameter) {
     WiFi.begin();
     int attempts = 0;
     while (WiFi.status() != WL_CONNECTED && attempts < 40) {
+#if defined(BOARD_LILYGO_T5S3_PRO)
+        if (NetworkWork::gate().paused()) {
+            gNetworkStartupInProgress=false;
+            return;
+        }
+#endif
         App* current = AppMgr::getInstance().getCurrentApp();
-        if (current && (strcmp(current->getName(), "Settings") == 0 || strcmp(current->getName(), "Paperboy") == 0)) {
+        if (current && (strcmp(current->getName(), "Settings") == 0 || strcmp(current->getName(), "Ink Boy") == 0)) {
             // The interactive app now owns the radio and scan lifecycle.
             gNetworkStartupInProgress = false;
-            vTaskDelete(nullptr);
             return;
         }
         vTaskDelay(pdMS_TO_TICKS(250));
@@ -71,7 +79,6 @@ static void networkStartupTask(void* parameter) {
 #endif
         Serial.println("WiFi setup did not connect; continuing offline");
         gNetworkStartupInProgress = false;
-        vTaskDelete(nullptr);
         return;
     }
 
@@ -79,13 +86,20 @@ static void networkStartupTask(void* parameter) {
     Serial.println(WiFi.localIP());
 
     App* currentApp = AppMgr::getInstance().getCurrentApp();
-    if (currentApp && (strcmp(currentApp->getName(), "eReader") == 0 || strcmp(currentApp->getName(), "Paperboy") == 0)) {
+    if (currentApp && (strcmp(currentApp->getName(), "eReader") == 0 || strcmp(currentApp->getName(), "Ink Boy") == 0)) {
         Serial.println("Network startup skipped services; eReader is active");
+        if (strcmp(currentApp->getName(),"Ink Boy")==0) {
+            gNetworkStartupInProgress=false;
+            return; // Ink Boy is the sole radio-shutdown owner.
+        }
+#if defined(BOARD_LILYGO_T5S3_PRO)
+        // Ink Boy owns shutdown and waits for this lease plus active HTTPS.
+        if (NetworkWork::gate().paused()) { gNetworkStartupInProgress=false; return; }
+#endif
         WebMgr::getInstance().stop();
         WiFi.disconnect(false);
         WiFi.mode(WIFI_OFF);
         gNetworkStartupInProgress = false;
-        vTaskDelete(nullptr);
         return;
     }
 
@@ -97,6 +111,18 @@ static void networkStartupTask(void* parameter) {
 
     Serial.println("Network services ready");
     gNetworkStartupInProgress = false;
+}
+
+static void networkStartupTask(void* parameter) {
+#if defined(BOARD_LILYGO_T5S3_PRO)
+    {
+        NetworkWork::Lease network;
+        if (network) networkStartupWork(parameter);
+        else gNetworkStartupInProgress=false;
+    }
+#else
+    networkStartupWork(parameter);
+#endif
     vTaskDelete(nullptr);
 }
 

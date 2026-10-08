@@ -1,5 +1,8 @@
 # InkDeck 1.3.0 — LILYGO experimental preview
 
+This document describes the original 1.3.0 release. For the current CrankBoy,
+Game Boy Color and ROM upload implementation, see [the development notes](lilygo-crankboy.md).
+
 ## Hardware and installation
 
 Only **T5 E-Paper S3 Pro H752-01** and its Pro Lite variant are targeted.

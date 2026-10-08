@@ -12,6 +12,8 @@
 #include "../Book32_Core/DisplayMgr.h"
 #include "../Book32_Core/SoundMgr.h"
 #include "../../include/Config.h"
+#include "RomUpload.h"
+#include "LilygoControls.h"
 
 static const char* READER_PROGRESS_PATH = "/reader_progress.json";
 
@@ -158,6 +160,10 @@ void WebMgr::mountFilesystems() {
 void WebMgr::init() {
     if (_initialized) return;
     if (!_endpointsConfigured) {
+#if defined(BOARD_LILYGO_T5S3_PRO)
+        // Cartridge RTC catch-up uses UTC; synchronization is asynchronous.
+        configTime(0, 0, "pool.ntp.org", "time.cloudflare.com");
+#endif
         setupEndpoints();
         _endpointsConfigured = true;
     }
@@ -334,7 +340,7 @@ void WebMgr::setupEndpoints() {
     // API: Status
     server->on("/api/status", HTTP_GET, [this](AsyncWebServerRequest *request) {
         AsyncResponseStream *response = request->beginResponseStream("application/json");
-        DynamicJsonDocument doc(512);
+        DynamicJsonDocument doc(768);
 
         unsigned long totalSeconds = millis() / 1000;
         unsigned long hours = totalSeconds / 3600;
@@ -350,6 +356,11 @@ void WebMgr::setupEndpoints() {
         doc["voltage"] = BatteryMgr::getInstance().getVoltage();
         doc["charging"] = BatteryMgr::getInstance().isCharging();
         doc["version"] = SYSTEM_VERSION;
+#if defined(BOARD_LILYGO_T5S3_PRO)
+        doc["romUpload"] = true;
+        doc["lilygoControls"] = true;
+        doc["romMaxBytes"] = INK_ROM_MAX_BYTES;
+#endif
 
         doc["freeSpace"] = ebookStorageTotalBytes() - ebookStorageUsedBytes();
         doc["totalSpace"] = ebookStorageTotalBytes();
@@ -361,6 +372,9 @@ void WebMgr::setupEndpoints() {
         request->send(response);
     });
 
+#if defined(BOARD_LILYGO_T5S3_PRO)
+    RomUpload::configure(server);
+#endif
     // API: List Books from EbookFS
     server->on("/api/books", HTTP_GET, [](AsyncWebServerRequest *request) {
         AsyncResponseStream *response = request->beginResponseStream("application/json");
@@ -712,6 +726,32 @@ void WebMgr::setupEndpoints() {
     );
     server->addHandler(soundSettingsHandler);
 
+#if defined(BOARD_LILYGO_T5S3_PRO)
+    server->on("/api/settings/lilygo", HTTP_GET, [](AsyncWebServerRequest* request) {
+        auto& c = LilygoControls::instance();
+        auto* response = request->beginResponseStream("application/json");
+        DynamicJsonDocument doc(192);
+        doc["brightness"] = c.brightness(); doc["front"] = int(c.frontAction()); doc["side"] = int(c.sideAction());
+        serializeJson(doc, *response); request->send(response);
+    });
+    auto* lilygoSettingsHandler = new AsyncCallbackJsonWebHandler("/api/settings/lilygo",
+        [](AsyncWebServerRequest* request, JsonVariant& json) {
+            if (!json["brightness"].is<int>() || !json["front"].is<int>() || !json["side"].is<int>()) {
+                request->send(400,"application/json","{\"status\":\"invalid\"}"); return;
+            }
+            int brightness = json["brightness"], front = json["front"], side = json["side"];
+            if (brightness < 10 || brightness > 100 || front < 0 || front >= LilygoControls::ACTION_COUNT ||
+                side < 0 || side >= LilygoControls::ACTION_COUNT) {
+                request->send(400,"application/json","{\"status\":\"invalid\"}"); return;
+            }
+            // GPIO/LEDC updates happen in the main loop, never in this web task.
+            bool ok = LilygoControls::instance().save(brightness,front,side);
+            request->send(ok ? 200 : 500,"application/json",ok ? "{\"status\":\"ok\"}" : "{\"status\":\"save_failed\"}");
+        });
+    lilygoSettingsHandler->setMethod(HTTP_POST);
+    server->addHandler(lilygoSettingsHandler);
+#endif
+
     // API: Reader Progress - GET
     server->on("/api/reader/progress", HTTP_GET, [](AsyncWebServerRequest *request) {
         AsyncResponseStream *response = request->beginResponseStream("application/json");
@@ -821,6 +861,7 @@ void WebMgr::setupEndpoints() {
     server->on("/api/settings/sleep", HTTP_GET, [](AsyncWebServerRequest *request) {
         AsyncResponseStream *response = request->beginResponseStream("application/json");
         DynamicJsonDocument doc(512);
+        doc["defaultSleepMessage"] = SLEEP_MESSAGE_DEFAULT;
 
         // Try to load existing settings from EbookFS
         if (EbookFS.exists("/sleep_config.json")) {

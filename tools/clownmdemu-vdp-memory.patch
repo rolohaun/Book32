@@ -1,0 +1,121 @@
+diff --git a/source/vdp.c b/source/vdp.c
+index 1eddc12..1b9661c 100644
+--- a/source/vdp.c
++++ b/source/vdp.c
+@@ -11,6 +11,8 @@
+ 
+ #include <assert.h>
+ #include <stddef.h>
++#include <stdbool.h>
++#include <stdlib.h>
+ #include <string.h>
+ 
+ #include "../libraries/clowncommon/clowncommon.h"
+@@ -57,12 +59,26 @@ typedef struct BlitLookup
+ 		BlitLookupLower lower[1 << (1 + 2 + 4)];
+ } BlitLookup;
+ 
+-static struct
++/* Modified for InkDeck, 2026-10-08: allocate this ~96 KiB lookup only while Genesis is open. */
++typedef struct
+ {
+ 	BlitLookup normal;
+ 	BlitLookup shadow_highlight;
+ 	BlitLookup forced_layer;
+-} blit_lookup;
++} InkGenesisBlitLookup;
++static InkGenesisBlitLookup *inkGenesisBlitLookup;
++
++bool inkGenesisLookupAllocate(void* (*allocate)(size_t))
++{
++    inkGenesisBlitLookup = (InkGenesisBlitLookup*)allocate(sizeof(*inkGenesisBlitLookup));
++    return inkGenesisBlitLookup != NULL;
++}
++
++void inkGenesisLookupFree(void)
++{
++    free(inkGenesisBlitLookup);
++    inkGenesisBlitLookup = NULL;
++}
+ 
+ static cc_bool IsDMAPending(const VDP_State* const state)
+ {
+@@ -280,11 +296,11 @@ void VDP_Constant_Initialise(void)
+ 	   every time a pixel is blitted. This provides a *massive* speed boost. */
+ 	cc_u16f new_pixel;
+ 
+-	for (new_pixel = 0; new_pixel < CC_COUNT_OF(blit_lookup.normal.lower); ++new_pixel)
++	for (new_pixel = 0; new_pixel < CC_COUNT_OF(inkGenesisBlitLookup->normal.lower); ++new_pixel)
+ 	{
+ 		cc_u16f old_pixel;
+ 
+-		for (old_pixel = 0; old_pixel < CC_COUNT_OF(blit_lookup.normal.lower[0].pixels); ++old_pixel)
++		for (old_pixel = 0; old_pixel < CC_COUNT_OF(inkGenesisBlitLookup->normal.lower[0].pixels); ++old_pixel)
+ 		{
+ 			const cc_u16f palette_line_index_mask = 0xF;
+ 			const cc_u16f colour_index_mask = 0x3F;
+@@ -310,7 +326,7 @@ void VDP_Constant_Initialise(void)
+ 
+ 			output |= old_not_shadowed || new_not_shadowed ? not_shadowed_mask : 0;
+ 
+-			blit_lookup.normal.lower[new_pixel].pixels[old_pixel] = (cc_u8l)output;
++			inkGenesisBlitLookup->normal.lower[new_pixel].pixels[old_pixel] = (cc_u8l)output;
+ 
+ 			/* Now, generate the table for shadow/highlight blitting */
+ 			if (draw_new_pixel)
+@@ -347,10 +363,10 @@ void VDP_Constant_Initialise(void)
+ 				output = old_colour_index | (old_not_shadowed ? SHADOW_HIGHLIGHT_NORMAL : SHADOW_HIGHLIGHT_SHADOW);
+ 			}
+ 
+-			blit_lookup.shadow_highlight.lower[new_pixel].pixels[old_pixel] = (cc_u8l)output;
++			inkGenesisBlitLookup->shadow_highlight.lower[new_pixel].pixels[old_pixel] = (cc_u8l)output;
+ 
+ 			/* Finally, generate AND lookup table, for the debug register. */
+-			blit_lookup.forced_layer.lower[new_pixel].pixels[old_pixel] = (cc_u8l)(old_pixel & (new_colour_index | ~colour_index_mask));
++			inkGenesisBlitLookup->forced_layer.lower[new_pixel].pixels[old_pixel] = (cc_u8l)(old_pixel & (new_colour_index | ~colour_index_mask));
+ 		}
+ 	}
+ }
+@@ -796,26 +812,26 @@ static void RenderForegroundAndSpritePlanes(const VDP* const vdp, const cc_u16f
+ 	{
+ 		if (!state->debug.hide_layers)
+ 		{
+-			RenderForegroundPlane(vdp, left_boundary, right_boundary, scanline, plane_metapixels, &blit_lookup.normal, window_plane);
++			RenderForegroundPlane(vdp, left_boundary, right_boundary, scanline, plane_metapixels, &inkGenesisBlitLookup->normal, window_plane);
+ 
+ 			if (state->shadow_highlight_enabled)
+-				RenderSpritePlane(plane_metapixels, sprite_metapixels, &blit_lookup.shadow_highlight, 0xFF, left_boundary_pixels, right_boundary_pixels);
++				RenderSpritePlane(plane_metapixels, sprite_metapixels, &inkGenesisBlitLookup->shadow_highlight, 0xFF, left_boundary_pixels, right_boundary_pixels);
+ 			else
+-				RenderSpritePlane(plane_metapixels, sprite_metapixels, &blit_lookup.normal, 0x3F, left_boundary_pixels, right_boundary_pixels);
++				RenderSpritePlane(plane_metapixels, sprite_metapixels, &inkGenesisBlitLookup->normal, 0x3F, left_boundary_pixels, right_boundary_pixels);
+ 		}
+ 
+ 		switch (state->debug.forced_layer)
+ 		{
+ 			case 1:
+-				RenderSpritePlane(plane_metapixels, sprite_metapixels, &blit_lookup.forced_layer, 0xFF, left_boundary_pixels, right_boundary_pixels);
++				RenderSpritePlane(plane_metapixels, sprite_metapixels, &inkGenesisBlitLookup->forced_layer, 0xFF, left_boundary_pixels, right_boundary_pixels);
+ 				break;
+ 
+ 			case 2:
+-				RenderScrollPlane(vdp, left_boundary, right_boundary, scanline, plane_metapixels, &blit_lookup.forced_layer, 0);
++				RenderScrollPlane(vdp, left_boundary, right_boundary, scanline, plane_metapixels, &inkGenesisBlitLookup->forced_layer, 0);
+ 				break;
+ 
+ 			case 3:
+-				RenderScrollPlane(vdp, left_boundary, right_boundary, scanline, plane_metapixels, &blit_lookup.forced_layer, 1);
++				RenderScrollPlane(vdp, left_boundary, right_boundary, scanline, plane_metapixels, &inkGenesisBlitLookup->forced_layer, 1);
+ 				break;
+ 		}
+ 	}
+@@ -884,7 +900,7 @@ void VDP_EndScanline(VDP* const vdp, const cc_u16f scanline, const VDP_ScanlineR
+ 	if (state->display_enabled && !state->debug.hide_layers)
+ 	{
+ 		/* Draw Plane B. */
+-		RenderScrollPlane(vdp, 0, VDP_GetExtendedScreenWidthInTilePairs(vdp), scanline, plane_metapixels, &blit_lookup.normal, 1);
++		RenderScrollPlane(vdp, 0, VDP_GetExtendedScreenWidthInTilePairs(vdp), scanline, plane_metapixels, &inkGenesisBlitLookup->normal, 1);
+ 	}
+ 
+ 	/* Draw Window Plane (and sprites). */
+

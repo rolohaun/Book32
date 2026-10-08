@@ -1,11 +1,11 @@
 const ESPTOOL_MODULE_URL = 'https://unpkg.com/esptool-js@0.6.1/bundle.js';
-const RELEASE_VERSION = '1.2.14';
+const RELEASE_VERSION = '1.3.1';
 
 const profiles = {
   book32: {
     version: RELEASE_VERSION,
     name: 'Book32 — 7.5 inch',
-    manifest: 'manifest-update-v1.2.14.json',
+    manifest: `manifest-update-v${RELEASE_VERSION}.json`,
     flashSize: '16MB',
     description: 'Single-button Book32 with the 7.5-inch e-paper display.',
     after: 'After restart, connect to the InkDeck-Setup Wi-Fi network to configure Wi-Fi.'
@@ -13,20 +13,20 @@ const profiles = {
   sticky: {
     version: RELEASE_VERSION,
     name: 'Seeed Studio Sticky — 3.97 inch',
-    manifest: 'manifest-sticky-update-v1.2.14.json',
+    manifest: `manifest-sticky-update-v${RELEASE_VERSION}.json`,
     flashSize: '32MB',
     resetMode: 'atomic-rts',
     description: 'Seeed Studio touch-screen reader with InkDeck installed.',
     after: 'After restart, open Settings, tap Wi-Fi, and choose your network on the touch screen.'
   },
   lilygo: {
-    version: '1.3.0',
+    version: RELEASE_VERSION,
     experimental: true,
-    name: 'LILYGO T5 S3 Pro — H752-01 / Pro Lite',
-    manifest: 'manifest-lilygo-update-v1.3.0.json',
+    name: 'LILYGO T5 E-Paper S3 Pro Lite — H752-01',
+    manifest: `manifest-lilygo-update-v${RELEASE_VERSION}.json`,
     flashSize: '16MB',
-    description: 'Experimental build for the newer H752-01 parallel-display board. Includes eReader, Todo, Klipper, Settings and a Paperboy-style DMG Game Boy app. Not compatible with the older H752.',
-    after: 'If it remains in download mode, press RESET. Open Settings for Wi-Fi. Put your own legal .gb files in /roms on a FAT32 SD card. Hardware validation and measured game refresh rate are still pending.'
+    description: 'Experimental H752-01 / Pro Lite build with eReader, Todo, Klipper, Settings and Ink Boy for Game Boy, Game Boy Color, NES and Genesis. No game audio. Genesis uses ClownMDEmu (AGPLv3+); hardware performance is still being validated. Not compatible with the older H752.',
+    after: 'If it remains in download mode, press RESET. Open Settings for Wi-Fi and frontlight brightness. Upload your own legally obtained ROMs through the Game ROMs web tab, or copy them into /roms on a FAT32 MicroSD card. Use Save & exit before removing the card. Press BOOT to wake from sleep.'
   }
 };
 
@@ -74,8 +74,8 @@ function selectDevice(profileId) {
   flashDescription.textContent = profile.description;
   afterFlashing.textContent = profile.after;
   document.querySelector('#release-name').textContent = `InkDeck ${profile.version}`;
-  document.querySelector('#release-status').textContent = profile.experimental ? 'Experimental preview — not hardware-validated' : 'Stable release';
-  document.querySelector('#release-detail').textContent = profile.experimental ? 'H752-01 only · Game Boy: DMG, no audio/RTC · October 6, 2026' : 'Firmware + web interface · September 19, 2026';
+  document.querySelector('#release-status').textContent = profile.experimental ? 'Experimental preview' : 'Stable release';
+  document.querySelector('#release-detail').textContent = profile.experimental ? 'H752-01 only · GB / GBC / NES / Genesis · October 8, 2026' : 'Firmware + web interface · October 8, 2026';
   flashButton.lastChild.textContent = ` Flash InkDeck ${profile.version}`;
   flashNote.textContent = profile.experimental ? 'Check your board revision before flashing. Back up its existing firmware/settings: this installs the InkDeck partition layout.' : "Chrome or Edge will ask you to choose the device's serial port.";
   flashButton.disabled = !setBrowserSupport();
@@ -127,6 +127,7 @@ async function loadFirmware(profile) {
   if (!response.ok) throw new Error(`Could not download the InkDeck manifest (HTTP ${response.status}).`);
 
   const manifest = await response.json();
+  if (manifest.version !== profile.version) throw new Error('Firmware version mismatch. Reload the installer before flashing.');
   const build = manifest.builds?.find((item) => item.chipFamily === 'ESP32-S3');
   if (!build?.parts?.length) throw new Error('The selected firmware package does not contain an ESP32-S3 build.');
 

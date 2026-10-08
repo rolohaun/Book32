@@ -6,6 +6,10 @@
 #include "../../include/Config.h"
 #include "../Book32_Core/DisplayMgr.h"
 #include "../Book32_Core/FontMgr.h"
+#if defined(BOARD_LILYGO_T5S3_PRO)
+#include "NetworkWork.h"
+#include <WiFiClientSecure.h>
+#endif
 
 // Draw OTA progress bar on display
 static void drawOTAProgress(int progress, const char* title, const char* status) {
@@ -65,6 +69,15 @@ void GitHubMgr::init() {
 
 UpdateInfo GitHubMgr::checkUpdate(const char* currentVersion) {
     UpdateInfo info = {false, "", "", "", "", false, false};
+#if defined(BOARD_LILYGO_T5S3_PRO)
+    // Declared before the client: its lease is released only AFTER TLS/socket
+    // destruction on every return path. Ink Boy waits for these owners.
+    NetworkWork::Lease network;
+    if (!network) return info;
+    WiFiClientSecure client;
+    client.setInsecure(); // Same public-update policy as HTTPClient's URL overload.
+    client.setHandshakeTimeout(5);
+#endif
 
     if (WiFi.status() != WL_CONNECTED) {
         Serial.println("WiFi not connected, cannot check for updates");
@@ -76,7 +89,12 @@ UpdateInfo GitHubMgr::checkUpdate(const char* currentVersion) {
 
     Serial.printf("Checking: %s\n", apiURL.c_str());
 
+#if defined(BOARD_LILYGO_T5S3_PRO)
+    http.begin(client, apiURL);
+    http.setConnectTimeout(5000);
+#else
     http.begin(apiURL);
+#endif
     http.setUserAgent("InkDeck-ESP32");
     http.setTimeout(10000);  // 10 second timeout
 
@@ -87,8 +105,15 @@ UpdateInfo GitHubMgr::checkUpdate(const char* currentVersion) {
 
     if (httpCode == HTTP_CODE_OK) {
         String payload = http.getString();
-        DynamicJsonDocument doc(8192);  // Increased size for release notes
-        DeserializationError err = deserializeJson(doc, payload);
+        // A multi-device release has many assets. Ignore GitHub's repeated
+        // uploader/metadata objects so they cannot exhaust the JSON arena.
+        StaticJsonDocument<256> filter;
+        filter["tag_name"] = true;
+        filter["body"] = true;
+        filter["assets"][0]["name"] = true;
+        filter["assets"][0]["browser_download_url"] = true;
+        DynamicJsonDocument doc(16384);
+        DeserializationError err = deserializeJson(doc, payload, DeserializationOption::Filter(filter));
 
         if (err) {
             Serial.printf("JSON parse error: %s\n", err.c_str());

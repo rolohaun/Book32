@@ -32,6 +32,12 @@
 #endif // __LINUX__
 #include "FastEPD.inl"
 #include "bb_ep_gfx.inl"
+#if defined(BOARD_LILYGO_T5S3_PRO)
+#include "InkDeckVideoPulse.h"
+#include "InkDeckQueuedVideo.h"
+#include "InkDeckNesVideo.h"
+#include <soc/soc_memory_types.h>
+#endif
 
 //#pragma GCC optimize("O2")
 // Display how much time each operation takes on the serial monitor
@@ -829,6 +835,177 @@ int FASTEPD::partialUpdate(bool bKeepOn, int iStartLine, int iEndLine)
 {
     return bbepPartialUpdate(&_state, bKeepOn, iStartLine, iEndLine);
 } /* partialUpdate() */
+
+#if defined(BOARD_LILYGO_T5S3_PRO)
+namespace {
+struct NesScanProfile {
+    uint32_t* stages;
+    uint32_t begin() const { return micros(); }
+    void end(InkDeckVideoPulse::NesScanStage stage,uint32_t started) const {
+        stages[unsigned(stage)]+=uint32_t(micros()-started);
+    }
+};
+struct ResidentNesHistory {
+    bool operator()(const uint8_t* state) const { return esp_ptr_internal(state); }
+};
+}
+int FASTEPD::videoScan(const BB_RECT& rect, const uint8_t* source, uint8_t* history, bool resetHistory, int rowRepeat, bool reverseNesRows, uint8_t* const* nesBanks, int nesBankRows)
+{
+    if (_videoFault) return BBEP_IO_ERROR;
+    // This path is deliberately limited to the validated H752-01 mapping.
+    if (!source || (!history && !nesBanks) || _state.iPanelType != BB_PANEL_EPDIY_V7 ||
+        _state.mode != BB_MODE_1BPP || _state.iFlags != BB_PANEL_FLAG_NONE ||
+        rect.x < 0 || rect.y < 0 || rect.w <= 0 || rect.h <= 0 ||
+        (rowRepeat < 1 || rowRepeat > 3) ||
+        (rowRepeat==2 && (_videoPulses!=6 || _videoSettledBoost || rect.w!=480 || rect.h!=512)) ||
+        (rowRepeat!=2 && nesBanks) ||
+        (rect.x & 7) || (rect.w % 24) || (rect.h % rowRepeat) ||
+        _state.native_width != 960 || _state.panelDef.iLinePadding != 16 ||
+        rect.x + rect.w > _state.native_width || rect.y + rect.h > _state.native_height)
+        return BBEP_ERROR_BAD_PARAMETER;
+    if(nesBanks) {
+        if(nesBankRows<=0 || (rect.h/2)%nesBankRows)return BBEP_ERROR_BAD_PARAMETER;
+        for(int i=0;i<rect.h/2/nesBankRows;++i)if(!nesBanks[i])return BBEP_ERROR_BAD_PARAMETER;
+    }
+    if (bbepEinkPower(&_state, 1) != BBEP_SUCCESS) return BBEP_IO_ERROR;
+    // Voltage, pixel clock, row-start timing and pixel pulses are unchanged.
+    // The scan-tail experiment adds ONLY one neutral row/latch after the 540
+    // visible rows. It is not a copy of M5PaperS3's board-specific gate setup.
+    // Profile changes require a clean/reset.
+    // Removing software gaps does change the scan interval; verify optics on hardware.
+    // New target images can arrive between scans while pending transitions finish.
+    const int outPitch = _state.native_width / 4;
+    static const InkDeckVideoPulse::PackedLut fourPulses(4), sixPulses(6), settled(6, true);
+    const auto& pulseLut = _videoPulses == 6 ? (_videoSettledBoost ? settled : sixPulses) : fourPulses;
+    static const InkDeckVideoPulse::NesPackedLut nesLut;
+    // Include each row's trailing clocks in its OWN DMA allocation. Padding
+    // must never overlap the other row while it is being prepared.
+    DMA_ATTR static uint8_t rows[5 * 256];
+    // On any transport failure the pulse history is no longer authoritative.
+    // Fail closed and remove panel power; do not retry with partially advanced
+    // history. DMA storage is static and stays alive even if the bus has hung.
+    const auto fail = [this]() {
+        __atomic_store_n(&video_queue_active, 0, __ATOMIC_RELEASE);
+        _videoFault = true;
+        bbepEinkPower(&_state, 0);
+        return BBEP_IO_ERROR;
+    };
+    const auto waitSerial = [](unsigned) {
+        if (dma_is_done) return true;
+        const uint32_t start = micros();
+        while (!dma_is_done) {
+            if ((uint32_t)(micros() - start) >= 100000) return false;
+            delayMicroseconds(1);
+        }
+        return true;
+    };
+    // Sample occasionally, never time every row of every gameplay scan. The
+    // ordinary specialization compiles all profiler hooks away. Timings are
+    // CPU wall times (DMA overlaps preparation), not additive panel latencies.
+    static unsigned nesScans=0;
+    const bool profileNes=rowRepeat==2 && !resetHistory && _videoQueued && (++nesScans%180==0);
+    uint32_t nesStages[4]={};
+    const uint32_t profileStarted=profileNes ? micros() : 0;
+    if (!waitSerial(0)) return fail();
+    bbepRowControl(&_state, ROW_START);
+    bool success;
+    if (_videoQueued) {
+        video_queue_ckv = (gpio_num_t)_state.panelDef.ioCKV;
+        video_queue_le = (gpio_num_t)_state.panelDef.ioLE;
+        video_queue_total = _state.native_height + (_videoScanTail ? 1 : 0);
+        __atomic_store_n(&video_queue_completed, 0, __ATOMIC_RELAXED);
+        __atomic_store_n(&video_queue_active, 1, __ATOMIC_RELEASE);
+        dma_is_done = false;
+        const auto waitQueued = [](unsigned goal) {
+            if (__atomic_load_n(&video_queue_completed, __ATOMIC_ACQUIRE) >= goal) return true;
+            const uint32_t start = micros();
+            while (__atomic_load_n(&video_queue_completed, __ATOMIC_ACQUIRE) < goal) {
+                if ((uint32_t)(micros() - start) >= 100000) return false;
+                delayMicroseconds(1);
+            }
+            return true;
+        };
+        const auto sendQueued=[outPitch, this](uint8_t* row, int) {
+                return esp_lcd_panel_io_tx_color(io_handle, -1, row,
+                    outPitch + _state.panelDef.iLinePadding) == ESP_OK;
+            };
+        if(profileNes) success=InkDeckVideoPulse::queueNes(nesLut,source,history,rows,256,
+            _state.native_height,rect.x,rect.y,rect.w,rect.h,resetHistory,reverseNesRows,sendQueued,waitQueued,
+            _videoScanTail,true,nesBanks,nesBankRows,NesScanProfile{nesStages},ResidentNesHistory{});
+        else if(rowRepeat==2) success=InkDeckVideoPulse::queueNes(nesLut,source,history,rows,256,
+            _state.native_height,rect.x,rect.y,rect.w,rect.h,resetHistory,reverseNesRows,sendQueued,waitQueued,
+            _videoScanTail,true,nesBanks,nesBankRows,InkDeckVideoPulse::NoNesScanProfile{},ResidentNesHistory{});
+        else success = InkDeckVideoPulse::queueTriples(pulseLut, source, history, rows, 256,
+            _state.native_height, rect.x, rect.y, rect.w, rect.h, resetHistory,sendQueued, waitQueued, _videoScanTail, rowRepeat);
+        // Completed is release-published only after the final callback stops
+        // accessing these pins. Ordinary FastEPD calls can now use their ISR.
+        __atomic_store_n(&video_queue_active, 0, __ATOMIC_RELEASE);
+    } else {
+        const auto sendSerial=[this, outPitch](uint8_t* row, int y) {
+                if (y) bbepRowControl(&_state, ROW_STEP);
+                gpio_set_level((gpio_num_t)_state.panelDef.ioCKV, 1);
+                dma_is_done = false;
+                return esp_lcd_panel_io_tx_color(io_handle, -1, row,
+                    outPitch + _state.panelDef.iLinePadding) == ESP_OK;
+            };
+        if(rowRepeat==2) success=InkDeckVideoPulse::queueNes(nesLut,source,history,rows,256,
+            _state.native_height,rect.x,rect.y,rect.w,rect.h,resetHistory,reverseNesRows,sendSerial,waitSerial,
+            _videoScanTail,false,nesBanks,nesBankRows,InkDeckVideoPulse::NoNesScanProfile{},ResidentNesHistory{});
+        else success = InkDeckVideoPulse::scanTriplesChecked(pulseLut, source, history, rows, 256,
+            _state.native_height, rect.x, rect.y, rect.w, rect.h, resetHistory,sendSerial, waitSerial, _videoScanTail, rowRepeat);
+    }
+    if (!success) return fail();
+    delayMicroseconds(230); // Match the normal driver's inter-scan settling time.
+    if(profileNes) {
+        unsigned internal=0,banks=nesBanks ? rect.h/2/nesBankRows : 0;
+        for(unsigned i=0;i<banks;++i)if(esp_ptr_internal(nesBanks[i]))++internal;
+        Serial.printf("NES scan sample: copy %.2f; pulses %.2f; submit %.2f; wait %.2f; total %.2f ms; internal banks %u/%u; internal free %u; largest %u\n",
+            nesStages[0]/1000.f,nesStages[1]/1000.f,nesStages[2]/1000.f,nesStages[3]/1000.f,
+            uint32_t(micros()-profileStarted)/1000.f,internal,banks,
+            unsigned(heap_caps_get_free_size(MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT)),
+            unsigned(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT)));
+    }
+    return BBEP_SUCCESS;
+}
+
+int FASTEPD::videoNeutral()
+{
+    if (_videoFault) return BBEP_IO_ERROR;
+    if (!_state.pwr_on) return BBEP_SUCCESS;
+    // A bounded neutral scan is mandatory before saves or arbitrary app work.
+    // Do not use bbepClear's unbounded transport waits in the experimental path.
+    DMA_ATTR static uint8_t neutral[256] = {};
+    const auto fail = [this]() {
+        __atomic_store_n(&video_queue_active, 0, __ATOMIC_RELEASE);
+        _videoFault = true;
+        bbepEinkPower(&_state, 0);
+        return BBEP_IO_ERROR;
+    };
+    const auto wait = []() {
+        if (dma_is_done) return true;
+        const uint32_t start = micros();
+        while (!dma_is_done) {
+            if ((uint32_t)(micros() - start) >= 100000) return false;
+            delayMicroseconds(1);
+        }
+        return true;
+    };
+    if (!wait()) return fail();
+    bbepRowControl(&_state, ROW_START);
+    const int rows = _state.native_height + (_videoScanTail ? 1 : 0);
+    for (int y = 0; y < rows; ++y) {
+        if (!wait()) return fail();
+        if (y) bbepRowControl(&_state, ROW_STEP);
+        gpio_set_level((gpio_num_t)_state.panelDef.ioCKV, 1);
+        dma_is_done = false;
+        if (esp_lcd_panel_io_tx_color(io_handle, -1, neutral, sizeof(neutral)) != ESP_OK)
+            return fail();
+    }
+    if (!wait()) return fail();
+    delayMicroseconds(230);
+    return BBEP_SUCCESS;
+}
+#endif
 int FASTEPD::smoothUpdate(bool bKeepOn, uint8_t u8Color)
 {
     return bbepSmoothUpdate(&_state, bKeepOn, u8Color);

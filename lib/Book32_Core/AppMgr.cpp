@@ -1,4 +1,5 @@
 #include "AppMgr.h"
+#include "RomStorage.h"
 
 AppMgr::AppMgr() {}
 
@@ -12,6 +13,9 @@ void AppMgr::registerApp(App* app) {
 }
 
 void AppMgr::switchTo(int index) {
+#if defined(BOARD_LILYGO_T5S3_PRO)
+    if (RomStorage::uploading()) return;
+#endif
     if (index >= 0 && index < apps.size()) {
         if (currentApp) currentApp->stop();
         currentApp = apps[index];

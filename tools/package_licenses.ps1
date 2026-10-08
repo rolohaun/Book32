@@ -13,14 +13,7 @@ $sources = @(
     'lib/Apps/AppPaperboy/crankboy/minigb_apu/LICENSE',
     'lib/InkNes/COPYING',
     'lib/InkNes/COPYING.LGPL2',
-    'lib/InkNes/CREDITS',
-    'lib/InkGenesis/README.md',
-    'lib/InkGenesis/clownmdemu/LICENCE.txt',
-    'lib/InkGenesis/clownmdemu/libraries/clown68000/LICENCE.txt',
-    'lib/InkGenesis/clownmdemu/libraries/clownz80/LICENCE.txt',
-    'lib/InkGenesis/clownmdemu/libraries/clowncommon/licence.txt',
-    'lib/InkGenesis/clownmdemu/libraries/clown68000/libraries/clowncommon/licence.txt',
-    'lib/InkGenesis/clownmdemu/libraries/clownz80/libraries/clowncommon/licence.txt'
+    'lib/InkNes/CREDITS'
 )
 foreach ($source in $sources) {
     if (!(Test-Path -LiteralPath (Join-Path $repo $source))) { throw "Missing notice: $source" }

@@ -24,7 +24,7 @@
                     <li><button data-tab="settings" onclick="showTab('settings')"><span>⚙</span>Settings</button></li>
                 </ul>
             </nav>
-            <div class="version">InkDeck v<span id="version-display">1.3.1</span></div>
+            <div class="version">InkDeck v<span id="version-display">1.3.2</span></div>
         </aside>
 
         <main class="content">
@@ -86,18 +86,18 @@
             </section>
 
             <section id="games" class="tab-content hidden">
-                <div class="page-heading"><p class="eyebrow">LILYGO · Ink Boy</p><h1>Your game library</h1><p>Game Boy, Game Boy Color, NES and experimental Sega Genesis — in grayscale on e-paper.</p></div>
+                <div class="page-heading"><p class="eyebrow">LILYGO · Ink Boy</p><h1>Your game library</h1><p>Game Boy, Game Boy Color and NES — in grayscale on e-paper.</p></div>
                 <div class="content-grid">
                     <article class="card section-card">
-                        <div class="card-heading"><div><h2>Upload a game</h2><p>Upload your legally obtained ROM to <strong>/roms</strong> on the MicroSD card. Ink Boy sorts it into a Game Boy, NES or Sega tab. Existing files are never replaced.</p><p>GB/GBC: up to 8 MB · NES (iNES): up to 2 MB · Genesis (raw .md/.gen/.bin): up to 4 MB. ZIP, SMD, NES 2.0, Sega CD and 32X are not supported. Genesis uses the experimental ClownMDEmu port; no game audio.</p></div></div>
-                        <label class="text-field" for="rom-file"><span>Game Boy, NES or Genesis ROM</span><input type="file" id="rom-file" accept=".gb,.gbc,.nes,.md,.gen,.bin"></label>
+                        <div class="card-heading"><div><h2>Upload a game</h2><p>Upload your legally obtained ROM to <strong>/roms</strong> on the MicroSD card. Ink Boy sorts it into a Game Boy or NES tab. Existing files are never replaced.</p><p>GB/GBC: up to 8 MB · NES (iNES): up to 2 MB. ZIP archives and NES 2.0 are not supported. No game audio.</p></div></div>
+                        <label class="text-field" for="rom-file"><span>Game Boy or NES ROM</span><input type="file" id="rom-file" accept=".gb,.gbc,.nes"></label>
                         <p id="rom-limit" class="hint"></p>
                         <button id="rom-upload-button" class="btn primary" onclick="uploadRom()">Upload ROM</button>
                         <progress id="rom-progress" class="rom-progress hidden" max="100" value="0" aria-label="ROM upload progress"></progress>
                         <div id="rom-status" class="status-msg" role="status" aria-live="polite"></div>
                     </article>
                     <article class="card section-card">
-                        <div class="card-heading"><div><h2>Your games</h2><p>Open Ink Boy on the LILYGO after uploading. Wi-Fi is paused while that app is open; return to the home screen to upload more.</p><p>InkDeck includes AGPLv3+ software. Genesis now uses ClownMDEmu; old Genesis snapshots are not compatible and are kept separate. <a href="https://github.com/rolohaun/Book32/tree/v1.3.1" target="_blank" rel="noopener noreferrer">Complete source and license notices</a>.</p></div></div>
+                        <div class="card-heading"><div><h2>Your games</h2><p>Open Ink Boy on the LILYGO after uploading. Wi-Fi is paused while that app is open; return to the home screen to upload more.</p><p>InkDeck is open-source software. Game Boy/GBC and NES support save slots and automatic resume. <a href="https://github.com/rolohaun/Book32/tree/v1.3.2" target="_blank" rel="noopener noreferrer">Complete source and license notices</a>.</p></div></div>
                         <button id="rom-refresh-button" class="btn secondary" onclick="fetchRoms()">Refresh list</button>
                         <p class="hint">Deleting a ROM keeps its saved games. Upload the same filename again to reuse them.</p>
                         <div id="rom-list"><p class="hint">Choose this tab to load your games.</p></div>
@@ -164,13 +164,13 @@
                     <div class="action-row"><button id="lilygo-settings-save" class="btn secondary" onclick="saveLilygoControls()">Save light &amp; buttons</button><div id="lilygo-settings-status" class="status-msg" role="status"></div></div>
                 </article>
                 <article class="card section-card update-card">
-                    <div class="card-heading"><div><h2>Software update</h2><p>Currently running InkDeck <span id="current-ver">1.3.1</span>.</p></div><span class="version-badge">InkDeck</span></div>
+                    <div class="card-heading"><div><h2>Software update</h2><p>Currently running InkDeck <span id="current-ver">1.3.2</span>.</p></div><span class="version-badge">InkDeck</span></div>
                     <div id="update-status" class="status-msg" role="status"></div>
                     <div id="update-buttons"><button id="check-update-btn" class="btn secondary" onclick="checkUpdate()">Check for updates</button><button id="update-btn" class="btn primary hidden" onclick="performUpdate()">Install update</button></div>
                 </article>
             </section>
         </main>
-        <footer class="section-card"><a href="https://github.com/rolohaun/Book32/releases/tag/v1.3.1" target="_blank" rel="noopener noreferrer">InkDeck 1.3.1 — source code &amp; licenses (AGPLv3+)</a></footer>
+        <footer class="section-card"><a href="https://github.com/rolohaun/Book32/releases/tag/v1.3.2" target="_blank" rel="noopener noreferrer">InkDeck 1.3.2 — source code &amp; licenses (AGPLv3+)</a></footer>
     </div>
     <script src="script.js"></script>
 </body>

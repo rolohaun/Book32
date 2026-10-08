@@ -1,15 +1,15 @@
 #pragma once
 
 #if defined(BOARD_LILYGO_T5S3_PRO)
-#define SYSTEM_VERSION "1.3.1"
+#define SYSTEM_VERSION "1.3.2"
 #define DEVICE_NAME "LILYGO T5 E-Paper S3 Pro Lite (H752-01)"
 #define SLEEP_TIMEOUT_DEFAULT_MINUTES 10
 #elif defined(BOARD_SEEED_STICKY)
-#define SYSTEM_VERSION "1.3.1"
+#define SYSTEM_VERSION "1.3.2"
 #define DEVICE_NAME "Seeed Studio Sticky"
 #define SLEEP_TIMEOUT_DEFAULT_MINUTES 10
 #else
-#define SYSTEM_VERSION "1.3.1"
+#define SYSTEM_VERSION "1.3.2"
 #define DEVICE_NAME "Book32"
 #define SLEEP_TIMEOUT_DEFAULT_MINUTES 0
 #endif

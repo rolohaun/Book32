@@ -242,7 +242,7 @@ async function fetchRoms() {
         if (requestId !== romListRequest || romUploading || romDeleting) return;
         if (!response.ok) throw new Error(data.error || 'Unable to load ROMs.');
         list.replaceChildren();
-        if (!data.roms.length) list.textContent = 'No ROMs yet. Upload a Game Boy, NES or Genesis ROM.';
+        if (!data.roms.length) list.textContent = 'No ROMs yet. Upload a Game Boy or NES ROM.';
         for (const rom of data.roms) {
             const row = document.createElement('div'); row.className = 'rom-row';
             const name = document.createElement('span'); name.textContent = rom.name;
@@ -297,10 +297,10 @@ function uploadRom() {
     const file = input.files[0];
     const status = document.getElementById('rom-status');
     const progress = document.getElementById('rom-progress');
-    if (!file || !/\.(gb|gbc|nes|md|gen|bin)$/i.test(file.name)) { status.textContent = 'Choose a .gb/.gbc, .nes or .md/.gen/.bin ROM first.'; return; }
-    const isGb = /\.(gb|gbc)$/i.test(file.name), isNes = /\.nes$/i.test(file.name);
-    const minimum = isGb ? 32768 : isNes ? 16400 : 512;
-    const maximum = Math.min(romMaxBytes, isGb ? 8 * 1024 * 1024 : isNes ? 2 * 1024 * 1024 : 4 * 1024 * 1024);
+    if (!file || !/\.(gb|gbc|nes)$/i.test(file.name)) { status.textContent = 'Choose a .gb/.gbc or .nes ROM first.'; return; }
+    const isGb = /\.(gb|gbc)$/i.test(file.name);
+    const minimum = isGb ? 32768 : 16400;
+    const maximum = Math.min(romMaxBytes, isGb ? 8 * 1024 * 1024 : 2 * 1024 * 1024);
     if (file.size < minimum || file.size > maximum) { status.textContent = `This ROM must be between ${formatFileSize(minimum)} and ${formatStorage(maximum)}.`; return; }
     romUploading = true; ++romListRequest; updateRomControls();
     progress.value = 0; progress.classList.remove('hidden');

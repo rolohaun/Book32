@@ -7,8 +7,6 @@ extern "C" {
 bool inkConsoleOpen(InkSystem system,uint8_t* rom,size_t bytes,InkRomRead read,void* context);
 void inkConsoleClose(void);
 bool inkConsoleFrame(uint16_t buttons,uint8_t* shades);
-// Only Genesis supports omitting pixel output; other cores still draw normally.
-bool inkConsoleStep(uint16_t buttons,uint8_t* shades,bool render);
 bool inkConsoleImage(uint8_t* shades);
 bool inkConsoleRestart(void);
 uint8_t* inkConsoleRam(size_t* size);

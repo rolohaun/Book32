@@ -7,12 +7,6 @@ namespace GameFrameTiming {
 constexpr uint32_t PERIOD_US = 16743;
 constexpr uint32_t MAX_GAP_US = 100000;
 
-// Execute every simulation step. In a backlogged two-frame Genesis batch,
-// only the final picture needs rasterizing/packing. GB/NES never opt in.
-inline bool renderCatchUpFrame(bool canSkip, unsigned index, unsigned count) {
-    return !canSkip || index+1>=count;
-}
-
 // Display-task-only clock. Each boundary requests work for the NEXT scan.
 // Cumulative targets allow catch-up without discarding game simulation steps.
 // Long maintenance pauses are rebased, not replayed as many unseen frames.
@@ -71,8 +65,6 @@ private:
 };
 
 inline bool selfTest() {
-    if(!renderCatchUpFrame(true,0,1) || renderCatchUpFrame(true,0,2) ||
-       !renderCatchUpFrame(true,1,2) || !renderCatchUpFrame(false,0,2))return false;
     Clock clock;
     clock.reset(0);
     if (clock.target() != 1 || clock.boundary(0) != 2) return false;
@@ -81,7 +73,7 @@ inline bool selfTest() {
         const int64_t now = int64_t(i) * 16667;
         if (clock.boundary(now) != 2 + now / PERIOD_US) return false;
     }
-    // NES/Genesis PAL stays at 50 Hz on the same 60 Hz display scheduler.
+    // NES PAL stays at 50 Hz on the same 60 Hz display scheduler.
     const uint32_t consolePeriods[] = {16667, 20000};
     for (uint32_t period : consolePeriods) {
         clock.reset(0,period);

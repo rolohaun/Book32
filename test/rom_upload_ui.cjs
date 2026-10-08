@@ -114,12 +114,12 @@ const call = source => vm.runInContext(source, context);
   }
   call('uploadRom()'); lastXhr.status = 200; lastXhr.responseText = '<html>error</html>'; lastXhr.onload();
   assert.match(el('rom-status').textContent, /Unexpected response/);
-  for(const [name,size] of [['Test.NES',16400],['Test.md',512],['Test.GEN',4194304],['Test.bin',65536]]) {
+  for(const [name,size] of [['Test.NES',16400],['Test.gb',32768],['Test.gbc',8388608]]) {
     el('rom-file').files=[{name,size}];const previous=lastXhr;call('uploadRom()');assert.notEqual(lastXhr,previous);
     lastXhr.status=201;lastXhr.responseText=JSON.stringify({path:'/roms/'+name});lastXhr.onload();
     assert.match(el('rom-status').textContent,/Saved to/);
   }
-  for(const [name,size] of [['Big.nes',2097153],['Big.md',4194305],['Empty.nes',0],['Small.gen',511],['Archive.zip',65536],['Interleaved.smd',65536]]) {
+  for(const [name,size] of [['Test.md',65536],['Test.GEN',65536],['Test.bin',65536],['Big.nes',2097153],['Big.md',4194305],['Empty.nes',0],['Small.gen',511],['Archive.zip',65536],['Interleaved.smd',65536]]) {
     el('rom-file').files=[{name,size}];const previous=lastXhr;call('uploadRom()');assert.equal(lastXhr,previous);
   }
   romResponse = { ok: false, data: { error: 'Insert SD card' } };

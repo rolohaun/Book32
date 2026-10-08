@@ -13,7 +13,6 @@ constexpr int DPAD_X = 120, DPAD_Y = 674, DPAD_HALF = 88, DPAD_ARM = 29;
 constexpr int A_X = 443, A_Y = 630, B_X = 338, B_Y = 681, AB_RADIUS = 43;
 constexpr int SELECT_X = 174, START_X = 285, SMALL_Y = 810;
 constexpr int SMALL_LENGTH = 82, SMALL_HEIGHT = 26;
-constexpr int SEGA_A_X=277, SEGA_A_Y=721, SEGA_B_X=371, SEGA_B_Y=674, SEGA_C_X=463, SEGA_C_Y=627, SEGA_R=33;
 constexpr uint16_t BLACK = 0, WHITE = 1;
 constexpr int controlOffset(InkSystem system) { return system==INK_SYSTEM_NES ? 12 : 0; }
 
@@ -39,15 +38,9 @@ inline uint16_t buttonsAt(int x, int y,InkSystem system=INK_SYSTEM_GB) {
         if (y<padY-DPAD_ARM) buttons|=0x40;
         if (y>padY+DPAD_ARM) buttons|=0x80;
     }
-    if(system==INK_SYSTEM_SEGA){
-        if(circleHit(x,y,SEGA_A_X,SEGA_A_Y,SEGA_R+9))buttons|=1;
-        if(circleHit(x,y,SEGA_B_X,SEGA_B_Y,SEGA_R+9))buttons|=2;
-        if(circleHit(x,y,SEGA_C_X,SEGA_C_Y,SEGA_R+9))buttons|=0x100;
-    }else{
-        if (circleHit(x,y,A_X,A_Y+offset,AB_RADIUS+10)) buttons|=1;
-        if (circleHit(x,y,B_X,B_Y+offset,AB_RADIUS+10)) buttons|=2;
-        if (capsuleHit(x,y,SELECT_X,SMALL_Y+offset,SMALL_LENGTH,SMALL_HEIGHT,14)) buttons|=4;
-    }
+    if (circleHit(x,y,A_X,A_Y+offset,AB_RADIUS+10)) buttons|=1;
+    if (circleHit(x,y,B_X,B_Y+offset,AB_RADIUS+10)) buttons|=2;
+    if (capsuleHit(x,y,SELECT_X,SMALL_Y+offset,SMALL_LENGTH,SMALL_HEIGHT,14)) buttons|=4;
     if (capsuleHit(x,y,START_X,SMALL_Y+offset,SMALL_LENGTH,SMALL_HEIGHT,14)) buttons|=8;
     return buttons;
 }
@@ -106,17 +99,10 @@ inline void draw(Adafruit_GFX& d,InkSystem system=INK_SYSTEM_GB) {
     centeredText(d,"Ink Boy",103,nes ? 550 : 540,&FreeSansBoldOblique18pt7b);
     d.fillRoundRect(DPAD_X-DPAD_HALF,padY-DPAD_ARM,2*DPAD_HALF+1,2*DPAD_ARM+1,5,BLACK);
     d.fillRoundRect(DPAD_X-DPAD_ARM,padY-DPAD_HALF,2*DPAD_ARM+1,2*DPAD_HALF+1,5,BLACK);
-    if(system==INK_SYSTEM_SEGA){
-        d.fillCircle(SEGA_A_X,SEGA_A_Y,SEGA_R,BLACK);d.fillCircle(SEGA_B_X,SEGA_B_Y,SEGA_R,BLACK);d.fillCircle(SEGA_C_X,SEGA_C_Y,SEGA_R,BLACK);
-        centeredText(d,"A",SEGA_A_X,SEGA_A_Y+SEGA_R+10,&FreeSansBold12pt7b);
-        centeredText(d,"B",SEGA_B_X,SEGA_B_Y+SEGA_R+10,&FreeSansBold12pt7b);
-        centeredText(d,"C",SEGA_C_X,SEGA_C_Y+SEGA_R+10,&FreeSansBold12pt7b);
-    }else{
-        d.fillCircle(A_X,A_Y+offset,AB_RADIUS,BLACK); d.fillCircle(B_X,B_Y+offset,AB_RADIUS,BLACK);
-        centeredText(d,"A",A_X,A_Y+offset+AB_RADIUS+14,&FreeSansBold12pt7b);
-        centeredText(d,"B",B_X,B_Y+offset+AB_RADIUS+14,&FreeSansBold12pt7b);
-        smallButton(d,SELECT_X,"SELECT",offset);
-    }
+    d.fillCircle(A_X,A_Y+offset,AB_RADIUS,BLACK); d.fillCircle(B_X,B_Y+offset,AB_RADIUS,BLACK);
+    centeredText(d,"A",A_X,A_Y+offset+AB_RADIUS+14,&FreeSansBold12pt7b);
+    centeredText(d,"B",B_X,B_Y+offset+AB_RADIUS+14,&FreeSansBold12pt7b);
+    smallButton(d,SELECT_X,"SELECT",offset);
     smallButton(d,START_X,"START",offset);
     // Decorative speaker grille, not a promise of audio on this hardware.
     for(int bar=0;bar<5;++bar) {

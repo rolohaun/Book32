@@ -2,11 +2,10 @@
 
 ## Ink Boy multi-system build (LILYGO only)
 
-InkDeck 1.3.1 replaces the earlier experimental Gwenesis/Musashi/Marat Z80
-integration completely. Those non-commercial CPU cores are not shipped in
-this release. The new combined LILYGO build is distributed under AGPLv3-or-later;
-commercial use is not excluded, but the license's source and notice obligations
-still apply. See LICENSE.md and COPYING.
+InkDeck 1.3.2 includes Game Boy / Game Boy Color and NES emulation. No Genesis
+core is shipped in this release, including the earlier experimental
+Gwenesis/Musashi/Marat Z80 integration. InkDeck's project license remains
+AGPLv3-or-later. See LICENSE.md and COPYING.
 
 - Nofrendo: Matthew Conte and contributors. Imported from
   https://github.com/ducalex/retro-go at commit
@@ -15,15 +14,10 @@ still apply. See LICENSE.md and COPYING.
   full text is in `lib/InkNes/COPYING.LGPL2`. The upstream `COPYING` and
   `CREDITS` are also preserved. Local changes supply memory-backed saves, bounded ROM validation,
   grayscale video, input and persistence.
-- ClownMDEmu, Clown68000 and ClownZ80: Clownacy and contributors,
-  https://github.com/Clownacy/clownmdemu-core, AGPLv3-or-later. Core pinned to
-  `88ef45a6585556e2247dd26b6c937d6b9fb4a12d`; CPU and Clowncommon submodule
-  revisions are verified by `tools/import_clownmdemu.ps1`. Clowncommon is ISC.
-  Full licenses and headers are preserved under `lib/InkGenesis/clownmdemu`.
-  Local changes allocate VDP lookup memory only during Genesis play, adapt
-  four-shade output and touch controls, disable audio synthesis while preserving
-  FM timers, and supply isolated snapshot saves. Old Genesis saves cannot be
-  loaded, but remain untouched. GB/GBC and NES save formats are unchanged.
+
+Genesis emulation was removed in InkDeck 1.3.2. Its former core and license
+notices remain available with the historical 1.3.1 release, but are not included
+in this build. GB/GBC and NES retain their existing licenses and save formats.
 
 No game ROMs or BIOS files are included. The tagged source and release source
 archive contain the integration, vendored cores, build scripts, local patches,

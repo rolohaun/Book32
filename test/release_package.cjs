@@ -6,7 +6,7 @@ const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
 const root = path.resolve(__dirname, '..');
 const docs = path.join(root, 'docs');
-const version = '1.3.1';
+const version = '1.3.2';
 const targets = {
   book32: ['seeed_xiao_esp32s3', 'firmware', 'littlefs', 0x510000, 16],
   sticky: ['seeed_reterminal_sticky', 'book32-sticky-firmware', 'book32-sticky-littlefs', 0x810000, 32],
@@ -76,8 +76,11 @@ const hash = buffer => crypto.createHash('sha256').update(buffer).digest('hex');
     assert.deepEqual(merged.subarray(0x10000),Buffer.from(loaded[3].data));
     assert.equal(factory.builds[0].parts[1].offset,fsOffset);
     assert(!merged.includes(Buffer.from('Copyright Karl Stenerud.  All rights reserved.')));
-    if(id==='lilygo') assert(merged.includes(Buffer.from('ClownMDEmu / Genesis')));
-    else assert(!merged.includes(Buffer.from('ClownMDEmu / Genesis')));
+    assert(!merged.includes(Buffer.from('ClownMDEmu / Genesis')));
+    if(id==='lilygo') {
+      assert(merged.includes(Buffer.from('CrankBoy / GBC')));
+      assert(merged.includes(Buffer.from('Nofrendo / NES')));
+    }
     console.log(`${id}: ${version}, firmware/web hashes, partition limits and factory image PASS`);
   }
   overrideManifest={version:'0.0.0'};

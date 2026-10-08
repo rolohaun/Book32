@@ -6,12 +6,12 @@
 namespace InkBoyLibraryUi {
 constexpr int ROWS=5, ROW_Y=264, ROW_H=100, ROW_STEP=106;
 constexpr int TAB_Y=174,TAB_H=58,NAV_Y=818,NAV_H=58;
-inline unsigned tabCount(uint8_t mask){unsigned n=0;for(int i=1;i<=3;i++)if(mask&(1<<i))++n;return n;}
+inline unsigned tabCount(uint8_t mask){unsigned n=0;for(int i=INK_SYSTEM_GB;i<=INK_SYSTEM_NES;i++)if(mask&(1<<i))++n;return n;}
 inline int tabWidth(uint8_t mask){unsigned n=tabCount(mask);return n ? (484-8*(n-1))/n : 0;}
 inline InkSystem tabAt(uint8_t mask,int x,int y){
     if(y<TAB_Y||y>=TAB_Y+TAB_H)return INK_SYSTEM_NONE;
     int left=20,w=tabWidth(mask);
-    for(int i=1;i<=3;i++)if(mask&(1<<i)){if(x>=left&&x<left+w)return (InkSystem)i;left+=w+8;}
+    for(int i=INK_SYSTEM_GB;i<=INK_SYSTEM_NES;i++)if(mask&(1<<i)){if(x>=left&&x<left+w)return (InkSystem)i;left+=w+8;}
     return INK_SYSTEM_NONE;
 }
 inline int rowAt(int x,int y){
@@ -29,7 +29,7 @@ inline void header(Adafruit_GFX& d,uint8_t mask,InkSystem selected,unsigned coun
     d.fillScreen(1);text(d,"< InkDeck",20,26);text(d,"GAME LIBRARY",352,30,1);
     text(d,"Ink Boy",20,91,4);text(d,"Your games, one place.",22,138,2);
     int left=20,w=tabWidth(mask);char label[24];
-    for(int i=1;i<=3;i++)if(mask&(1<<i)){
+    for(int i=INK_SYSTEM_GB;i<=INK_SYSTEM_NES;i++)if(mask&(1<<i)){
         if(i==selected)d.fillRoundRect(left,TAB_Y,w,TAB_H,10,0);
         else d.drawRoundRect(left,TAB_Y,w,TAB_H,10,0);
         center(d,inkSystemName((InkSystem)i),left,TAB_Y+21,w,2,i==selected?1:0);left+=w+8;

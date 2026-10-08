@@ -1,6 +1,14 @@
 # LILYGO CrankBoy development build
 
-Current release: `1.3.1` (experimental multi-console build).
+Current release: `1.3.2` (Game Boy / Game Boy Color and NES).
+
+Genesis has been removed from Ink Boy and the ROM uploader. Existing SD files
+are preserved, and GB/GBC/NES save formats are unchanged. See the
+[1.3.2 release notes](release-1.3.2.md). Everything below is a historical
+development log; references to Genesis and older test builds are not current
+feature descriptions.
+
+## Historical development log
 Last verified USB installation: `1.3.1-inkboy17` (2026-10-07).
 LILYGO T5 S3 Pro H752-01 / Pro Lite only.
 Book32 and Sticky have neither the emulator nor the Game ROMs web tab/API.
@@ -11,7 +19,8 @@ The notes below record development experiments leading to the
 ClownZ80, replacing the earlier restricted CPU cores. New Genesis saves use
 their own namespace; older snapshots remain untouched but are incompatible.
 The replacement passes host regression tests and the ESP32 build, but its
-hardware frame rate is unmeasured. See [current core notes](../lib/InkGenesis/README.md).
+hardware frame rate was unmeasured at release. See the
+[archived 1.3.1 core notes](https://github.com/rolohaun/Book32/blob/v1.3.1/lib/InkGenesis/README.md).
 Gwenesis measurements, import scripts and licensing statements below are
 historical development notes, not descriptions of the released Genesis core.
 

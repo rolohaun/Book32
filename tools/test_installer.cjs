@@ -22,7 +22,7 @@ const sandbox = {
 };
 vm.createContext(sandbox);
 vm.runInContext(fs.readFileSync(path.join(docs, 'installer.js'),'utf8'),sandbox);
-const expected = {book32: ['1.3.1',0x510000,16], sticky: ['1.3.1',0x810000,32], lilygo: ['1.3.1',0x810000,16]};
+const expected = {book32: ['1.3.2',0x510000,16], sticky: ['1.3.2',0x810000,32], lilygo: ['1.3.2',0x810000,16]};
 for (const [id,[version,fsOffset,flashMB]] of Object.entries(expected)) {
   vm.runInContext(`selectDevice('${id}')`, sandbox);
   const profile = vm.runInContext(`profiles.${id}`,sandbox);

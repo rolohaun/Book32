@@ -31,7 +31,7 @@ bool inside(int x, int y, int l, int t, int w, int h) {
 uint8_t* allocateFrame(size_t bytes) {
     // Library-entry scratch buffers precede the persistent task stack and ROM
     // list allocations. Putting them in internal RAM splits its large block;
-    // freeing them later cannot recover a contiguous 64 KB for Genesis RAM.
+    // keep the internal heap available for the display worker and history.
     // openBook promotes these to internal RAM for GB only, after selection.
     uint8_t* frame = (uint8_t*)ps_calloc(bytes, 1);
     return frame ? frame : (uint8_t*)heap_caps_calloc(bytes, 1, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
@@ -105,7 +105,7 @@ void AppPaperboy::start() {
 
 void AppPaperboy::scan() {
     _roms.clear(); _page = 0; _systemMask=0;
-    _message = "Add GB, NES or Genesis ROMs to /roms on SD.";
+    _message = "Add Game Boy or NES ROMs to /roms on SD.";
     if (ebookStorageUsesSD()) {
         File dir = EbookFS.open("/roms");
         if (dir && dir.isDirectory()) {
@@ -124,7 +124,7 @@ void AppPaperboy::scan() {
     }
     if(!(_systemMask&(1<<_selectedSystem))) {
         _selectedSystem=INK_SYSTEM_NONE;
-        for(int i=1;i<=3;i++)if(_systemMask&(1<<i)){_selectedSystem=(InkSystem)i;break;}
+        for(int i=INK_SYSTEM_GB;i<=INK_SYSTEM_NES;i++)if(_systemMask&(1<<i)){_selectedSystem=(InkSystem)i;break;}
     }
     filterRoms();
     _redraw = true;
@@ -332,7 +332,7 @@ void AppPaperboy::openBook(const String& path) {
     xSemaphoreTake(_mutex, portMAX_DELAY);
     inkConsoleClose(); free(_rom); _rom = nullptr;
     // No renderer may retain a borrowed frame while changing its allocation.
-    // Keep the larger Genesis/NES allocations in PSRAM, leaving internal RAM
+    // Keep the larger NES allocations in PSRAM, leaving internal RAM
     // available for display DMA. GB retains its internal-first preference.
     d.setGameMode(false);
     if(!configureVideo(selected==INK_SYSTEM_NES)) {
@@ -370,7 +370,7 @@ void AppPaperboy::openBook(const String& path) {
         if (ok) ok = inkConsoleOpen(selected,_rom, bytes,nullptr,nullptr);
     }
     if (ok) {
-        _savePath = path + (selected == INK_SYSTEM_SEGA ? ".inkdeck.clown.sav" : ".inkdeck.sav");
+        _savePath = path + ".inkdeck.sav";
         size_t size; uint8_t* ram = inkConsoleRam(&size);
         String source = EbookFS.exists(_savePath) ? _savePath : _savePath + ".bak";
         if (ram && size && EbookFS.exists(source)) {
@@ -526,28 +526,22 @@ void AppPaperboy::run(void* argument) {
             std::min(uint32_t(2), app->_requestedFrame.load() - app->_producedSequence) : 1;
         for (uint32_t frame = 0; frame < due && app->_playing; ++frame) {
             const int64_t coreStarted = esp_timer_get_time();
-            const bool render = GameFrameTiming::renderCatchUpFrame(
-                inkConsoleSystem()==INK_SYSTEM_SEGA,frame,due);
-            if (inkConsoleStep(app->_buttons.load(), app->_nesVideo ? nullptr : app->_workFrame,render)) {
+            if (inkConsoleFrame(app->_buttons.load(), app->_nesVideo ? nullptr : app->_workFrame)) {
                 const uint32_t workUs = esp_timer_get_time() - coreStarted;
                 app->_emulationUs.fetch_add(workUs);
                 const uint32_t sequence = ++app->_producedSequence;
-                uint32_t packingUs = 0;
-                if (render) {
-                    // Keep image preparation off the scan-driving core.
-                    const int64_t packingStarted = esp_timer_get_time();
-                    app->packVideo(app->_packedFrame);
-                    packingUs = esp_timer_get_time() - packingStarted;
-                    app->_packingUs.fetch_add(packingUs);
-                    // Publish only complete pictures; skipped drawing still
-                    // advances the simulation sequence and native frame clock.
-                    xSemaphoreTake(app->_frameMutex, portMAX_DELAY);
-                    std::swap(app->_latest, app->_packedFrame);
-                    app->_latestSequence = sequence;
-                    app->_frameReady = true;
-                    xSemaphoreGive(app->_frameMutex);
-                    ++app->_drawnFrames;
-                }
+                // Keep image preparation off the scan-driving core.
+                const int64_t packingStarted = esp_timer_get_time();
+                app->packVideo(app->_packedFrame);
+                const uint32_t packingUs = esp_timer_get_time() - packingStarted;
+                app->_packingUs.fetch_add(packingUs);
+                // Publish only complete pictures at scan boundaries.
+                xSemaphoreTake(app->_frameMutex, portMAX_DELAY);
+                std::swap(app->_latest, app->_packedFrame);
+                app->_latestSequence = sequence;
+                app->_frameReady = true;
+                xSemaphoreGive(app->_frameMutex);
+                ++app->_drawnFrames;
                 if (workUs + packingUs > app->_gamePeriodUs) app->_overBudgetFrames.fetch_add(1);
                 ++app->_frames;
             } else { app->_failed = true; app->_playing = false; }
@@ -715,7 +709,7 @@ void AppPaperboy::draw() {
         const String& path=_roms[_filtered[index]];
         String name=path.substring(6),ext=name.substring(name.lastIndexOf('.')+1);ext.toUpperCase();
         name=name.substring(0,name.lastIndexOf('.'));name.replace('_',' ');
-        String statePath=path+(inkRomSystem(path.c_str())==INK_SYSTEM_SEGA?".inkdeck.clown.sav":".inkdeck.sav");
+        String statePath=path+".inkdeck.sav";
         bool resume=EbookFS.exists(statePath+".state0")||EbookFS.exists(statePath+".state0.bak");
         String detail=ext+(resume?"  /  RESUME SAVED GAME":"  /  TAP TO PLAY");
         InkBoyLibraryUi::card(d,row,name.c_str(),detail.c_str());
@@ -726,7 +720,6 @@ void AppPaperboy::draw() {
         label(d,"or upload them from InkDeck's web interface.",40,443,1);
         label(d,"Game Boy  .gb / .gbc",40,512,2);
         label(d,"NES       .nes",40,552,2);
-        label(d,"Genesis   .md / .gen / .bin",40,592,2);
     }
     InkBoyLibraryUi::footer(d,_page,(_filtered.size()+InkBoyLibraryUi::ROWS-1)/InkBoyLibraryUi::ROWS,_message.c_str());
     d.refresh(false);

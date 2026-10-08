@@ -3,7 +3,8 @@
 #include <stddef.h>
 #include <stdbool.h>
 #include <string.h>
-typedef enum { INK_SYSTEM_NONE=0, INK_SYSTEM_GB=1, INK_SYSTEM_NES=2, INK_SYSTEM_SEGA=3 } InkSystem;
+// Preserve GB/NES IDs for existing save files; retired ID 3 is unsupported.
+typedef enum { INK_SYSTEM_NONE=0, INK_SYSTEM_GB=1, INK_SYSTEM_NES=2 } InkSystem;
 static inline bool inkExtension(const char* ext, const char* expected) {
     if (!ext) return false;
     while (*ext && *expected) {
@@ -16,18 +17,17 @@ static inline InkSystem inkRomSystem(const char* name) {
     const char* ext=name ? strrchr(name,'.') : NULL;
     if (inkExtension(ext,".gb") || inkExtension(ext,".gbc")) return INK_SYSTEM_GB;
     if (inkExtension(ext,".nes")) return INK_SYSTEM_NES;
-    if (inkExtension(ext,".md") || inkExtension(ext,".gen") || inkExtension(ext,".bin")) return INK_SYSTEM_SEGA;
     return INK_SYSTEM_NONE;
 }
 static inline const char* inkSystemName(InkSystem system) {
-    return system==INK_SYSTEM_GB ? "Game Boy" : system==INK_SYSTEM_NES ? "NES" : system==INK_SYSTEM_SEGA ? "Sega" : "Unknown";
+    return system==INK_SYSTEM_GB ? "Game Boy" : system==INK_SYSTEM_NES ? "NES" : "Unknown";
 }
 static inline size_t inkRomLimit(InkSystem system) {
-    return system==INK_SYSTEM_GB ? 8U*1024U*1024U : system==INK_SYSTEM_NES ? 2U*1024U*1024U : 4U*1024U*1024U;
+    return system==INK_SYSTEM_GB ? 8U*1024U*1024U : system==INK_SYSTEM_NES ? 2U*1024U*1024U : 0;
 }
 static inline bool inkRomSizeValid(InkSystem system, size_t bytes) {
-    size_t minimum=system==INK_SYSTEM_GB ? 32768 : system==INK_SYSTEM_NES ? 16400 : 512;
-    return system!=INK_SYSTEM_NONE && bytes>=minimum && bytes<=inkRomLimit(system);
+    size_t minimum=system==INK_SYSTEM_GB ? 32768 : 16400;
+    return (system==INK_SYSTEM_GB || system==INK_SYSTEM_NES) && bytes>=minimum && bytes<=inkRomLimit(system);
 }
 // Large cartridges use pinned SD banks instead of exhausting 8 MB PSRAM.
 #define INK_ROM_MAX_BYTES (8U * 1024U * 1024U)
@@ -61,8 +61,5 @@ static inline const char* inkRomValidateSystem(InkSystem system, const uint8_t* 
         if (!h[4] || bytes!=expected) return "NES size does not match its header";
         return NULL;
     }
-    if ((bytes&1) || memcmp(h+0x100,"SEGA",4)) return "Use a raw Genesis .md/.gen/.bin ROM (not SMD or ZIP)";
-    uint32_t reset=((uint32_t)h[4]<<24)|((uint32_t)h[5]<<16)|((uint32_t)h[6]<<8)|h[7];
-    if ((reset&1) || reset>=bytes) return "Invalid Genesis reset vector";
-    return NULL;
+    return "Unsupported ROM format";
 }

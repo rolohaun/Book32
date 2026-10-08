@@ -39,7 +39,7 @@ inline void receive(AsyncWebServerRequest* request, String filename, size_t inde
         request->_tempObject = s;
         request->onDisconnect([request]() { cleanup(request); });
         if (index) { error(s, 400, "Invalid upload offset"); return; }
-        if (!inkRomFilename(filename.c_str())) { error(s, 400, "Choose .gb/.gbc, .nes or .md/.gen/.bin with a simple filename (96 bytes maximum)"); return; }
+        if (!inkRomFilename(filename.c_str())) { error(s, 400, "Choose .gb/.gbc or .nes with a simple filename (96 bytes maximum)"); return; }
         if (!ebookStorageUsesSD()) { error(s, 503, "Insert a MicroSD card and restart InkDeck"); return; }
         if (!RomStorage::acquire(RomStorage::Upload)) { error(s, 409, "Another upload or game is active"); return; }
         s->owns = true;

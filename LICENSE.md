@@ -12,10 +12,9 @@ is provided in [COPYING](COPYING).
 
 Third-party files retain their own copyright notices and licenses. This
 grant does not replace those terms. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)
-and the notices shipped with each dependency. The combined LILYGO firmware
-includes AGPLv3-or-later ClownMDEmu and is distributed under those copyleft
-requirements. Commercial use is not excluded by AGPL, but source-sharing,
-notice and other license obligations still apply.
+and the notices shipped with each dependency. Removal of the Genesis core
+in 1.3.2 does not change the AGPLv3-or-later license of InkDeck's original
+project code and integration changes.
 
 ## Corresponding source
 
@@ -26,7 +25,7 @@ PlatformIO libraries and Arduino core/library sources used for the build.
 The pinned Espressif toolchain and SDK are installed by PlatformIO. Users of the
 device web interface can access the source from its visible source link.
 
-For 1.3.1: https://github.com/rolohaun/Book32/tree/v1.3.1
+For 1.3.2: https://github.com/rolohaun/Book32/tree/v1.3.2
 
 Build commands, prerequisites, partition layout and installation steps are
 in README.md and platformio.ini. No signing key, activation service or locked

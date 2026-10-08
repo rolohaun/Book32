@@ -12,20 +12,11 @@ int main() {
     assert(buttonsAt(DPAD_X-60,DPAD_Y-60)==0x60);
     assert(buttonsAt(DPAD_X,DPAD_Y)==0);
     assert((buttonsAt(DPAD_X+60,DPAD_Y)|buttonsAt(A_X,A_Y))==0x11);
-    assert(buttonsAt(SEGA_A_X,SEGA_A_Y,INK_SYSTEM_SEGA)==1);
-    assert(buttonsAt(SEGA_B_X,SEGA_B_Y,INK_SYSTEM_SEGA)==2);
-    assert(buttonsAt(SEGA_C_X,SEGA_C_Y,INK_SYSTEM_SEGA)==0x100);
-    assert(buttonsAt(SELECT_X,SMALL_Y,INK_SYSTEM_SEGA)==0);
     for(int y=0;y<LilygoLayout::HEIGHT;++y) for(int x=0;x<LilygoLayout::WIDTH;++x) {
         uint8_t mask=buttonsAt(x,y);
         assert((mask&3)!=3 && (mask&12)!=12); // A/B and Select/Start cannot overlap.
         if (y<GameViewport::Y+GameViewport::H) assert(mask==0);
         assert(!(mask&0xf0) || !(mask&0x0f)); // D-pad and button hit zones separate.
-        uint16_t sega=buttonsAt(x,y,INK_SYSTEM_SEGA), face=sega&0x103;
-        assert(!face || (face&(face-1))==0);
-        assert(!(sega&0xf0)||!(sega&0x10f));
-        assert(!(sega&8)||!(sega&0x103));
-        if(y<GameViewport::Y+GameViewport::H)assert(sega==0);
         uint16_t nes=buttonsAt(x,y,INK_SYSTEM_NES);
         assert((nes&3)!=3 && (nes&12)!=12);
         assert(!(nes&0xf0)||!(nes&0x0f));
@@ -38,10 +29,6 @@ int main() {
             assert(canvas.getPixel(x,y)); // Trim never consumes any game pixels.
     assert(!canvas.getPixel(A_X,A_Y) && !canvas.getPixel(B_X,B_Y));
     assert(!canvas.getPixel(DPAD_X,DPAD_Y));
-    canvas.fillScreen(WHITE); InkBoyUi::draw(canvas,INK_SYSTEM_SEGA);
-    for(int y=GameViewport::Y;y<GameViewport::Y+GameViewport::H;++y)
-        for(int x=GameViewport::X;x<GameViewport::X+GameViewport::W;++x)assert(canvas.getPixel(x,y));
-    assert(!canvas.getPixel(SEGA_A_X,SEGA_A_Y)&&!canvas.getPixel(SEGA_C_X,SEGA_C_Y));
     canvas.fillScreen(WHITE);InkBoyUi::draw(canvas,INK_SYSTEM_NES);
     for(int y=NesViewport::Y;y<NesViewport::Y+NesViewport::H;++y)
         for(int x=NesViewport::X;x<NesViewport::X+NesViewport::W;++x)assert(canvas.getPixel(x,y));

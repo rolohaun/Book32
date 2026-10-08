@@ -16,33 +16,29 @@ updates.
 
 ### LILYGO preview
 
-The browser installer provides **InkDeck 1.3.1** for all three targets. The
+The browser installer provides **InkDeck 1.3.2** for all three targets. The
 LILYGO H752-01 / Pro Lite build remains experimental; the older H752 pinout is
 not supported. The header shows only InkDeck and the release version, without
-development-build suffixes. See [release notes](docs/release-1.3.1.md).
+development-build suffixes. See [release notes](docs/release-1.3.2.md).
 
-The LILYGO build adds **NES (Nofrendo)** and
-**Genesis (ClownMDEmu)** alongside the existing **CrankBoy DMG/CGB** core in Ink Boy.
-Its polished library shows Game Boy, NES and Sega tabs only for detected games,
-then launches the appropriate core. Web uploads accept `.gb`, `.gbc`, `.nes`,
-`.md`, `.gen` and `.bin` into `/roms` on MicroSD. Book32 and Sticky do not expose
+The LILYGO build includes **NES (Nofrendo)** and **Game Boy / Game Boy Color
+(CrankBoy)** in Ink Boy. Its library shows Game Boy and NES tabs only for
+detected games, then launches the appropriate core. Web uploads accept `.gb`,
+`.gbc` and `.nes` into `/roms` on MicroSD. Book32 and Sticky do not expose
 this feature. NES now preserves its native 256×240 image at exact 2× scaling
 (512×480), without the old 160×120 intermediate image. No games or BIOS files
 are bundled.
 
-**Experimental Genesis replacement:** ClownMDEmu and its original Clown68000 /
-ClownZ80 cores replace the non-commercial dependencies from local test builds.
-The combined firmware is AGPLv3-or-later: commercial use is allowed subject to
-its source-sharing and notice requirements, not a permissive-license release.
-Old Genesis saves are kept separate and cannot be loaded by the new core;
-GB/GBC and NES saves are unchanged. See [licensing](LICENSE.md),
-[core integration](lib/InkGenesis/README.md) and [third-party notices](THIRD_PARTY_NOTICES.md).
+Genesis support has been removed in 1.3.2 because performance did not meet
+the intended experience. Existing Genesis ROMs and saves are left untouched
+on SD, but are no longer listed or accepted for upload. GB/GBC and NES saves
+are unchanged. InkDeck's project license remains AGPLv3-or-later; see
+[licensing](LICENSE.md) and [third-party notices](THIRD_PARTY_NOTICES.md).
 
 On the tested LILYGO, NES emulation runs at about 60 FPS; measured display
 presentation varies around 51–60 FPS with an average near 56 FPS. These are
 different measurements, not a guarantee for every game. GB display scans have
-reached about 59 Hz. The replacement Genesis core has passed synthetic host
-tests and its device build, but hardware speed and compatibility are unmeasured. E-paper
+reached about 59 Hz. E-paper
 ghosting remains possible. Tap the game screen for a manual cleaning refresh.
 
 ## Controls

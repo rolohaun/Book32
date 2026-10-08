@@ -1,5 +1,5 @@
 const ESPTOOL_MODULE_URL = 'https://unpkg.com/esptool-js@0.6.1/bundle.js';
-const RELEASE_VERSION = '1.3.1';
+const RELEASE_VERSION = '1.3.2';
 
 const profiles = {
   book32: {
@@ -25,7 +25,7 @@ const profiles = {
     name: 'LILYGO T5 E-Paper S3 Pro Lite — H752-01',
     manifest: `manifest-lilygo-update-v${RELEASE_VERSION}.json`,
     flashSize: '16MB',
-    description: 'Experimental H752-01 / Pro Lite build with eReader, Todo, Klipper, Settings and Ink Boy for Game Boy, Game Boy Color, NES and Genesis. No game audio. Genesis uses ClownMDEmu (AGPLv3+); hardware performance is still being validated. Not compatible with the older H752.',
+    description: 'Experimental H752-01 / Pro Lite build with eReader, Todo, Klipper, Settings and Ink Boy for Game Boy, Game Boy Color and NES. No game audio. Not compatible with the older H752.',
     after: 'If it remains in download mode, press RESET. Open Settings for Wi-Fi and frontlight brightness. Upload your own legally obtained ROMs through the Game ROMs web tab, or copy them into /roms on a FAT32 MicroSD card. Use Save & exit before removing the card. Press BOOT to wake from sleep.'
   }
 };
@@ -75,7 +75,7 @@ function selectDevice(profileId) {
   afterFlashing.textContent = profile.after;
   document.querySelector('#release-name').textContent = `InkDeck ${profile.version}`;
   document.querySelector('#release-status').textContent = profile.experimental ? 'Experimental preview' : 'Stable release';
-  document.querySelector('#release-detail').textContent = profile.experimental ? 'H752-01 only · GB / GBC / NES / Genesis · October 8, 2026' : 'Firmware + web interface · October 8, 2026';
+  document.querySelector('#release-detail').textContent = profile.experimental ? 'H752-01 only · GB / GBC / NES · October 8, 2026' : 'Firmware + web interface · October 8, 2026';
   flashButton.lastChild.textContent = ` Flash InkDeck ${profile.version}`;
   flashNote.textContent = profile.experimental ? 'Check your board revision before flashing. Back up its existing firmware/settings: this installs the InkDeck partition layout.' : "Chrome or Edge will ask you to choose the device's serial port.";
   flashButton.disabled = !setBrowserSupport();

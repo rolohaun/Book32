@@ -6,7 +6,7 @@ const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
 const root = path.resolve(__dirname, '..');
 const docs = path.join(root, 'docs');
-const version = '1.4.4';
+const version = '1.4.5';
 const targets = {
   book32: ['seeed_xiao_esp32s3', 'firmware', 'littlefs', 0x510000, 16],
   sticky: ['seeed_reterminal_sticky', 'book32-sticky-firmware', 'book32-sticky-littlefs', 0x810000, 32],

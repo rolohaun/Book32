@@ -57,6 +57,10 @@ private:
     OneButton btnUp;
     OneButton btnDown;
 #endif
+#if defined(PIN_BUTTON_PREV)
+    OneButton btnPrev;
+    OneButton btnHome;
+#endif
 #if BOOK32_HAS_TOUCH
     StickyTouch touch;
     bool _touchDown = false;
@@ -114,9 +118,11 @@ private:
     void onLongPress();
     void onUp();
     void onDown();
+    void onHome();
     static void staticClick(void* ptr);
     static void staticDoubleClick(void* ptr);
     static void staticLongPress(void* ptr);
     static void staticUp(void* ptr);
     static void staticDown(void* ptr);
+    static void staticHome(void* ptr);
 };

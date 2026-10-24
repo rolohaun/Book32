@@ -14,6 +14,10 @@
 InputMgr::InputMgr() : btn(PIN_BUTTON, true, true),
                        btnUp(PIN_BUTTON_UP, true, true),
                        btnDown(PIN_BUTTON_DOWN, true, true) {
+#elif defined(PIN_BUTTON_PREV)
+InputMgr::InputMgr() : btn(PIN_BUTTON, true, true),
+                       btnPrev(PIN_BUTTON_PREV, true, true),
+                       btnHome(PIN_BUTTON_HOME, true, true) {
 #else
 InputMgr::InputMgr() : btn(PIN_BUTTON, true, true) {
 #endif
@@ -49,6 +53,15 @@ void InputMgr::init() {
     btnDown.setClickMs(100);
     btnUp.attachClick(staticUp, this);
     btnDown.attachClick(staticDown, this);
+#endif
+#if defined(PIN_BUTTON_PREV)
+    // TRMNL kit: KEY1 turns back a page, KEY2 returns to the main menu.
+    btnPrev.setDebounceMs(30);
+    btnHome.setDebounceMs(30);
+    btnPrev.setClickMs(100);
+    btnHome.setClickMs(100);
+    btnPrev.attachClick(staticUp, this);
+    btnHome.attachClick(staticHome, this);
 #endif
 #if BOOK32_HAS_TOUCH
     touch.begin();
@@ -189,6 +202,10 @@ void InputMgr::update() {
         btnUp.tick();
         btnDown.tick();
 #endif
+#if defined(PIN_BUTTON_PREV)
+        btnPrev.tick();
+        btnHome.tick();
+#endif
 #if BOOK32_HAS_TOUCH
         pollTouch();
 #endif
@@ -236,6 +253,10 @@ void InputMgr::inputTask(void* parameter) {
         self->btnUp.tick();
         self->btnDown.tick();
 #endif
+#if defined(PIN_BUTTON_PREV)
+        self->btnPrev.tick();
+        self->btnHome.tick();
+#endif
 #if BOOK32_HAS_TOUCH
         self->pollTouch();
 #endif
@@ -281,6 +302,7 @@ void InputMgr::staticDoubleClick(void* ptr) { if (ptr) static_cast<InputMgr*>(pt
 void InputMgr::staticLongPress(void* ptr) { if (ptr) static_cast<InputMgr*>(ptr)->onLongPress(); }
 void InputMgr::staticUp(void* ptr) { if (ptr) static_cast<InputMgr*>(ptr)->onUp(); }
 void InputMgr::staticDown(void* ptr) { if (ptr) static_cast<InputMgr*>(ptr)->onDown(); }
+void InputMgr::staticHome(void* ptr) { if (ptr) static_cast<InputMgr*>(ptr)->onHome(); }
 
 void InputMgr::onClick() {
     BatteryMgr::getInstance().resetIdleTimer();
@@ -313,6 +335,11 @@ void InputMgr::onUp() {
 void InputMgr::onDown() {
     BatteryMgr::getInstance().resetIdleTimer();
     enqueueAction(INPUT_NEXT);
+}
+
+void InputMgr::onHome() {
+    BatteryMgr::getInstance().resetIdleTimer();
+    enqueueAction(INPUT_HOME);
 }
 
 void InputMgr::pollTouch() {

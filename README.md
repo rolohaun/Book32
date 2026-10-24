@@ -11,7 +11,7 @@ Install it from your browser with the
 
 | Device | Display | Controls | Book storage |
 | --- | --- | --- | --- |
-| Book32 (DIY build) | 7.5 inch, 800 × 480 | One button | 10 MB internal |
+| Book32 (DIY build) | 7.5 inch, 800 × 480 | Three buttons | 10 MB internal |
 | Seeed Studio Sticky | 3.97 inch, 800 × 480 | Touch screen and three buttons | MicroSD, or 23 MB internal without a card |
 | LILYGO T5 E-Paper S3 Pro H752-01 / Pro Lite (experimental) | 4.7 inch, 960 × 540, frontlight | Touch screen and buttons | MicroSD, or internal without a card |
 
@@ -68,8 +68,10 @@ settings.
 
 **Book32**
 
-- Press the button to move to the next item or page.
-- Hold it to open, select or go back, depending on the screen.
+- KEY3 moves to the next item or page; hold it to open, select or go back,
+  depending on the screen.
+- KEY1 moves to the previous item or page.
+- KEY2 returns to the main menu from anywhere.
 
 **Seeed Studio Sticky**
 
@@ -147,7 +149,8 @@ a 7.5-inch 800 × 480 e-paper panel (GD7965 controller).
 | RST | Reset | GPIO 38 |
 | BUSY | Busy | GPIO 4 |
 
-- **Button:** GPIO 5 to GND.
+- **Buttons** (to GND): KEY3 (next, hold to select) on GPIO 5, KEY1
+  (previous page) on GPIO 2, KEY2 (main menu) on GPIO 3.
 - **Battery sense:** voltage on GPIO 1; the measurement switch on GPIO 6
   (active high).
 

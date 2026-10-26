@@ -253,7 +253,7 @@ void AppWifi::saveReaderSettings() {
         existing.close();
     }
     if (!doc.containsKey("refreshFrequency")) doc["refreshFrequency"] = READER_FULL_REFRESH_INTERVAL_DEFAULT;
-    if (!doc.containsKey("fontFamily")) doc["fontFamily"] = "native";
+    if (!doc.containsKey("fontFamily")) doc["fontFamily"] = READER_FONT_FAMILY_DEFAULT;
 #if BOOK32_HAS_PAGE_BOOKS
     doc["mangaRightToLeft"] = _mangaRightToLeft;
 #endif

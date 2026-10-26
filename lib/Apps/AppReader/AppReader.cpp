@@ -19,7 +19,7 @@
 #include <utility>
 
 static const char* READER_PROGRESS_PATH = "/reader_progress.json";
-static const uint32_t READER_LAYOUT_VERSION = 5;
+static const uint32_t READER_LAYOUT_VERSION = 6;
 static const unsigned long PROGRESS_SAVE_DELAY_MS = 2000;
 
 // Library rows. Book32's 7.5" panel has the lowest pixel density, so it uses
@@ -302,7 +302,7 @@ AppReader::AppReader() {
     _totalBookPages = 0;
     _refreshEveryNPages = READER_FULL_REFRESH_INTERVAL_DEFAULT;
     _fontSizePt = READER_FONT_SIZE_DEFAULT;
-    _useOpenSans = false;     // Preserve the original reader font by default
+    _useOpenSans = strcmp(READER_FONT_FAMILY_DEFAULT, "openSans") == 0;
     _showChapter = true;
     _showPageNumber = true;
     _showReadingPercentage = true;
@@ -327,7 +327,7 @@ void AppReader::loadSettings() {
                 int pt = doc["fontSize"];
                 _fontSizePt = (pt >= 18) ? 18 : (pt >= 12 ? 12 : 9);
             }
-            const char* fontFamily = doc["fontFamily"] | "native";
+            const char* fontFamily = doc["fontFamily"] | READER_FONT_FAMILY_DEFAULT;
             _useOpenSans = strcmp(fontFamily, "openSans") == 0;
             _showChapter = doc["showChapter"] | true;
             _showPageNumber = doc["showPageNumber"] | true;

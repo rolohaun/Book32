@@ -556,7 +556,7 @@ function getReaderSettings() {
             if (data.fontSize) {
                 setRadioValue('font-size', String(data.fontSize));
             }
-            setRadioValue('font-family', data.fontFamily || 'native');
+            setRadioValue('font-family', data.fontFamily || 'openSans');
             document.getElementById('show-chapter').checked = data.showChapter !== false;
             document.getElementById('show-page-number').checked = data.showPageNumber !== false;
             document.getElementById('show-reading-percentage').checked = data.showReadingPercentage !== false;
@@ -570,7 +570,7 @@ function getReaderSettings() {
 function saveReaderSettings() {
     const refreshRate = parseInt(document.getElementById('refresh-rate').value);
     const fontSize = parseInt(getRadioValue('font-size', '12'));
-    const fontFamily = getRadioValue('font-family', 'native');
+    const fontFamily = getRadioValue('font-family', 'openSans');
     const showChapter = document.getElementById('show-chapter').checked;
     const showPageNumber = document.getElementById('show-page-number').checked;
     const showReadingPercentage = document.getElementById('show-reading-percentage').checked;

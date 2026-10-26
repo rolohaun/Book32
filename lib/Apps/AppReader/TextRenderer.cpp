@@ -1,6 +1,44 @@
 #include "TextRenderer.h"
 #include "fonts/OpenSansGFXFonts.h"
 
+// Unicode code points for Windows-1252 bytes 0x80-0x9F (0 = undefined).
+static const uint16_t CP1252_HIGH[32] = {
+    0x20AC, 0,      0x201A, 0x0192, 0x201E, 0x2026, 0x2020, 0x2021,
+    0x02C6, 0x2030, 0x0160, 0x2039, 0x0152, 0,      0x017D, 0,
+    0,      0x2018, 0x2019, 0x201C, 0x201D, 0x2022, 0x2013, 0x2014,
+    0x02DC, 0x2122, 0x0161, 0x203A, 0x0153, 0,      0x017E, 0x0178
+};
+
+// Reads one UTF-8 code point and returns the Windows-1252 byte the 8-bit
+// GFX fonts are indexed by, or 0 when the font has nothing to draw for it.
+static uint8_t nextFontByte(const char* text, int& pos, int end) {
+    uint8_t lead = static_cast<uint8_t>(text[pos++]);
+    if (lead < 0x80) return lead;
+    int extra = (lead & 0xE0) == 0xC0 ? 1 : (lead & 0xF0) == 0xE0 ? 2 : (lead & 0xF8) == 0xF0 ? 3 : 0;
+    uint32_t codepoint = lead & (0x3F >> extra);
+    if (extra == 0) return 0;
+    for (int i = 0; i < extra; i++) {
+        if (pos >= end || (static_cast<uint8_t>(text[pos]) & 0xC0) != 0x80) return 0;
+        codepoint = (codepoint << 6) | (static_cast<uint8_t>(text[pos++]) & 0x3F);
+    }
+    if (codepoint == 0xAD) return 0;  // Soft hyphen is a hint, never drawn
+    if (codepoint >= 0xA0 && codepoint <= 0xFF) return static_cast<uint8_t>(codepoint);
+    for (int i = 0; i < 32; i++) {
+        if (CP1252_HIGH[i] == codepoint) return static_cast<uint8_t>(0x80 + i);
+    }
+    return 0;
+}
+
+static String toFontText(const char* text, int start, int end) {
+    String encoded;
+    encoded.reserve(end - start);
+    for (int pos = start; pos < end;) {
+        uint8_t c = nextFontByte(text, pos, end);
+        if (c) encoded += static_cast<char>(c);
+    }
+    return encoded;
+}
+
 TextRenderer::TextRenderer(int width, int height, int fontSize, bool useOpenSans) {
     _width = width;
     _height = height;
@@ -130,20 +168,20 @@ const GFXfont* TextRenderer::getGFXFont(TextStyle style, int& lineHeight) {
     if (_useOpenSans) {
         switch (_fontSize) {
             case 18:
-                normal = &OpenSansRegular18pt7b; bold = &OpenSansBold18pt7b;
-                h4 = &OpenSansBold18pt7b;        h3 = &OpenSansBold18pt7b;
-                h2 = &OpenSansBold24pt7b;        h1 = &OpenSansBold24pt7b;
+                normal = &OpenSansRegular18pt8b; bold = &OpenSansBold18pt8b;
+                h4 = &OpenSansBold18pt8b;        h3 = &OpenSansBold18pt8b;
+                h2 = &OpenSansBold24pt8b;        h1 = &OpenSansBold24pt8b;
                 break;
             case 12:
-                normal = &OpenSansRegular12pt7b; bold = &OpenSansBold12pt7b;
-                h4 = &OpenSansBold12pt7b;        h3 = &OpenSansBold18pt7b;
-                h2 = &OpenSansBold18pt7b;        h1 = &OpenSansBold24pt7b;
+                normal = &OpenSansRegular12pt8b; bold = &OpenSansBold12pt8b;
+                h4 = &OpenSansBold12pt8b;        h3 = &OpenSansBold18pt8b;
+                h2 = &OpenSansBold18pt8b;        h1 = &OpenSansBold24pt8b;
                 break;
             case 9:
             default:
-                normal = &OpenSansRegular9pt7b;  bold = &OpenSansBold9pt7b;
-                h4 = &OpenSansBold9pt7b;         h3 = &OpenSansBold12pt7b;
-                h2 = &OpenSansBold18pt7b;        h1 = &OpenSansBold24pt7b;
+                normal = &OpenSansRegular9pt8b;  bold = &OpenSansBold9pt8b;
+                h4 = &OpenSansBold9pt8b;         h3 = &OpenSansBold12pt8b;
+                h2 = &OpenSansBold18pt8b;        h1 = &OpenSansBold24pt8b;
                 break;
         }
     } else switch (_fontSize) {
@@ -222,8 +260,8 @@ RenderResult TextRenderer::renderRichPageDynamic(Book32Display& display, const s
             display.setFont(font);
             
             if (font != _lastGFXFont) {
-                for (uint8_t c = 32; c < 127; c++) {
-                    if (c >= font->first && c <= font->last) {
+                for (int c = 0; c < 256; c++) {
+                    if (c >= 32 && c >= font->first && c <= font->last) {
                         _gfxCharWidths[c] = font->glyph[c - font->first].xAdvance;
                     } else {
                         _gfxCharWidths[c] = 0;
@@ -272,9 +310,8 @@ RenderResult TextRenderer::renderRichPageDynamic(Book32Display& display, const s
                     while (wordEnd < textLen && !isspace((unsigned char)text[wordEnd])) wordEnd++;
                     
                     int wordWidth = 0;
-                    for (int k = wordStart; k < wordEnd; k++) {
-                        unsigned char c = (unsigned char)text[k];
-                        wordWidth += (c < 128) ? _gfxCharWidths[c] : 8;
+                    for (int k = wordStart; k < wordEnd;) {
+                        wordWidth += _gfxCharWidths[nextFontByte(text, k, wordEnd)];
                     }
 
                     int spaceWidth = (line_width + segment_width > 0) ? _gfxCharWidths[' '] : 0;
@@ -322,7 +359,7 @@ RenderResult TextRenderer::renderRichPageDynamic(Book32Display& display, const s
                         lineText += ' ';
                         segment_width += spaceWidth;
                     }
-                    lineText += node.textNode.text.substring(wordStart, wordEnd);
+                    lineText += toFontText(text, wordStart, wordEnd);
                     segment_width += wordWidth;
                     line_chars = wordEnd - pos;
                 }

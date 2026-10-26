@@ -687,7 +687,7 @@ void WebMgr::setupEndpoints() {
             if (!deserializeJson(savedDoc, file)) {
                 doc["refreshFrequency"] = savedDoc["refreshFrequency"] | READER_FULL_REFRESH_INTERVAL_DEFAULT;
                 doc["fontSize"] = savedDoc["fontSize"] | READER_FONT_SIZE_DEFAULT;
-                doc["fontFamily"] = savedDoc["fontFamily"] | "native";
+                doc["fontFamily"] = savedDoc["fontFamily"] | READER_FONT_FAMILY_DEFAULT;
                 doc["showChapter"] = savedDoc["showChapter"] | true;
                 doc["showPageNumber"] = savedDoc["showPageNumber"] | true;
                 doc["showReadingPercentage"] = savedDoc["showReadingPercentage"] | true;
@@ -697,7 +697,7 @@ void WebMgr::setupEndpoints() {
             } else {
                 doc["refreshFrequency"] = READER_FULL_REFRESH_INTERVAL_DEFAULT;
                 doc["fontSize"] = READER_FONT_SIZE_DEFAULT;
-                doc["fontFamily"] = "native";
+                doc["fontFamily"] = READER_FONT_FAMILY_DEFAULT;
                 doc["showChapter"] = true;
                 doc["showPageNumber"] = true;
                 doc["showReadingPercentage"] = true;
@@ -706,7 +706,7 @@ void WebMgr::setupEndpoints() {
         } else {
             doc["refreshFrequency"] = READER_FULL_REFRESH_INTERVAL_DEFAULT;
             doc["fontSize"] = READER_FONT_SIZE_DEFAULT;
-            doc["fontFamily"] = "native";
+            doc["fontFamily"] = READER_FONT_FAMILY_DEFAULT;
             doc["showChapter"] = true;
             doc["showPageNumber"] = true;
             doc["showReadingPercentage"] = true;
@@ -723,7 +723,7 @@ void WebMgr::setupEndpoints() {
             DynamicJsonDocument doc(512);
             doc["refreshFrequency"] = READER_FULL_REFRESH_INTERVAL_DEFAULT;
             doc["fontSize"] = READER_FONT_SIZE_DEFAULT;
-            doc["fontFamily"] = "native";
+            doc["fontFamily"] = READER_FONT_FAMILY_DEFAULT;
             doc["showChapter"] = true;
             doc["showPageNumber"] = true;
             doc["showReadingPercentage"] = true;
@@ -734,7 +734,7 @@ void WebMgr::setupEndpoints() {
                     if (!deserializeJson(savedDoc, existing)) {
                         doc["refreshFrequency"] = savedDoc["refreshFrequency"] | READER_FULL_REFRESH_INTERVAL_DEFAULT;
                         doc["fontSize"] = savedDoc["fontSize"] | READER_FONT_SIZE_DEFAULT;
-                        doc["fontFamily"] = savedDoc["fontFamily"] | "native";
+                        doc["fontFamily"] = savedDoc["fontFamily"] | READER_FONT_FAMILY_DEFAULT;
                         doc["showChapter"] = savedDoc["showChapter"] | true;
                         doc["showPageNumber"] = savedDoc["showPageNumber"] | true;
                         doc["showReadingPercentage"] = savedDoc["showReadingPercentage"] | true;
@@ -757,7 +757,7 @@ void WebMgr::setupEndpoints() {
                 WebMgr::getInstance()._pendingReaderFontSize = pt;
             }
             if (json.containsKey("fontFamily")) {
-                const char* requestedFamily = json["fontFamily"] | "native";
+                const char* requestedFamily = json["fontFamily"] | READER_FONT_FAMILY_DEFAULT;
                 bool useOpenSans = strcmp(requestedFamily, "openSans") == 0;
                 doc["fontFamily"] = useOpenSans ? "openSans" : "native";
                 WebMgr::getInstance()._pendingReaderFontFamily = useOpenSans ? 1 : 0;

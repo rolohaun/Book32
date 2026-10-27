@@ -12,6 +12,7 @@
 #include "GameViewport.h"
 #include "NesViewport.h"
 #include "NesCore.h"
+#include "arduboy/ArduboyCore.h"
 #include "InkBoyUi.h"
 #include "InkBoyLibraryUi.h"
 #include <esp_timer.h>
@@ -20,6 +21,7 @@
 #include <soc/soc_memory_types.h>
 #include "NetworkWork.h"
 #include "GamepadMgr.h"
+#include "SoundMgr.h"
 #include "InkBoyDrive.h"
 
 namespace {
@@ -160,9 +162,14 @@ void AppPaperboy::scan() {
         std::sort(_roms.begin(), _roms.end(), [](const String& a,const String& b){ return strcasecmp(a.c_str(),b.c_str())<0; });
         if (!_roms.empty()) _message = "Tap a game to play or resume. Saves stay with each ROM.";
     }
+    // Built-in Arduboy games head the list, with or without an SD card.
+    for (unsigned i = 0; i < inkArduboyCount(); ++i) {
+        _roms.insert(_roms.begin() + i, inkArduboyPath(i));
+        _systemMask |= 1 << INK_SYSTEM_ARDUBOY;
+    }
     if(!(_systemMask&(1<<_selectedSystem))) {
         _selectedSystem=INK_SYSTEM_NONE;
-        for(int i=INK_SYSTEM_GB;i<=INK_SYSTEM_NES;i++)if(_systemMask&(1<<i)){_selectedSystem=(InkSystem)i;break;}
+        for(int i=INK_SYSTEM_GB;i<=INK_SYSTEM_ARDUBOY;i++)if(_systemMask&(1<<i)){_selectedSystem=(InkSystem)i;break;}
     }
     filterRoms();
     _redraw = true;
@@ -275,6 +282,8 @@ bool AppPaperboy::save() {
 }
 
 bool AppPaperboy::saveState(unsigned slot) {
+    // Arduboy games have no save states, only their EEPROM (save()).
+    if (inkConsoleSystem() == INK_SYSTEM_ARDUBOY) return slot == 0;
     if (!_mutex || _savePath.isEmpty() || slot > 3 || _coreFault) return false;
     xSemaphoreTake(_mutex, portMAX_DELAY);
     size_t size = inkConsoleStateSize();
@@ -327,6 +336,7 @@ void AppPaperboy::inspectSlots() {
 }
 void AppPaperboy::pauseGame() {
     _playing = false; _buttons = 0;
+    SoundMgr::getInstance().tone(0);
     if (_task) xTaskNotifyGive(_task);
     DisplayMgr::getInstance().getDisplay().setGameMode(false);
     xSemaphoreTake(_mutex, portMAX_DELAY); // Wait for a complete core frame.
@@ -368,6 +378,7 @@ void AppPaperboy::stop() {
         InputMgr::getInstance().clearCallback(); InputMgr::getInstance().clearTouchCallback(); return;
     }
     _playing = false; _buttons = 0;
+    SoundMgr::getInstance().tone(0);
     if (_task) xTaskNotifyGive(_task); // Never leave a producer waiting on exit.
     // Neutralize pending video drive before SD saves or other blocking work.
     DisplayMgr::getInstance().getDisplay().setGameMode(false);
@@ -463,9 +474,11 @@ void AppPaperboy::openBook(const String& path) {
     label(d,String(inkSystemName(selected))+" emulator",30,264,2);
     String title=path.substring(path.lastIndexOf('/')+1);if(title.length()>38)title=title.substring(0,35)+"...";
     label(d,title,30,310,2);label(d,"Loading ROM and checking saved progress...",30,386,1);d.refresh(false);
-    File f = EbookFS.open(path, "r");
-    const size_t bytes = f ? f.size() : 0;
-    if (!inkRomSizeValid(selected,bytes)) { _message = "Invalid ROM size for this system"; _redraw = true; return; }
+    // Built-in Arduboy games have no ROM file: `bytes` is the game's index.
+    const int builtIn = selected == INK_SYSTEM_ARDUBOY ? inkArduboyFind(path.c_str()) : -1;
+    File f = builtIn < 0 ? EbookFS.open(path, "r") : File();
+    const size_t bytes = builtIn >= 0 ? size_t(builtIn) : f ? f.size() : 0;
+    if (builtIn < 0 && !inkRomSizeValid(selected,bytes)) { _message = "Invalid ROM size for this system"; _redraw = true; return; }
     xSemaphoreTake(_mutex, portMAX_DELAY);
     inkConsoleClose(); free(_rom); _rom = nullptr;
     // No renderer may retain a borrowed frame while changing its allocation.
@@ -474,7 +487,8 @@ void AppPaperboy::openBook(const String& path) {
     d.setGameMode(false);
     if(!configureVideo(selected==INK_SYSTEM_NES)) {
         if (_romFile) _romFile.close();
-        f.close();_savePath="";_message="Not enough NES video memory";_redraw=true;
+        if (f) f.close();
+        _savePath="";_message="Not enough NES video memory";_redraw=true;
         xSemaphoreGive(_mutex);return;
     }
     d.setNesGame(_nesVideo);
@@ -493,8 +507,8 @@ void AppPaperboy::openBook(const String& path) {
     if (_romFile) _romFile.close();
     bool banked = selected==INK_SYSTEM_GB && bytes > 4U * 1024U * 1024U;
     size_t loaded = banked ? 16384 : bytes;
-    _rom = (uint8_t*)ps_malloc(loaded);
-    bool readOk = _rom && f.read(_rom, loaded) == loaded;
+    _rom = builtIn < 0 ? (uint8_t*)ps_malloc(loaded) : nullptr;
+    bool readOk = builtIn >= 0 || (_rom && f.read(_rom, loaded) == loaded);
     bool ok = readOk;
     if (ok && banked) {
         _romFile = f;
@@ -503,11 +517,13 @@ void AppPaperboy::openBook(const String& path) {
             return file->seek(offset) && file->read(out, count) == count;
         }, &_romFile);
     } else {
-        f.close();
+        if (f) f.close();
         if (ok) ok = inkConsoleOpen(selected,_rom, bytes,nullptr,nullptr);
     }
     if (ok) {
-        _savePath = path + ".inkdeck.sav";
+        // A built-in game saves its EEPROM to /roms when there is a card.
+        if (builtIn >= 0 && romStorageReady() && !EbookFS.exists("/roms")) EbookFS.mkdir("/roms");
+        _savePath = builtIn >= 0 && !romStorageReady() ? String() : path + ".inkdeck.sav";
         size_t size; uint8_t* ram = inkConsoleRam(&size);
         String source = EbookFS.exists(_savePath) ? _savePath : _savePath + ".bak";
         if (ram && size && EbookFS.exists(source)) {
@@ -529,7 +545,7 @@ void AppPaperboy::openBook(const String& path) {
             }
         }
         inkConsoleSaved();
-    } else _message = !_rom ? "Not enough ROM memory" : !readOk ? "Could not read ROM from SD" : inkConsoleError();
+    } else _message = !_rom && builtIn < 0 ? "Not enough ROM memory" : !readOk ? "Could not read ROM from SD" : inkConsoleError();
     _producedSequence = _latestSequence = _snapshotSequence = 0;
     _snapshotValid = false;
     xSemaphoreGive(_mutex);
@@ -595,6 +611,9 @@ void AppPaperboy::tap(uint16_t x, uint16_t y) {
                 _redraw = true;
             }
         } else if (inside(x,y,p.left,p.resumeY,p.width,p.resumeH)) resumeGame();
+        else if (inkConsoleSystem() == INK_SYSTEM_ARDUBOY) {  // only Resume and Exit
+            if (inside(x,y,p.left,p.exitY,p.width,p.exitH)) exitGame();
+        }
         else if (y >= p.slotY && y < p.slotY + 4 * p.slotStep) {
             unsigned slot = (y - p.slotY) / p.slotStep;
             if ((y - p.slotY) % p.slotStep < p.slotH) {
@@ -687,6 +706,10 @@ void AppPaperboy::run(void* argument) {
                 const int64_t packingStarted = esp_timer_get_time();
                 app->packVideo(app->_packedFrame);
                 const uint32_t packingUs = esp_timer_get_time() - packingStarted;
+#if BOOK32_HAS_BUZZER
+                // The Arduboy's one-voice beeper fits the piezo buzzer.
+                SoundMgr::getInstance().tone(inkConsoleSystem() == INK_SYSTEM_ARDUBOY ? inkArduboyToneHz() : 0);
+#endif
                 app->_packingUs.fetch_add(packingUs);
                 // Publish only complete pictures at scan boundaries.
                 xSemaphoreTake(app->_frameMutex, portMAX_DELAY);
@@ -728,8 +751,9 @@ void AppPaperboy::update() {
     GamepadMgr& pad = GamepadMgr::getInstance();
     if (_controls) updateControls();
     pad.setRawMode(_playing || (_controls && (_capture >= 0 || _captureRelease)));
-    const uint16_t padButtons = _playing ? pad.buttons() : 0;
-    const bool padHome = PadMapping::pauses(_padMap, padButtons);
+    const uint16_t padButtons = _playing ? pad.padButtons() : 0;
+    const HidGamepad::Keys keys = _playing ? pad.keys() : HidGamepad::Keys();
+    const bool padHome = PadMapping::pauses(_padMap, padButtons) || KeyMapping::pauses(_keyMap, keys);
     if (padHome && !_padHomeHeld) { _padHomeHeld = true; back(); return; }  // Home pauses
     _padHomeHeld = padHome;
     if (!_playing) return;
@@ -746,7 +770,7 @@ void AppPaperboy::update() {
     if (digitalRead(PIN_BUTTON_DOWN) == LOW) buttons |= 2;
 #endif
     // Pad: the Controls mapping, in the Game Boy / NES button bit order.
-    buttons |= PadMapping::gameButtons(_padMap, padButtons);
+    buttons |= PadMapping::gameButtons(_padMap, padButtons) | KeyMapping::gameButtons(_keyMap, keys);
     _buttons = buttons;
     if (buttons) BatteryMgr::getInstance().resetIdleTimer();
     if (millis() - _lastStats >= 5000) {
@@ -795,6 +819,15 @@ void AppPaperboy::paintPause() {
         button("Confirm",p.confirmRightX,p.confirmY,p.confirmW,p.confirmH);
     } else {
         button("Resume game",p.left,p.resumeY,p.width,p.resumeH);
+        if (inkConsoleSystem() == INK_SYSTEM_ARDUBOY) {
+            // The game keeps its own saves (its EEPROM, stored on the card).
+            label(d,"This Arduboy game saves its own progress.",p.left,p.slotY+10);
+            label(d,"Save slots are for Game Boy and NES games.",p.left,p.slotY+37);
+            button("Save & exit to ROM list",p.left,p.exitY,p.width,p.exitH);
+            label(d,_message,p.left,p.messageY);
+            d.refresh(false);
+            return;
+        }
         for (unsigned i = 0; i < 4; ++i) {
             int y = p.slotY + i*p.slotStep;
             label(d, i ? "Slot " + String(i) : "Auto resume",p.left,y+10);

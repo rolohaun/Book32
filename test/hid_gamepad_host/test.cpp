@@ -2,6 +2,7 @@
 // Build: c++ -std=c++17 -I lib/Book32_Core test/hid_gamepad_host/test.cpp
 #include <assert.h>
 #include <stdio.h>
+#include <string.h>
 #include "HidGamepad.h"
 
 using namespace HidGamepad;
@@ -105,6 +106,19 @@ int main() {
     assert(decode(k, 1, letters, sizeof(letters)) == 0);
     uint8_t swipe[] = {0x00, 0x81, 0x7F};  // touchpad moved hard left and down
     assert(decode(k, 2, swipe, sizeof(swipe)) == 0);
+    // The keys themselves, for the keyboard mapping: K and right Shift.
+    uint8_t kShift[] = {0x20, 0x00, 0x0E, 0, 0, 0, 0, 0};
+    Keys held;
+    assert(decode(k, 1, kShift, sizeof(kShift), ANDROID_MAP, nullptr, &held) == PAD_SELECT);
+    assert(held.count == 2 && held.has(0x0E) && held.has(0xE5) && held.otherPad == 0);
+    char name[12];
+    assert(!strcmp(keyName(0x0E, name), "K") && !strcmp(keyName(0x28, name), "Enter"));
+    // Media keys (consumer array, as the first pad's report 2) are keys too.
+    uint8_t volumeUp[] = {0xE9, 0x00};
+    Keys media;
+    decode(d, 2, volumeUp, sizeof(volumeUp), ANDROID_MAP, nullptr, &media);
+    assert(media.count == 1 && media.has(MEDIA_KEY | 0xE9));
+    assert(!strcmp(keyName(MEDIA_KEY | 0xE9, name), "Volume Up"));
 
     // Garbage is rejected without crashing.
     const uint8_t broken[] = {0x05, 0x01, 0x27};

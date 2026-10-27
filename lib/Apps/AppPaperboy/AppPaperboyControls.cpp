@@ -10,6 +10,7 @@
 namespace {
 constexpr const char* PREFS = "inkade";
 constexpr const char* KEY = "padmap";
+constexpr const char* KEYBOARD_KEY = "keymap";
 }
 
 void AppPaperboy::loadPadMap() {
@@ -21,6 +22,12 @@ void AppPaperboy::loadPadMap() {
     if (length == sizeof(stored) && prefs.getBytes(KEY, stored, sizeof(stored)) == sizeof(stored) &&
         !PadMapping::restore(_padMap, stored, sizeof(stored)))
         Serial.println("Inkade: stored gamepad mapping is from an older version or unreadable; using defaults");
+    _keyMap = KeyMapping::DEFAULTS;
+    uint8_t keys[KeyMapping::STORED_BYTES];
+    const size_t keyBytes = prefs.getBytesLength(KEYBOARD_KEY);
+    if (keyBytes && keyBytes <= sizeof(keys) && prefs.getBytes(KEYBOARD_KEY, keys, keyBytes) == keyBytes &&
+        !KeyMapping::restore(_keyMap, keys, keyBytes))
+        Serial.println("Inkade: stored keyboard mapping is unreadable; using defaults");
     prefs.end();
 }
 
@@ -32,9 +39,25 @@ void AppPaperboy::savePadMap() {
     if (ok) {
         ok = PadMapping::isDefault(_padMap) ? (prefs.isKey(KEY) ? prefs.remove(KEY) : true)
                                             : prefs.putBytes(KEY, stored, sizeof(stored)) == sizeof(stored);
+        uint8_t keys[KeyMapping::STORED_BYTES];
+        KeyMapping::store(_keyMap, keys);
+        ok &= KeyMapping::isDefault(_keyMap) ? (prefs.isKey(KEYBOARD_KEY) ? prefs.remove(KEYBOARD_KEY) : true)
+                                             : prefs.putBytes(KEYBOARD_KEY, keys, sizeof(keys)) == sizeof(keys);
         prefs.end();
     }
     if (!ok) _controlsMessage = "Could not save the controls";
+}
+
+bool AppPaperboy::keyboardControls() const { return GamepadMgr::getInstance().isKeyboard(); }
+
+String AppPaperboy::controlValue(int action) const {
+    if (keyboardControls()) {
+        char buffer[12];
+        return HidGamepad::keyName(_keyMap.keys[action], buffer);
+    }
+    char value[64];
+    PadMapping::describe(_padMap.masks[action], value, sizeof(value));
+    return value;
 }
 
 void AppPaperboy::openControls() {
@@ -50,7 +73,10 @@ void AppPaperboy::paintControls() {
     auto& d = DisplayMgr::getInstance().getDisplay();
     d.setGameMode(false);
     d.setFullWindow();
-    InkBoyLibraryUi::controls(d, _padMap, _controlsCursor, _capture, _controlsMessage.c_str());
+    String values[PadMapping::ACTION_COUNT];
+    const char* shown[PadMapping::ACTION_COUNT];
+    for (int i = 0; i < PadMapping::ACTION_COUNT; ++i) { values[i] = controlValue(i); shown[i] = values[i].c_str(); }
+    InkBoyLibraryUi::controls(d, shown, keyboardControls(), _controlsCursor, _capture, _controlsMessage.c_str());
     d.refresh(!_controlsFull);
     _controlsFull = false;
 }
@@ -58,8 +84,10 @@ void AppPaperboy::paintControls() {
 void AppPaperboy::activateControlRow(int row) {
     _controlsCursor = row;
     if (row == PadMapping::ACTION_COUNT) {
-        _padMap = PadMapping::DEFAULTS;
-        _controlsMessage = "Controls reset to defaults";
+        // Resets the device in use: the keyboard's keys or the pad's buttons.
+        if (keyboardControls()) _keyMap = KeyMapping::DEFAULTS;
+        else _padMap = PadMapping::DEFAULTS;
+        _controlsMessage = keyboardControls() ? "Keyboard keys reset to defaults" : "Controls reset to defaults";
         savePadMap();
     } else if (GamepadMgr::getInstance().state() != GamepadMgr::CONNECTED) {
         _controlsMessage = "Connect a gamepad in InkDeck's Settings first";
@@ -113,7 +141,10 @@ void AppPaperboy::controlsKey(InputAction a) {
 // Called every update while the screen is open: takes the captured press.
 void AppPaperboy::updateControls() {
     GamepadMgr& pad = GamepadMgr::getInstance();
-    const uint16_t held = pad.buttons() & PadMapping::ALL_BUTTONS;
+    const HidGamepad::Keys keys = pad.keys();
+    // A keyboard is captured by key, a gamepad by button.
+    const bool keyboard = keyboardControls();
+    const uint16_t held = keyboard ? keys.count : pad.buttons() & PadMapping::ALL_BUTTONS;
     if (_captureRelease && !held) _captureRelease = false;
     if (_capture < 0) return;
     if (pad.state() != GamepadMgr::CONNECTED) {
@@ -128,10 +159,9 @@ void AppPaperboy::updateControls() {
     }
     if (!held) return;
     const int action = _capture;
-    const int swapped = PadMapping::assign(_padMap, action, held);
-    auto now = [&](int a) {
-        return String(PadMapping::actionName(a)) + " is now " + PadMapping::buttonName(_padMap.masks[a]);
-    };
+    const int swapped = keyboard ? KeyMapping::assign(_keyMap, action, keys.codes[0])
+                                 : PadMapping::assign(_padMap, action, held);
+    auto now = [&](int a) { return String(PadMapping::actionName(a)) + " is now " + controlValue(a); };
     _controlsMessage = now(action);
     if (swapped >= 0) _controlsMessage += "; " + now(swapped) + " (swapped)";
     savePadMap();

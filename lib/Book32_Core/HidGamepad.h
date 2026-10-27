@@ -1,5 +1,6 @@
 #pragma once
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
 
 // Bluetooth LE gamepads describe their input reports with a HID report
@@ -62,6 +63,89 @@ inline uint16_t keyButton(uint16_t key) {
     case 0x29: case 0x4A: return PAD_HOME;            // Esc, Home
     }
     return 0;
+}
+
+// Keys held in a report: keyboard usages (letters 0x04.., modifiers
+// 0xE0..0xE7), and media keys (consumer usages, such as volume or next
+// track) as MEDIA_KEY | usage. Plus the pad buttons from everything else.
+constexpr uint16_t MEDIA_KEY = 0x8000;
+struct Keys {
+    static constexpr int MAX = 8;
+    uint16_t codes[MAX];
+    uint8_t count = 0;
+    uint16_t otherPad = 0;
+    void add(uint16_t code) {
+        if (!code || code == 1 || has(code) || count >= MAX) return;  // 1: too many keys
+        codes[count++] = code;
+    }
+    bool has(uint16_t code) const {
+        for (int i = 0; i < count; ++i) if (codes[i] == code) return true;
+        return false;
+    }
+};
+
+// Short key name ("X", "Enter", "Volume Up") for the Controls screen.
+inline const char* keyName(uint16_t key, char* buffer) {
+    if (key & MEDIA_KEY) {
+        switch (key & 0x3FF) {
+        case 0xB5: return "Next Track";
+        case 0xB6: return "Prev Track";
+        case 0xB7: return "Stop";
+        case 0xCD: return "Play/Pause";
+        case 0xE2: return "Mute";
+        case 0xE9: return "Volume Up";
+        case 0xEA: return "Volume Down";
+        case 0x6F: return "Bright Up";
+        case 0x70: return "Bright Down";
+        case 0x223: return "Home";
+        case 0x224: return "Back";
+        }
+        snprintf(buffer, 12, "Media %03X", unsigned(key & 0x3FF));
+        return buffer;
+    }
+    if (key >= 0x04 && key <= 0x1D) { buffer[0] = char('A' + key - 0x04); buffer[1] = 0; return buffer; }
+    if (key >= 0x1E && key <= 0x27) { buffer[0] = key == 0x27 ? '0' : char('1' + key - 0x1E); buffer[1] = 0; return buffer; }
+    if (key >= 0x3A && key <= 0x45) { buffer[0] = 'F'; snprintf(buffer + 1, 3, "%u", unsigned(key - 0x39)); return buffer; }
+    switch (key) {
+    case 0x28: return "Enter";
+    case 0x29: return "Esc";
+    case 0x2A: return "Backspace";
+    case 0x2B: return "Tab";
+    case 0x2C: return "Space";
+    case 0x2D: return "-";
+    case 0x2E: return "=";
+    case 0x2F: return "[";
+    case 0x30: return "]";
+    case 0x31: return "\\";
+    case 0x33: return ";";
+    case 0x34: return "'";
+    case 0x35: return "`";
+    case 0x36: return ",";
+    case 0x37: return ".";
+    case 0x38: return "/";
+    case 0x39: return "Caps Lock";
+    case 0x49: return "Insert";
+    case 0x4A: return "Home";
+    case 0x4B: return "Page Up";
+    case 0x4C: return "Delete";
+    case 0x4D: return "End";
+    case 0x4E: return "Page Down";
+    case 0x4F: return "Right";
+    case 0x50: return "Left";
+    case 0x51: return "Down";
+    case 0x52: return "Up";
+    case 0x58: return "Keypad Enter";
+    case 0xE0: return "Left Ctrl";
+    case 0xE1: return "Left Shift";
+    case 0xE2: return "Left Alt";
+    case 0xE3: return "Left GUI";
+    case 0xE4: return "Right Ctrl";
+    case 0xE5: return "Right Shift";
+    case 0xE6: return "Right Alt";
+    case 0xE7: return "Right GUI";
+    }
+    snprintf(buffer, 8, "Key %02X", key);
+    return buffer;
 }
 
 class Descriptor {
@@ -144,10 +228,12 @@ inline uint32_t bits(const uint8_t* data, size_t length, uint16_t offset, uint8_
 }
 
 // Decodes one input report (`data` excludes the report ID, which BLE carries
-// in the characteristic's Report Reference instead). Returns the pad buttons.
+// in the characteristic's Report Reference instead). Returns the pad buttons,
+// keyboard keys included (keyButton). `keys` receives the keys themselves.
 inline uint16_t decode(const Descriptor& d, uint8_t reportId, const uint8_t* data, size_t length,
-                       const ButtonMap& map = ANDROID_MAP, uint32_t* rawButtons = nullptr) {
-    uint16_t pad = 0;
+                       const ButtonMap& map = ANDROID_MAP, uint32_t* rawButtons = nullptr,
+                       Keys* keys = nullptr) {
+    uint16_t pad = 0, keyPad = 0;
     uint32_t buttons = 0;
     for (int f = 0; f < d.count; ++f) {
         const Field& field = d.fields[f];
@@ -184,9 +270,13 @@ inline uint16_t decode(const Descriptor& d, uint8_t reportId, const uint8_t* dat
         } else if (field.usagePage == PAGE_KEYBOARD && value) {
             // One bit per key (modifiers, or a bitmap keyboard), or an array
             // of the key codes held.
-            pad |= keyButton(field.bitSize == 1 ? field.usage : uint16_t(value));
+            const uint16_t key = field.bitSize == 1 ? field.usage : uint16_t(value);
+            keyPad |= keyButton(key);
+            if (keys && key <= 0xFF) keys->add(key);
         } else if (field.usagePage == PAGE_CONSUMER && value) {
             // Android-mode pads send Back / Home / Menu as consumer keys.
+            // Keyboards' media keys can be mapped like any key.
+            if (keys) keys->add(MEDIA_KEY | ((field.bitSize > 1 ? uint16_t(value) : field.usage) & 0x3FF));
             if (field.bitSize > 1) {  // an array of usage codes
                 if (value == 0x224) pad |= PAD_SELECT;       // AC Back
                 if (value == 0x223 || value == 0x40) pad |= PAD_HOME;  // AC Home / Menu
@@ -209,6 +299,7 @@ inline uint16_t decode(const Descriptor& d, uint8_t reportId, const uint8_t* dat
     if (has(map.l2)) pad |= PAD_L2;
     if (has(map.r2)) pad |= PAD_R2;
     if (rawButtons) *rawButtons = buttons;
-    return pad;
+    if (keys) keys->otherPad = pad;
+    return pad | keyPad;
 }
 }  // namespace HidGamepad

@@ -88,6 +88,8 @@ private:
     bool _padHomeHeld = false;
     // Gamepad mapping and its Controls screen. See AppPaperboyControls.cpp.
     PadMapping::Map _padMap = PadMapping::DEFAULTS;
+    // A Bluetooth keyboard has its own: any key for each action.
+    KeyMapping::Map _keyMap = KeyMapping::DEFAULTS;
     bool _controls = false, _controlsFull = false;
     int _controlsCursor = -1;    // row chosen with keys / gamepad, -1 none
     int _capture = -1;           // action waiting for a gamepad press, -1 none
@@ -96,6 +98,9 @@ private:
     String _controlsMessage;
     void loadPadMap();
     void savePadMap();
+    // Controls show and capture keys while a keyboard is connected.
+    bool keyboardControls() const;
+    String controlValue(int action) const;  // "X", or "A, Start" for a pad
     void openControls();
     void paintControls();
     void controlsTap(uint16_t x, uint16_t y);

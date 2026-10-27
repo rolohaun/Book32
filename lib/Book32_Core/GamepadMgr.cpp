@@ -227,6 +227,9 @@ bool GamepadMgr::connectSaved() {
     if (!_descriptor.parse(descriptor.data(), descriptor.size())) {
         Serial.printf("Gamepad: report map unreadable (%u bytes)\n", unsigned(descriptor.size()));
     } else {
+        bool keyboard = false;
+        for (int i = 0; i < _descriptor.count; ++i) keyboard |= _descriptor.fields[i].usagePage == HidGamepad::PAGE_KEYBOARD;
+        _keyboard = keyboard;
         Serial.printf("Gamepad: report map %u bytes, %d input fields%s\n", unsigned(descriptor.size()),
                       _descriptor.count, _descriptor.usesReportIds ? ", report IDs" : "");
         for (int i = 0; i < _descriptor.count; ++i) {
@@ -270,15 +273,36 @@ bool GamepadMgr::connectSaved() {
 
 void GamepadMgr::onReport(uint8_t reportId, const uint8_t* data, size_t length) {
     uint32_t reportRaw = 0;
+    HidGamepad::Keys reportKeys;
     _padByReport[reportId] =
-        HidGamepad::decode(_descriptor, reportId, data, length, HidGamepad::ANDROID_MAP, &reportRaw);
+        HidGamepad::decode(_descriptor, reportId, data, length, HidGamepad::ANDROID_MAP, &reportRaw, &reportKeys);
     _rawByReport[reportId] = reportRaw;
+    _otherByReport[reportId] = reportKeys.otherPad;
+    // A report with keys (keyboard or media keys) replaces the keys it held
+    // before; other reports (a touchpad) leave them alone.
+    bool keyFields = false;
+    for (int i = 0; i < _descriptor.count && !keyFields; ++i)
+        keyFields = (_descriptor.fields[i].usagePage == HidGamepad::PAGE_KEYBOARD ||
+                     _descriptor.fields[i].usagePage == HidGamepad::PAGE_CONSUMER) &&
+                    (!_descriptor.usesReportIds || _descriptor.fields[i].reportId == reportId);
+    if (keyFields) {
+        _keysByReport[reportId & 3] = reportKeys;
+        HidGamepad::Keys all;
+        for (const HidGamepad::Keys& k : _keysByReport)
+            for (int i = 0; i < k.count; ++i) all.add(k.codes[i]);
+        portENTER_CRITICAL(&_keysLock);
+        _keys = all;
+        portEXIT_CRITICAL(&_keysLock);
+    }
     // A pad may split its input over several reports (buttons, consumer keys):
     // combine them, each report contributing what it last said.
-    uint16_t pad = 0;
+    uint16_t pad = 0, other = 0;
     uint32_t raw = 0;
-    for (int i = 0; i < slotCount; ++i) { pad |= _padByReport[slots[i].id]; raw |= _rawByReport[slots[i].id]; }
-    if (!slotCount) { pad = _padByReport[reportId]; raw = reportRaw; }
+    for (int i = 0; i < slotCount; ++i) {
+        pad |= _padByReport[slots[i].id]; raw |= _rawByReport[slots[i].id]; other |= _otherByReport[slots[i].id];
+    }
+    if (!slotCount) { pad = _padByReport[reportId]; raw = reportRaw; other = reportKeys.otherPad; }
+    _padOnly = other;
     const uint16_t previous = _buttons.load();
     const uint32_t previousRaw = _raw.load();
     _buttons = pad;
@@ -293,11 +317,25 @@ void GamepadMgr::onReport(uint8_t reportId, const uint8_t* data, size_t length) 
     }
 }
 
+HidGamepad::Keys GamepadMgr::keys() {
+    if (_state != CONNECTED) return HidGamepad::Keys();
+    portENTER_CRITICAL(&_keysLock);
+    const HidGamepad::Keys held = _keys;
+    portEXIT_CRITICAL(&_keysLock);
+    return held;
+}
+
 void GamepadMgr::onDisconnected() {
     _buttons = 0;
+    _padOnly = 0;
     _raw = 0;
     memset(_padByReport, 0, sizeof(_padByReport));
     memset(_rawByReport, 0, sizeof(_rawByReport));
+    memset(_otherByReport, 0, sizeof(_otherByReport));
+    for (HidGamepad::Keys& k : _keysByReport) k = HidGamepad::Keys();
+    portENTER_CRITICAL(&_keysLock);
+    _keys = HidGamepad::Keys();
+    portEXIT_CRITICAL(&_keysLock);
     if (_state == CONNECTED) Serial.println("Gamepad: disconnected");
     _state = _radioOn ? IDLE : OFF;
 }

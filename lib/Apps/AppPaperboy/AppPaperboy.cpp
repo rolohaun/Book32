@@ -1,5 +1,5 @@
 #include "AppPaperboy.h"
-#if defined(BOARD_LILYGO_T5S3_PRO) || defined(BOARD_SEEED_STICKY)
+#if defined(BOARD_LILYGO_T5S3_PRO) || defined(BOARD_SEEED_STICKY) || defined(BOARD_WAVESHARE_RLCD42)
 #include "ConsoleCore.h"
 #include "RomFormat.h"
 #include "RomStorage.h"
@@ -103,7 +103,7 @@ void AppPaperboy::start() {
     if (!NetworkWork::gate().idle()) {
         auto& display=DisplayMgr::getInstance().getDisplay();
         display.setFullWindow(); display.fillScreen(GxEPD_WHITE);
-        label(display,"Preparing Inkade",30,180,3);
+        label(display,"Preparing Inkade",BOOK32_COMPACT_UI ? 12 : 30,180,BOOK32_COMPACT_UI ? 2 : 3);
         label(display,"Finishing network activity...",30,250,2);
         display.refresh(false);
         Serial.println("Inkade: waiting for network owners before radio shutdown");
@@ -158,7 +158,11 @@ void AppPaperboy::scan() {
         }
         if (dir) dir.close();
         std::sort(_roms.begin(), _roms.end(), [](const String& a,const String& b){ return strcasecmp(a.c_str(),b.c_str())<0; });
+#if defined(BOARD_WAVESHARE_RLCD42)
+        if (!_roms.empty()) _message = "Hold KEY on a game to play or resume it.";
+#else
         if (!_roms.empty()) _message = "Tap a game to play or resume. Saves stay with each ROM.";
+#endif
     }
     if(!(_systemMask&(1<<_selectedSystem))) {
         _selectedSystem=INK_SYSTEM_NONE;
@@ -169,7 +173,12 @@ void AppPaperboy::scan() {
 }
 void AppPaperboy::filterRoms() {
     _filtered.clear();_page=0;_cursor=0;
+#if defined(BOARD_WAVESHARE_RLCD42)
+    // One list of every system: there are no tabs to tap.
+    for(unsigned i=0;i<_roms.size();i++)_filtered.push_back(i);
+#else
     for(unsigned i=0;i<_roms.size();i++)if(inkRomSystem(_roms[i].c_str())==_selectedSystem)_filtered.push_back(i);
+#endif
 }
 
 size_t AppPaperboy::packedBytes() const {
@@ -212,6 +221,9 @@ void AppPaperboy::packVideo(uint8_t* destination) {
 // Packed-frame byte that shows an all-white picture.
 uint8_t AppPaperboy::whiteFill() const {
     if (_nesVideo) return 0;  // NES shade 0
+#if defined(BOARD_WAVESHARE_RLCD42)
+    return 0;  // Game Boy shade 0: the RLCD frame is unpacked shades
+#endif
 #if INKADE_INKBOY_VIDEO
     if (_display.video.mode == InkBoyDrive::MODE_GRAYSCALE) return 0;  // 2-bit shade 0
 #endif
@@ -332,6 +344,9 @@ void AppPaperboy::pauseGame() {
     xSemaphoreTake(_mutex, portMAX_DELAY); // Wait for a complete core frame.
     xSemaphoreGive(_mutex);
     _paused = true; _confirmation = 0; _redraw = true;
+#if defined(BOARD_WAVESHARE_RLCD42)
+    _menuCursor = 0;
+#endif
     inspectSlots();
 }
 void AppPaperboy::resumeGame() {
@@ -393,6 +408,9 @@ void AppPaperboy::stop() {
     InputMgr::getInstance().clearSerialHandler();
 #endif
     DisplayMgr::getInstance().getDisplay().setGameMode(false);
+#if defined(BOARD_WAVESHARE_RLCD42)
+    useLandscape(false);  // Hand the next app the portrait screen
+#endif
     InputMgr::getInstance().clearCallback();
     InputMgr::getInstance().clearTouchCallback();
     _storageOwned = false;
@@ -402,6 +420,10 @@ void AppPaperboy::stop() {
 
 // Keys: the board's buttons and a Bluetooth gamepad's menu actions.
 void AppPaperboy::keyAction(InputAction a) {
+#if defined(BOARD_WAVESHARE_RLCD42)
+    rlcdKey(a);
+    return;
+#endif
     if (_playing) {  // the pad itself is read raw while playing
         if (a == INPUT_SELECT || a == INPUT_BACK) back();
         return;
@@ -458,11 +480,19 @@ void AppPaperboy::openBook(const String& path) {
     if (!_savePath.isEmpty() && !save()) { _message = "Save failed; cannot change games"; _redraw = true; return; }
     auto& d = DisplayMgr::getInstance().getDisplay();
     InkSystem selected=inkRomSystem(path.c_str());
-    d.setFullWindow(); d.fillScreen(GxEPD_WHITE); label(d,"Inkade",30,100,4);
-    label(d,"Opening your game",30,205,3);
-    label(d,String(inkSystemName(selected))+" emulator",30,264,2);
-    String title=path.substring(path.lastIndexOf('/')+1);if(title.length()>38)title=title.substring(0,35)+"...";
-    label(d,title,30,310,2);label(d,"Loading ROM and checking saved progress...",30,386,1);d.refresh(false);
+#if BOOK32_COMPACT_UI
+    useLandscape(false);
+    constexpr int LEFT = 12, BIG = 2;
+    constexpr unsigned TITLE_CHARS = 23;
+#else
+    constexpr int LEFT = 30, BIG = 3;
+    constexpr unsigned TITLE_CHARS = 38;
+#endif
+    d.setFullWindow(); d.fillScreen(GxEPD_WHITE); label(d,"Inkade",LEFT,100,4);
+    label(d,"Opening your game",LEFT,205,BIG);
+    label(d,String(inkSystemName(selected))+" emulator",LEFT,264,2);
+    String title=path.substring(path.lastIndexOf('/')+1);if(title.length()>TITLE_CHARS)title=title.substring(0,TITLE_CHARS-3)+"...";
+    label(d,title,LEFT,310,2);label(d,"Loading ROM and saved progress...",LEFT,360,1);d.refresh(false);
     File f = EbookFS.open(path, "r");
     const size_t bytes = f ? f.size() : 0;
     if (!inkRomSizeValid(selected,bytes)) { _message = "Invalid ROM size for this system"; _redraw = true; return; }
@@ -770,6 +800,10 @@ void AppPaperboy::update() {
 }
 
 void AppPaperboy::paintGame() {
+#if defined(BOARD_WAVESHARE_RLCD42)
+    paintRlcdGame();
+    return;
+#endif
     auto& d = DisplayMgr::getInstance().getDisplay();
     d.setFullWindow(); d.fillScreen(GxEPD_WHITE);
     label(d, "< Pause / saves", 20, 24);
@@ -778,6 +812,10 @@ void AppPaperboy::paintGame() {
 }
 
 void AppPaperboy::paintPause() {
+#if defined(BOARD_WAVESHARE_RLCD42)
+    paintRlcdPause();
+    return;
+#endif
     auto& d = DisplayMgr::getInstance().getDisplay();
     d.setGameMode(false); d.setFullWindow(); d.fillScreen(GxEPD_WHITE);
     label(d, "< Resume game", 20, 24);
@@ -879,6 +917,10 @@ void AppPaperboy::draw() {
     if (_paused) { paintPause(); return; }
 #if INKADE_INKBOY_VIDEO
     if (_screen == SCREEN_SETTINGS) { paintSettings(); return; }
+#endif
+#if defined(BOARD_WAVESHARE_RLCD42)
+    paintRlcdLibrary();
+    return;
 #endif
     d.setGameMode(false);
     d.setFullWindow();

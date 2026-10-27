@@ -69,6 +69,17 @@ inline void pack(uint8_t* packed, const uint8_t* shades, uint8_t rotation) {
     }
 }
 }
+#elif defined(BOARD_WAVESHARE_RLCD42)
+// RLCD: the frame is the 160x144 shades as they are; RlcdDisplay scales it
+// 2x into a 320x288 window of the 400x300 landscape panel and dithers it.
+namespace GameViewport {
+constexpr int SOURCE_W = 160, SOURCE_H = 144, SCALE = 2;
+constexpr int X = 40, Y = 6, W = SOURCE_W * SCALE, H = SOURCE_H * SCALE;
+constexpr int PACKED_BYTES = SOURCE_W * SOURCE_H;
+inline void pack(uint8_t* packed, const uint8_t* shades, uint8_t) {
+    if (packed && shades) memcpy(packed, shades, PACKED_BYTES);
+}
+}
 #else
 namespace GameViewport {
 constexpr int SOURCE_W = 160, SOURCE_H = 144, SCALE = 3;

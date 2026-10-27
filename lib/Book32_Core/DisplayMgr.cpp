@@ -20,32 +20,44 @@ static void drawCenteredText(Book32Display& display, const char* text, const GFX
     display.print(text);
 }
 
+// Boot screen geometry: the 800 px tall portrait screens, and a compact
+// version for the RLCD's 400 px.
+struct BootLayout {
+    int16_t inset, rule, logoY, titleY, nameDY, barW, barH, barY, percentDY, statusDY, clearH, versionUp;
+};
+static const BootLayout& bootLayout(int16_t screenH) {
+    static const BootLayout tall = {18, 64, 185, 330, 42, 320, 28, 430, 76, 116, 150, 96};
+    static const BootLayout compact = {10, 40, 70, 190, 28, 240, 24, 245, 60, 95, 110, 18};
+    return screenH < 600 ? compact : tall;
+}
+
 static void drawBootProgress(Book32Display& display, uint8_t progress, const char* status) {
     int16_t screenW = display.width();
-    const int16_t barW = 320;
-    const int16_t barH = 28;
+    const BootLayout& layout = bootLayout(display.height());
+    const int16_t barW = layout.barW;
+    const int16_t barH = layout.barH;
     const int16_t barX = (screenW - barW) / 2;
-    const int16_t barY = 430;
+    const int16_t barY = layout.barY;
     const int16_t fillW = ((barW - 8) * progress) / 100;
 
     char percentText[8];
     snprintf(percentText, sizeof(percentText), "%u%%", (unsigned int)progress);
 
-    display.fillRect(barX - 20, barY - 8, barW + 40, 150, GxEPD_WHITE);
+    display.fillRect(barX - 20, barY - 8, barW + 40, layout.clearH, GxEPD_WHITE);
     display.drawRoundRect(barX, barY, barW, barH, 7, GxEPD_BLACK);
     display.drawRoundRect(barX + 2, barY + 2, barW - 4, barH - 4, 5, GxEPD_BLACK);
     if (fillW > 0) {
         display.fillRoundRect(barX + 4, barY + 4, fillW, barH - 8, 3, GxEPD_BLACK);
     }
 
-    drawCenteredText(display, percentText, &FreeSansBold18pt7b, barY + 76, GxEPD_BLACK);
-    drawCenteredText(display, status, &FreeSans12pt7b, barY + 116, GxEPD_BLACK);
+    drawCenteredText(display, percentText, &FreeSansBold18pt7b, barY + layout.percentDY, GxEPD_BLACK);
+    drawCenteredText(display, status, &FreeSans12pt7b, barY + layout.statusDY, GxEPD_BLACK);
 }
 
 // The orientation is mirrored into NVS so the very first boot frame is drawn
 // the right way up; /display_config.json (on ebook storage) stays the source
 // of truth and is re-applied by loadDisplaySettings() once storage mounts.
-#if !BOOK32_HAS_TOUCH
+#if BOOK32_GXEPD_PANEL
 static const unsigned long PANEL_POWER_HOLD_MS = 10000;
 #endif
 
@@ -72,10 +84,10 @@ static void saveCachedRotation(int rotation) {
 
 // Constructor with Pin mapping
 // GxEPD2_420(int16_t cs, int16_t dc, int16_t rst, int16_t busy)
-#if BOOK32_HAS_TOUCH
-DisplayMgr::DisplayMgr() : display() {}
-#else
+#if BOOK32_GXEPD_PANEL
 DisplayMgr::DisplayMgr() : display(GxEPD2_750_T7_Fast(EPD_CS, EPD_DC, EPD_RST, EPD_BUSY)) {}
+#else
+DisplayMgr::DisplayMgr() : display() {}
 #endif
 
 DisplayMgr& DisplayMgr::getInstance() {
@@ -85,10 +97,10 @@ DisplayMgr& DisplayMgr::getInstance() {
 
 void DisplayMgr::init() {
     // For ESP32-S3 we must initialize SPI with custom pins before display.init
-#if !defined(BOARD_LILYGO_T5S3_PRO)
+#if !defined(BOARD_LILYGO_T5S3_PRO) && !defined(BOARD_WAVESHARE_RLCD42)
     SPI.begin(EPD_SCK, EPD_MISO, EPD_MOSI, EPD_CS);
 #endif
-#if !BOOK32_HAS_TOUCH
+#if BOOK32_GXEPD_PANEL
     // GxEPD2 defaults to 4MHz and sends 48KB frames byte by byte. The UC8179
     // controller accepts writes well above 10MHz; stay conservative for the
     // DIY kit's wiring.
@@ -233,18 +245,20 @@ void DisplayMgr::finishBootScreen() {
 void DisplayMgr::renderBootScreen(uint8_t progress, const char* status) {
     int16_t screenW = display.width();
     int16_t screenH = display.height();
+    const BootLayout& layout = bootLayout(screenH);
 
     bool drawFullFrame = !_bootScreenActive;
     if (drawFullFrame) {
         display.setFullWindow();
         _bootScreenActive = true;
     } else {
-        display.setPartialWindow(60, 410, screenW - 120, 180);
+        const int16_t barX = (screenW - layout.barW) / 2;
+        display.setPartialWindow(barX - 20, layout.barY - 20, layout.barW + 40, layout.clearH + 30);
     }
 
-    const int16_t frameInset = 18;
-    const int16_t logoY = 185;
-    const int16_t titleY = 330;
+    const int16_t frameInset = layout.inset;
+    const int16_t logoY = layout.logoY;
+    const int16_t titleY = layout.titleY;
 
     display.firstPage();
     do {
@@ -254,8 +268,8 @@ void DisplayMgr::renderBootScreen(uint8_t progress, const char* status) {
         if (drawFullFrame) {
             display.fillScreen(GxEPD_WHITE);
             display.drawRect(frameInset, frameInset, screenW - (frameInset * 2), screenH - (frameInset * 2), GxEPD_BLACK);
-            display.drawFastHLine(54, 64, screenW - 108, GxEPD_BLACK);
-            display.drawFastHLine(54, screenH - 64, screenW - 108, GxEPD_BLACK);
+            display.drawFastHLine(54, layout.rule, screenW - 108, GxEPD_BLACK);
+            display.drawFastHLine(54, screenH - layout.rule, screenW - 108, GxEPD_BLACK);
 
             int16_t logoX = (screenW - 116) / 2;
             display.drawRoundRect(logoX, logoY, 54, 70, 5, GxEPD_BLACK);
@@ -269,11 +283,11 @@ void DisplayMgr::renderBootScreen(uint8_t progress, const char* status) {
             display.drawFastHLine(logoX + 72, logoY + 46, 28, GxEPD_BLACK);
 
             drawCenteredText(display, "InkDeck", &FreeSansBold24pt7b, titleY, GxEPD_BLACK);
-            drawCenteredText(display, DEVICE_NAME, &FreeSans12pt7b, titleY + 42, GxEPD_BLACK);
+            drawCenteredText(display, DEVICE_NAME, &FreeSans12pt7b, titleY + layout.nameDY, GxEPD_BLACK);
 
             char versionText[20];
             snprintf(versionText, sizeof(versionText), "v%s", SYSTEM_VERSION);
-            drawCenteredText(display, versionText, &FreeSans9pt7b, screenH - 96, GxEPD_BLACK);
+            drawCenteredText(display, versionText, &FreeSans9pt7b, screenH - layout.versionUp, GxEPD_BLACK);
         }
 
         drawBootProgress(display, progress, status);
@@ -281,7 +295,7 @@ void DisplayMgr::renderBootScreen(uint8_t progress, const char* status) {
 }
 
 void DisplayMgr::update() {
-#if !BOOK32_HAS_TOUCH
+#if BOOK32_GXEPD_PANEL
     // GxEPD2 only powers the 7.5" panel down after a full refresh; partial
     // updates leave its high-voltage booster on indefinitely, which slowly
     // darkens the panel edge. Keep it armed briefly after a button press so

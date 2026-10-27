@@ -8,6 +8,26 @@
 #define INK_NES_PACK_FAST
 #endif
 
+#if defined(BOARD_WAVESHARE_RLCD42)
+// RLCD: one shade per NES pixel; RlcdDisplay scales it 1.25x to 320x300 on
+// the landscape panel.
+namespace NesViewport {
+constexpr int SOURCE_W=256, SOURCE_H=240, SCALE=1;
+constexpr int X=40, Y=0, W=320, H=300;
+constexpr int PACKED_BYTES=SOURCE_W*SOURCE_H;
+inline void packIndexed(uint8_t* packed,const uint8_t* pixels,int pitch,const uint8_t* palette,uint8_t) {
+    if(!packed || !pixels) return;
+    for(int y=0;y<SOURCE_H;++y) {
+        const uint8_t* row=pixels+y*pitch;
+        uint8_t* out=packed+y*SOURCE_W;
+        for(int x=0;x<SOURCE_W;++x) out[x]=palette ? palette[row[x]] : row[x]&3;
+    }
+}
+inline void pack2x(uint8_t* packed,const uint8_t* shades,uint8_t rotation) {
+    packIndexed(packed,shades,SOURCE_W,nullptr,rotation);
+}
+}
+#else
 // NES keeps every 256x240 source pixel. Each becomes a 2x2 monochrome cell;
 // ordered coverage preserves four gray levels without filtering adjacent pixels.
 namespace NesViewport {
@@ -76,4 +96,5 @@ inline void blitPacked(uint8_t* canvas,const uint8_t* packed,uint8_t rotation) {
     }
 }
 }
+#endif
 #undef INK_NES_PACK_FAST

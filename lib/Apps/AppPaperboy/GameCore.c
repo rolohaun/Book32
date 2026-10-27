@@ -1,4 +1,4 @@
-#if defined(BOARD_LILYGO_T5S3_PRO) || defined(BOARD_SEEED_STICKY)
+#if defined(BOARD_LILYGO_T5S3_PRO) || defined(BOARD_SEEED_STICKY) || defined(BOARD_WAVESHARE_RLCD42)
 // CrankBoy's DMG and CGB interpreters, with InkDeck storage/display adapters.
 #define PGB_IMPL
 #include "crankboy/peanut_gb.h"

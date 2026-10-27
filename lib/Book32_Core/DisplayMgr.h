@@ -11,6 +11,9 @@ typedef LilygoDisplay Book32Display;
 #elif defined(BOARD_SEEED_STICKY)
 #include "StickyDisplay.h"
 typedef StickyDisplay Book32Display;
+#elif defined(BOARD_WAVESHARE_RLCD42)
+#include "RlcdDisplay.h"
+typedef RlcdDisplay Book32Display;
 #else
 // GxEPD2_750_T7 with a shorter partial-update waveform (~0.9s instead of 1.6s),
 // plus Inkade's fast game video.

@@ -1,7 +1,7 @@
 // Inkade's Controls screen: which gamepad buttons press each game button.
 // The mapping lives in NVS, so it needs no card and survives updates.
 #include "AppPaperboy.h"
-#if defined(BOARD_LILYGO_T5S3_PRO) || defined(BOARD_SEEED_STICKY)
+#if defined(BOARD_LILYGO_T5S3_PRO) || defined(BOARD_SEEED_STICKY) || defined(BOARD_WAVESHARE_RLCD42)
 #include <Preferences.h>
 #include "DisplayMgr.h"
 #include "GamepadMgr.h"
@@ -47,6 +47,10 @@ void AppPaperboy::openControls() {
 }
 
 void AppPaperboy::paintControls() {
+#if defined(BOARD_WAVESHARE_RLCD42)
+    paintRlcdControls();
+    return;
+#endif
     auto& d = DisplayMgr::getInstance().getDisplay();
     d.setGameMode(false);
     d.setFullWindow();

@@ -1,4 +1,4 @@
-#if defined(BOARD_LILYGO_T5S3_PRO) || defined(BOARD_SEEED_STICKY)
+#if defined(BOARD_LILYGO_T5S3_PRO) || defined(BOARD_SEEED_STICKY) || defined(BOARD_WAVESHARE_RLCD42)
 /*
  * minigb_apu is released under the terms listed within the LICENSE file.
  * Game Boy APU emulator, based on MiniGBS by Alex Baines:

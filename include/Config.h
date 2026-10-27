@@ -8,6 +8,10 @@
 #define SYSTEM_VERSION "1.4.6"
 #define DEVICE_NAME "Seeed Studio Sticky"
 #define SLEEP_TIMEOUT_DEFAULT_MINUTES 10
+#elif defined(BOARD_WAVESHARE_RLCD42)
+#define SYSTEM_VERSION "1.4.6"
+#define DEVICE_NAME "Waveshare RLCD 4.2"
+#define SLEEP_TIMEOUT_DEFAULT_MINUTES 10
 #else
 #define SYSTEM_VERSION "1.4.6"
 #define DEVICE_NAME "Book32"
@@ -20,6 +24,9 @@
 #elif defined(BOARD_SEEED_STICKY)
 #define SLEEP_CONFIG_VERSION 2
 #define SLEEP_MESSAGE_DEFAULT "Press power to wake"
+#elif defined(BOARD_WAVESHARE_RLCD42)
+#define SLEEP_CONFIG_VERSION 3
+#define SLEEP_MESSAGE_DEFAULT "Press KEY to wake"
 #else
 // Book32 v3: idle sleep became on-by-default (10 min); see loadSleepSettings().
 #define SLEEP_CONFIG_VERSION 3
@@ -36,6 +43,10 @@
 #if defined(BOARD_LILYGO_T5S3_PRO)
 #define SCREEN_WIDTH 524
 #define SCREEN_HEIGHT 944
+#elif defined(BOARD_WAVESHARE_RLCD42)
+// 400x300 landscape panel; the UI runs 300x400 portrait, games landscape.
+#define SCREEN_WIDTH 300
+#define SCREEN_HEIGHT 400
 #else
 #define SCREEN_WIDTH 480
 #define SCREEN_HEIGHT 800
@@ -76,6 +87,33 @@
 #define BOOK32_HAS_BUZZER 0
 #define OTA_FIRMWARE_ASSET "inkdeck-lilygo-firmware.bin"
 #define OTA_FILESYSTEM_ASSET "inkdeck-lilygo-littlefs.bin"
+#elif defined(BOARD_WAVESHARE_RLCD42)
+// Waveshare ESP32-S3-RLCD-4.2: ST7305 reflective LCD on SPI, no touch.
+#define PIN_BUTTON       18 // "KEY": next, hold to select
+#define PIN_BUTTON_PREV  0  // BOOT: previous, hold for back
+
+#define RLCD_SCK         11
+#define RLCD_MOSI        12
+#define RLCD_DC          5
+#define RLCD_CS          40
+#define RLCD_RST         41
+#define RLCD_TE          6
+
+#define SD_MMC_CLK       38
+#define SD_MMC_CMD       21
+#define SD_MMC_D0        39
+
+#define PIN_BAT_VOLT     4  // 1:3 divider
+#define BATTERY_DIVIDER  3.0f
+
+#define BOOK32_HAS_TOUCH 0
+#define BOOK32_HAS_SD    1
+#define BOOK32_HAS_BUZZER 0
+// Not in GitHub releases yet: no over-the-air updates.
+#define BOOK32_HAS_OTA   0
+
+#define OTA_FIRMWARE_ASSET "inkdeck-rlcd42-firmware.bin"
+#define OTA_FILESYSTEM_ASSET "inkdeck-rlcd42-littlefs.bin"
 #elif defined(BOARD_SEEED_STICKY)
 // Seeed reTerminal E1002 / Sticky 3.97" (SSD1677)
 #define PIN_BUTTON       4
@@ -145,8 +183,22 @@
 #define OTA_FILESYSTEM_ASSET "littlefs.bin"
 #endif
 
-// Inkade (Game Boy / NES) runs on the touch boards with fast video drivers.
-#if defined(BOARD_LILYGO_T5S3_PRO) || defined(BOARD_SEEED_STICKY)
+#ifndef BOOK32_HAS_OTA
+#define BOOK32_HAS_OTA 1
+#endif
+#ifndef BATTERY_DIVIDER
+#define BATTERY_DIVIDER 2.0f
+#endif
+
+// The original Book32: GxEPD2 on the 7.5" GD7965 panel.
+#if !defined(BOARD_LILYGO_T5S3_PRO) && !defined(BOARD_SEEED_STICKY) && !defined(BOARD_WAVESHARE_RLCD42)
+#define BOOK32_GXEPD_PANEL 1
+#else
+#define BOOK32_GXEPD_PANEL 0
+#endif
+
+// Inkade (Game Boy / NES) runs on the boards with fast video drivers.
+#if defined(BOARD_LILYGO_T5S3_PRO) || defined(BOARD_SEEED_STICKY) || defined(BOARD_WAVESHARE_RLCD42)
 #define BOOK32_HAS_INKBOY 1
 #else
 #define BOOK32_HAS_INKBOY 0
@@ -175,6 +227,13 @@
 #define INKADE_INKBOY_VIDEO 0
 #endif
 
+// The RLCD's 300x400 screen: smaller icons, rows and margins.
+#if defined(BOARD_WAVESHARE_RLCD42)
+#define BOOK32_COMPACT_UI 1
+#else
+#define BOOK32_COMPACT_UI 0
+#endif
+
 // Boot diagnostics
 // Set to 1 when debugging partition/filesystem issues. Keeping this off makes
 // normal startup quieter and avoids walking the ebook filesystem every boot.
@@ -183,7 +242,12 @@
 // Battery calibration
 // Fully charged LiPo cells should read 4.20V. This board's ADC path reads a
 // known-full pack around 3.91V with the raw divider math, so compensate here.
+// The RLCD board reads its divider with the ADC's calibrated millivolts.
+#if defined(BOARD_WAVESHARE_RLCD42)
+#define BATTERY_VOLTAGE_CALIBRATION 1.0f
+#else
 #define BATTERY_VOLTAGE_CALIBRATION 1.075f
+#endif
 #define BATTERY_EMPTY_VOLTAGE 3.00f
 #define BATTERY_FULL_VOLTAGE 4.20f
 

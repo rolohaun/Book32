@@ -1,4 +1,4 @@
-#if defined(BOARD_LILYGO_T5S3_PRO) || defined(BOARD_SEEED_STICKY)
+#if defined(BOARD_LILYGO_T5S3_PRO) || defined(BOARD_SEEED_STICKY) || defined(BOARD_WAVESHARE_RLCD42)
 #include "ConsoleCore.h"
 #include "NesCore.h"
 static InkSystem activeSystem=INK_SYSTEM_NONE;

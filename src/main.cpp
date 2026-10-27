@@ -130,7 +130,22 @@ static void networkStartupTask(void* parameter) {
 }
 
 void setup() {
-#if !BOOK32_HAS_TOUCH
+#if defined(BOARD_WAVESHARE_RLCD42)
+    // The LCD's control pins are held through deep sleep so it keeps its
+    // picture. Release them, and if KEY woke us, wait for that press to end
+    // so it is not also taken as "next".
+    {
+        const bool wokeFromButton = esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_EXT0;
+        gpio_deep_sleep_hold_dis();
+        gpio_hold_dis(static_cast<gpio_num_t>(RLCD_CS));
+        gpio_hold_dis(static_cast<gpio_num_t>(RLCD_RST));
+        if (wokeFromButton) {
+            pinMode(PIN_BUTTON, INPUT_PULLUP);
+            while (digitalRead(PIN_BUTTON) == LOW) delay(20);
+            delay(50);
+        }
+    }
+#elif !BOOK32_HAS_TOUCH
     // Book32 holds its battery-divider switch and display control pins
     // through deep sleep. Release them, and if the button woke us, wait for
     // that press to end so it is not also taken as "next".

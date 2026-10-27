@@ -242,14 +242,15 @@ RenderResult TextRenderer::renderRichPageDynamic(Book32Display& display, const s
     _renderedImages.clear();
     _cachedPage = pageNum;
 
-    int y = 40; 
-    int maxY = _height - 40;
+    // The RLCD's small screen keeps narrower margins.
+    int y = BOOK32_COMPACT_UI ? 24 : 40;
+    int maxY = _height - (BOOK32_COMPACT_UI ? 24 : 40);
     RenderResult result = {0, 0, false, startNode, startOffset};
     int currentNode = startNode;
     int currentOffset = startOffset;
     
     int line_width = 0;
-    int x_margin = 35;
+    int x_margin = BOOK32_COMPACT_UI ? 16 : 35;
     int currentX = x_margin;
 
     while (currentNode < (int)content.size() && y < maxY) {
@@ -418,7 +419,7 @@ RenderResult TextRenderer::renderRichPageDynamic(Book32Display& display, const s
                 currentX = x_margin;
             }
 
-            const int horizontalMargin = 35;
+            const int horizontalMargin = x_margin;
             const int imagePadding = 10;
             const int maximumImageWidth = _width - horizontalMargin * 2;
             const int maximumImageHeight = maxY - 40 - imagePadding * 2;

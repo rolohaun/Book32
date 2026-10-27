@@ -252,7 +252,11 @@ void BatteryMgr::updateCache(bool clearStaleCharging) {
     // Read ADC - average 30 samples for stability
     uint32_t raw = 0;
     for(int i = 0; i < 30; i++) {
+#if defined(BOARD_WAVESHARE_RLCD42)
+        raw += analogReadMilliVolts(PIN_BAT_VOLT);
+#else
         raw += analogRead(PIN_BAT_VOLT);
+#endif
         delay(1);
     }
     raw /= 30;
@@ -261,9 +265,13 @@ void BatteryMgr::updateCache(bool clearStaleCharging) {
     digitalWrite(PIN_VBAT_SWITCH, !VBAT_SWITCH_LEVEL); // Turn off to save power
 #endif
 
-    // Convert to battery voltage through the 2:1 divider, then apply the board
+    // Convert to battery voltage through the divider, then apply the board
     // calibration factor from Config.h.
-    float voltage = (raw / 4095.0f) * 3.3f * 2.0f;
+#if defined(BOARD_WAVESHARE_RLCD42)
+    float voltage = raw / 1000.0f * BATTERY_DIVIDER;
+#else
+    float voltage = (raw / 4095.0f) * 3.3f * BATTERY_DIVIDER;
+#endif
     voltage *= BATTERY_VOLTAGE_CALIBRATION;
     if (voltage > BATTERY_FULL_VOLTAGE) {
         voltage = BATTERY_FULL_VOLTAGE;
@@ -509,6 +517,20 @@ void BatteryMgr::enterIdleSleep() {
     pinMode(PIN_BUTTON, INPUT_PULLUP);
     while (digitalRead(PIN_BUTTON) == LOW) delay(20);
     esp_sleep_enable_ext0_wakeup((gpio_num_t)PIN_BUTTON, 0);
+#elif defined(BOARD_WAVESHARE_RLCD42)
+    // The LCD keeps the sleep screen in its low power mode; hold its control
+    // lines so nothing glitches it while the ESP32-S3 sleeps. KEY wakes.
+    display.hibernate();
+    endEbookStorageForSleep();
+    pinMode(PIN_BUTTON, INPUT_PULLUP);
+    while (digitalRead(PIN_BUTTON) == LOW) delay(50);
+    delay(50);
+    holdSleepPin(RLCD_CS, HIGH);
+    holdSleepPin(RLCD_RST, HIGH);
+    gpio_deep_sleep_hold_en();
+    esp_sleep_enable_ext0_wakeup((gpio_num_t)PIN_BUTTON, 0);
+    rtc_gpio_pullup_en((gpio_num_t)PIN_BUTTON);
+    rtc_gpio_pulldown_dis((gpio_num_t)PIN_BUTTON);
 #elif defined(BOARD_SEEED_STICKY)
     display.hibernate();
     endEbookStorageForSleep();

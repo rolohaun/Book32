@@ -15,12 +15,56 @@
 #include "NetworkWork.h"
 #endif
 
-#if defined(BOARD_SEEED_STICKY)
+#if BOOK32_COMPACT_UI
+// RLCD (300x400): half-size icons, three to a row.
+static constexpr int MENU_START_Y = 72, MENU_ROW_HEIGHT = 128, MENU_ICON_SIZE = 80, MENU_COLS = 3;
+#elif defined(BOARD_SEEED_STICKY)
 // With Inkade the Sticky and Book32 have five tiles: three tighter rows end above the
 // footer on its 800 px screen.
-static constexpr int MENU_START_Y = 120, MENU_ROW_HEIGHT = 200;
+static constexpr int MENU_START_Y = 120, MENU_ROW_HEIGHT = 200, MENU_ICON_SIZE = 160, MENU_COLS = 2;
 #else
-static constexpr int MENU_START_Y = 180, MENU_ROW_HEIGHT = 240;
+static constexpr int MENU_START_Y = 180, MENU_ROW_HEIGHT = 240, MENU_ICON_SIZE = 160, MENU_COLS = 2;
+#endif
+// Selection frame and label spacing scale with the icon.
+static constexpr int MENU_FRAME = MENU_ICON_SIZE / 20, MENU_LABEL_DY = MENU_ICON_SIZE == 160 ? 25 : 22;
+
+// The 160x160 app icons, at MENU_ICON_SIZE: each output pixel is black when
+// at least half of the source pixels it covers are.
+static void drawMenuIcon(Book32Display& display, int x, int y, const uint8_t* icon) {
+    if (MENU_ICON_SIZE == 160) {
+        display.drawBitmap(x, y, icon, 160, 160, GxEPD_BLACK);
+        return;
+    }
+    constexpr int SCALE = 160 / MENU_ICON_SIZE, PITCH = 160 / 8;
+    for (int oy = 0; oy < MENU_ICON_SIZE; ++oy) {
+        for (int ox = 0; ox < MENU_ICON_SIZE; ++ox) {
+            int black = 0;
+            for (int dy = 0; dy < SCALE; ++dy) {
+                for (int dx = 0; dx < SCALE; ++dx) {
+                    const int sx = ox * SCALE + dx, sy = oy * SCALE + dy;
+                    if (pgm_read_byte(icon + sy * PITCH + sx / 8) & (0x80 >> (sx & 7))) ++black;
+                }
+            }
+            if (black * 2 >= SCALE * SCALE) display.drawPixel(x + ox, y + oy, GxEPD_BLACK);
+        }
+    }
+}
+
+#if BOOK32_HAS_INKBOY
+// Inkade has no bitmap: a game pad, laid out for a 160 px tile and scaled.
+// A 4 px frame as a filled shape minus its inside: nested outlines with one
+// radius leave gaps in the corners.
+static void drawInkadeIcon(Book32Display& display, int x, int y) {
+    auto v = [](int value) { return value * MENU_ICON_SIZE / 160; };
+    display.fillRoundRect(x+v(10),y+v(32),v(140),v(98),v(24),GxEPD_BLACK);
+    display.fillRoundRect(x+v(14),y+v(36),v(132),v(90),v(20),GxEPD_WHITE);
+    display.fillRoundRect(x+v(35),y+v(65),v(46),v(14),v(3),GxEPD_BLACK);
+    display.fillRoundRect(x+v(51),y+v(49),v(14),v(46),v(3),GxEPD_BLACK);
+    display.fillCircle(x+v(119),y+v(63),v(10),GxEPD_BLACK);
+    display.fillCircle(x+v(98),y+v(86),v(10),GxEPD_BLACK);
+    display.fillRoundRect(x+v(61),y+v(111),v(17),v(5),v(2),GxEPD_BLACK);
+    display.fillRoundRect(x+v(88),y+v(111),v(17),v(5),v(2),GxEPD_BLACK);
+}
 #endif
 
 struct MenuDirtyRect {
@@ -31,8 +75,8 @@ struct MenuDirtyRect {
 };
 
 static MenuDirtyRect menuItemRect(int index, int screenW) {
-    const int ICON_SIZE = 160;
-    const int COLS = 2;
+    const int ICON_SIZE = MENU_ICON_SIZE;
+    const int COLS = MENU_COLS;
     const int ROW_HEIGHT = MENU_ROW_HEIGHT;
     const int START_Y = MENU_START_Y;
     int colWidth = screenW / COLS;
@@ -41,7 +85,8 @@ static MenuDirtyRect menuItemRect(int index, int screenW) {
     int row = idx / COLS;
     int x = col * colWidth + (colWidth - ICON_SIZE) / 2;
     int y = START_Y + row * ROW_HEIGHT;
-    return {x - 14, y - 14, ICON_SIZE + 28, ICON_SIZE + 70};
+    const int pad = MENU_FRAME + 6;
+    return {x - pad, y - pad, ICON_SIZE + 2 * pad, ICON_SIZE + pad + MENU_LABEL_DY + 31};
 }
 
 static MenuDirtyRect unionRect(MenuDirtyRect a, MenuDirtyRect b) {
@@ -268,7 +313,7 @@ void AppMainMenu::start() {
     ensureWifiAwake();
     
     // Spawn update check task if not already found
-    if (!_updateTaskHandle && !_updateAvailable) {
+    if (BOOK32_HAS_OTA && !_updateTaskHandle && !_updateAvailable) {
         xTaskCreatePinnedToCore(updateCheckTask, "UpdateCheck", 8192, this, 1, &_updateTaskHandle, 0);
     }
 }
@@ -339,6 +384,14 @@ void AppMainMenu::handleInput(InputAction action) {
         _selectionOnlyRedraw = !_firstDraw;
         _needsRedraw = true;
     }
+#if defined(BOARD_WAVESHARE_RLCD42)
+    else if (action == INPUT_PREV) {  // BOOT
+        _previousSelectedIndex = selectedIndex;
+        if (--selectedIndex < 1) selectedIndex = maxSelectable;
+        _selectionOnlyRedraw = !_firstDraw;
+        _needsRedraw = true;
+    }
+#endif
     else if (action == INPUT_SELECT) {
         if (_updateAvailable && selectedIndex == updateIndex) {
             // Update selected
@@ -421,8 +474,8 @@ void AppMainMenu::draw() {
     int16_t screenH = display.height();  // 800
 
     // Layout constants
-    const int ICON_SIZE = 160;
-    const int COLS = 2;
+    const int ICON_SIZE = MENU_ICON_SIZE;
+    const int COLS = MENU_COLS;
     const int ROW_HEIGHT = MENU_ROW_HEIGHT;
     const int START_Y = MENU_START_Y;
 
@@ -510,26 +563,18 @@ void AppMainMenu::draw() {
 
 #if !BOOK32_HAS_TOUCH
             if ((int)i == selectedIndex) {
-                display.drawRect(x - 8, y - 8, ICON_SIZE + 16, ICON_SIZE + 16, GxEPD_BLACK);
-                display.drawRect(x - 7, y - 7, ICON_SIZE + 14, ICON_SIZE + 14, GxEPD_BLACK);
+                const int f = MENU_FRAME;
+                display.drawRect(x - f, y - f, ICON_SIZE + 2 * f, ICON_SIZE + 2 * f, GxEPD_BLACK);
+                display.drawRect(x - f + 1, y - f + 1, ICON_SIZE + 2 * f - 2, ICON_SIZE + 2 * f - 2, GxEPD_BLACK);
             }
 #endif
 
             const uint8_t* icon = app->getIconImage();
             if (icon) {
-                display.drawBitmap(x, y, icon, ICON_SIZE, ICON_SIZE, GxEPD_BLACK);
+                drawMenuIcon(display, x, y, icon);
 #if BOOK32_HAS_INKBOY
             } else if (strcmp(app->getName(), "Inkade") == 0) {
-                // A 4 px frame as a filled shape minus its inside: nested
-                // outlines with one radius leave gaps in the corners.
-                display.fillRoundRect(x+10,y+32,140,98,24,GxEPD_BLACK);
-                display.fillRoundRect(x+14,y+36,132,90,20,GxEPD_WHITE);
-                display.fillRoundRect(x+35,y+65,46,14,3,GxEPD_BLACK);
-                display.fillRoundRect(x+51,y+49,14,46,3,GxEPD_BLACK);
-                display.fillCircle(x+119,y+63,10,GxEPD_BLACK);
-                display.fillCircle(x+98,y+86,10,GxEPD_BLACK);
-                display.fillRoundRect(x+61,y+111,17,5,2,GxEPD_BLACK);
-                display.fillRoundRect(x+88,y+111,17,5,2,GxEPD_BLACK);
+                drawInkadeIcon(display, x, y);
 #endif
             } else {
                 display.drawRect(x, y, ICON_SIZE, ICON_SIZE, GxEPD_BLACK);
@@ -542,9 +587,10 @@ void AppMainMenu::draw() {
             fontMgr.drawText(display, name.c_str(), nameX, y + ICON_SIZE + 25, FONT_SIZE_MENU, GxEPD_BLACK);
 #else
             const char* name = app->getName();
-            int nameWidth = fontMgr.getTextWidth(name, FONT_SIZE_MENU);
+            const int nameSize = BOOK32_COMPACT_UI ? FONT_SIZE_SMALL : FONT_SIZE_MENU;
+            int nameWidth = fontMgr.getTextWidth(name, nameSize);
             int nameX = x + (ICON_SIZE - nameWidth) / 2;
-            fontMgr.drawText(display, name, nameX, y + ICON_SIZE + 25, FONT_SIZE_MENU, GxEPD_BLACK);
+            fontMgr.drawText(display, name, nameX, y + ICON_SIZE + MENU_LABEL_DY, nameSize, GxEPD_BLACK);
 #endif
         }
         
@@ -562,11 +608,12 @@ void AppMainMenu::draw() {
             
              if ((int)i == selectedIndex) {
                  // Selection Box
-                display.drawRect(x - 8, y - 8, ICON_SIZE + 16, ICON_SIZE + 16, GxEPD_BLACK);
-                display.drawRect(x - 7, y - 7, ICON_SIZE + 14, ICON_SIZE + 14, GxEPD_BLACK);
+                const int f = MENU_FRAME;
+                display.drawRect(x - f, y - f, ICON_SIZE + 2 * f, ICON_SIZE + 2 * f, GxEPD_BLACK);
+                display.drawRect(x - f + 1, y - f + 1, ICON_SIZE + 2 * f - 2, ICON_SIZE + 2 * f - 2, GxEPD_BLACK);
             }
             
-            display.drawBitmap(x, y, icon_update_160x160, ICON_SIZE, ICON_SIZE, GxEPD_BLACK);
+            drawMenuIcon(display, x, y, icon_update_160x160);
             
             String updateText = "Update " + _updateVersion;
             int nameWidth = fontMgr.getTextWidth(updateText.c_str(), FONT_SIZE_MENU);

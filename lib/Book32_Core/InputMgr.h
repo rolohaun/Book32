@@ -59,6 +59,8 @@ private:
 #endif
 #if defined(PIN_BUTTON_PREV)
     OneButton btnPrev;
+#endif
+#if defined(PIN_BUTTON_HOME)
     OneButton btnHome;
 #endif
 #if BOOK32_HAS_TOUCH
@@ -119,10 +121,12 @@ private:
     void onUp();
     void onDown();
     void onHome();
+    void onBack();
     static void staticClick(void* ptr);
     static void staticDoubleClick(void* ptr);
     static void staticLongPress(void* ptr);
     static void staticUp(void* ptr);
     static void staticDown(void* ptr);
     static void staticHome(void* ptr);
+    static void staticBack(void* ptr);
 };

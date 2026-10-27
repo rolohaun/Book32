@@ -1,6 +1,6 @@
 #pragma once
 #include "Config.h"
-#if defined(BOARD_LILYGO_T5S3_PRO) || defined(BOARD_SEEED_STICKY)
+#if defined(BOARD_LILYGO_T5S3_PRO) || defined(BOARD_SEEED_STICKY) || defined(BOARD_WAVESHARE_RLCD42)
 #include "BaseApp.h"
 #include "InputMgr.h"
 #include "GameFrameTiming.h"
@@ -115,6 +115,26 @@ private:
     unsigned _fpsCount = 0;
     unsigned long _fpsAt = 0;
     void countFps(bool fresh);
+#if defined(BOARD_WAVESHARE_RLCD42)
+    // RLCD: no touch, so every screen is a list moved through with keys
+    // (KEY: next, hold to select; BOOT: previous, hold for back) or a
+    // gamepad. Games and their pause menu are landscape. See AppPaperboyRlcd.cpp.
+    enum PauseItem : uint8_t { PAUSE_RESUME, PAUSE_SAVE, PAUSE_LOAD, PAUSE_RESTART, PAUSE_EXIT,
+                               PAUSE_CANCEL, PAUSE_CONFIRM };
+    struct PauseRow { PauseItem item; uint8_t slot; };
+    int _menuCursor = 0;  // pause menu row
+    std::vector<PauseRow> pauseRows() const;
+    uint8_t landscapeRotation() const { return _gameRotation == 1 ? 2 : 0; }
+    void useLandscape(bool landscape);
+    void rlcdKey(InputAction a);
+    void rlcdLibraryKey(InputAction a);
+    void rlcdPauseKey(InputAction a);
+    void rlcdControlsKey(InputAction a);
+    void paintRlcdLibrary();
+    void paintRlcdPause();
+    void paintRlcdGame();
+    void paintRlcdControls();
+#endif
 #if INKADE_INKBOY_VIDEO
     // Display settings and transition test (Sticky). See AppPaperboyDisplay.cpp.
     enum Screen : uint8_t { SCREEN_LIBRARY, SCREEN_SETTINGS, SCREEN_TEST };

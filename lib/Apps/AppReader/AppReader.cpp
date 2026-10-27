@@ -15,6 +15,7 @@
 #include <Fonts/FreeSans9pt7b.h>
 #include <Fonts/FreeSans12pt7b.h>
 #include <Fonts/FreeSansBold12pt7b.h>
+#include <Fonts/FreeSansBold9pt7b.h>
 #include <map>
 #include <utility>
 
@@ -23,8 +24,13 @@ static const uint32_t READER_LAYOUT_VERSION = 6;
 static const unsigned long PROGRESS_SAVE_DELAY_MS = 2000;
 
 // Library rows. Book32's 7.5" panel has the lowest pixel density, so it uses
-// larger covers (4 books per screen) to keep cover titles readable.
-#if BOOK32_HAS_TOUCH
+// larger covers (4 books per screen) to keep cover titles readable. The RLCD's
+// 300x400 screen fits three smaller rows with smaller titles.
+#if BOOK32_COMPACT_UI
+static const int LIBRARY_ITEM_HEIGHT = 84;
+static const int LIBRARY_COVER_WIDTH = 48;
+static const int LIBRARY_COVER_HEIGHT = 64;
+#elif BOOK32_HAS_TOUCH
 static const int LIBRARY_ITEM_HEIGHT = 110;
 static const int LIBRARY_COVER_WIDTH = 60;
 static const int LIBRARY_COVER_HEIGHT = 80;
@@ -32,6 +38,18 @@ static const int LIBRARY_COVER_HEIGHT = 80;
 static const int LIBRARY_ITEM_HEIGHT = 150;
 static const int LIBRARY_COVER_WIDTH = 90;
 static const int LIBRARY_COVER_HEIGHT = 120;
+#endif
+
+#if BOOK32_COMPACT_UI
+static const int LIBRARY_HEADER_H = 56, LIBRARY_BACK_H = 40, LIBRARY_FOOTER_H = 46;
+static const int LIBRARY_TITLE_Y = 32, LIBRARY_RULE_Y = 42;
+#define LIBRARY_TITLE_FONT FreeSans9pt7b
+#define LIBRARY_TITLE_BOLD FreeSansBold9pt7b
+#else
+static const int LIBRARY_HEADER_H = 76, LIBRARY_BACK_H = 48, LIBRARY_FOOTER_H = 70;
+static const int LIBRARY_TITLE_Y = 40, LIBRARY_RULE_Y = 56;
+#define LIBRARY_TITLE_FONT FreeSans12pt7b
+#define LIBRARY_TITLE_BOLD FreeSansBold12pt7b
 #endif
 
 static const char* COVER_CACHE_DIR = "/.covers";
@@ -263,8 +281,8 @@ struct LibraryDirtyRect {
 };
 
 static LibraryDirtyRect libraryItemRect(int index, int screenW) {
-    const int HEADER_H = 76;
-    const int BACK_ITEM_HEIGHT = 48;
+    const int HEADER_H = LIBRARY_HEADER_H;
+    const int BACK_ITEM_HEIGHT = LIBRARY_BACK_H;
     const int ITEM_HEIGHT = LIBRARY_ITEM_HEIGHT;
     if (index < 0) {
         return {14, HEADER_H, screenW - 28, BACK_ITEM_HEIGHT + 4};
@@ -692,7 +710,7 @@ bool AppReader::drawSleepCover(const String& message) {
 
 void AppReader::handleInput(InputAction action) {
     if (action == INPUT_NONE) return;
-#if defined(BOARD_LILYGO_T5S3_PRO)
+#if defined(BOARD_LILYGO_T5S3_PRO) || defined(BOARD_WAVESHARE_RLCD42)
     if (action == INPUT_BACK) {
         if (_state == VIEW_READING) {
             closeBook(); _state = VIEW_LIBRARY;
@@ -762,8 +780,8 @@ void AppReader::handleTouch(uint16_t x, uint16_t y) {
         return;
     }
 
-    constexpr int HEADER_H = 76;
-    constexpr int BACK_ITEM_HEIGHT = 48;
+    constexpr int HEADER_H = LIBRARY_HEADER_H;
+    constexpr int BACK_ITEM_HEIGHT = LIBRARY_BACK_H;
     constexpr int ITEM_HEIGHT = LIBRARY_ITEM_HEIGHT;
     constexpr int FOOTER_H = 70;
     if (y >= HEADER_H && y < HEADER_H + BACK_ITEM_HEIGHT) {
@@ -1226,13 +1244,13 @@ void AppReader::drawLibrary() {
     Book32Display& display = dispMgr.getDisplay();
     FontMgr& fontMgr = FontMgr::getInstance();
 
-    const int HEADER_H = 76;
-    const int BACK_ITEM_HEIGHT = 48;
+    const int HEADER_H = LIBRARY_HEADER_H;
+    const int BACK_ITEM_HEIGHT = LIBRARY_BACK_H;
     const int COVER_WIDTH = LIBRARY_COVER_WIDTH;
     const int COVER_HEIGHT = LIBRARY_COVER_HEIGHT;
     const int ITEM_HEIGHT = LIBRARY_ITEM_HEIGHT;
     const int ITEM_PADDING = 24;
-    const int visibleBookCount = max(1, (display.height() - HEADER_H - BACK_ITEM_HEIGHT - 70) / ITEM_HEIGHT);
+    const int visibleBookCount = max(1, (display.height() - HEADER_H - BACK_ITEM_HEIGHT - LIBRARY_FOOTER_H) / ITEM_HEIGHT);
 
     // The library shows a page of books at a time: the page holding the
     // selection, or the one chosen with the Prev and Next buttons.
@@ -1290,12 +1308,12 @@ void AppReader::drawLibrary() {
     do {
         display.fillScreen(GxEPD_WHITE);
 
-        drawTextWithFont(display, "Library", 20, 40, &FreeSansBold12pt7b, GxEPD_BLACK);
+        drawTextWithFont(display, "Library", 20, LIBRARY_TITLE_Y, &FreeSansBold12pt7b, GxEPD_BLACK);
         char countText[24];
         snprintf(countText, sizeof(countText), "%d books", (int)_books.size());
-        fontMgr.drawTextRight(display, countText, display.width() - 20, 38, FONT_SIZE_SMALL, GxEPD_BLACK);
-        display.drawFastHLine(20, 56, display.width() - 40, GxEPD_BLACK);
-        display.drawFastHLine(20, 58, 72, GxEPD_BLACK);
+        fontMgr.drawTextRight(display, countText, display.width() - 20, LIBRARY_TITLE_Y - 2, FONT_SIZE_SMALL, GxEPD_BLACK);
+        display.drawFastHLine(20, LIBRARY_RULE_Y, display.width() - 40, GxEPD_BLACK);
+        display.drawFastHLine(20, LIBRARY_RULE_Y + 2, 72, GxEPD_BLACK);
 
         int y = HEADER_H;
 
@@ -1305,7 +1323,7 @@ void AppReader::drawLibrary() {
             display.fillRect(20, y + 6, 5, BACK_ITEM_HEIGHT - 12, GxEPD_BLACK);
             display.drawRoundRect(16, y + 2, display.width() - 32, BACK_ITEM_HEIGHT - 4, 6, GxEPD_BLACK);
         }
-        drawTextWithFont(display, "<  Back to Menu", ITEM_PADDING + 14, y + 32,
+        drawTextWithFont(display, "<  Back to Menu", ITEM_PADDING + 14, y + BACK_ITEM_HEIGHT * 2 / 3,
                          backSelected ? &FreeSansBold12pt7b : &FreeSans12pt7b, GxEPD_BLACK);
         display.drawFastHLine(ITEM_PADDING, y + BACK_ITEM_HEIGHT - 1, display.width() - (ITEM_PADDING * 2), GxEPD_BLACK);
         y += BACK_ITEM_HEIGHT;
@@ -1317,7 +1335,7 @@ void AppReader::drawLibrary() {
         } else {
             int idx = _scrollOffset;
             for (; idx < lastVisibleBook; idx++) {
-                if (y > display.height() - 70) break;
+                if (y > display.height() - LIBRARY_FOOTER_H) break;
                 const BookEntry& book = _books[idx];
 
                 bool isSelected = (idx == _selectedBookIndex);
@@ -1348,7 +1366,7 @@ void AppReader::drawLibrary() {
 
                 uint16_t textColor = GxEPD_BLACK;
 
-                const GFXfont* titleFont = isSelected ? &FreeSansBold12pt7b : &FreeSans12pt7b;
+                const GFXfont* titleFont = isSelected ? &LIBRARY_TITLE_BOLD : &LIBRARY_TITLE_FONT;
                 int textX = ITEM_PADDING + COVER_WIDTH + 44;
                 const int MAX_WIDTH = display.width() - textX - 28;
                 const int MAX_LINES = 3;
@@ -1446,10 +1464,10 @@ void AppReader::drawReading() {
         // The footer is deliberately drawn outside TextRenderer so its
         // visibility never affects pagination or the page cache.
         display.setFont(NULL);
-        display.setTextSize(2);
+        display.setTextSize(BOOK32_COMPACT_UI ? 1 : 2);
         display.setTextColor(GxEPD_BLACK);
 
-        const int footerY = display.height() - 24;
+        const int footerY = display.height() - (BOOK32_COMPACT_UI ? 14 : 24);
         if (_showChapter) {
             String chapterTitle = _epubLoader ? _epubLoader->getChapterTitle(_currentChapter) : "";
             if (chapterTitle.length() == 0) chapterTitle = "Chapter " + String(_currentChapter + 1);

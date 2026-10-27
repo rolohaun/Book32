@@ -278,11 +278,12 @@ void GamepadMgr::onReport(uint8_t reportId, const uint8_t* data, size_t length) 
         HidGamepad::decode(_descriptor, reportId, data, length, HidGamepad::ANDROID_MAP, &reportRaw, &reportKeys);
     _rawByReport[reportId] = reportRaw;
     _otherByReport[reportId] = reportKeys.otherPad;
-    // A keyboard report replaces the keys that report held before; reports
-    // without keyboard fields (media keys, touchpad) leave them alone.
+    // A report with keys (keyboard or media keys) replaces the keys it held
+    // before; other reports (a touchpad) leave them alone.
     bool keyFields = false;
     for (int i = 0; i < _descriptor.count && !keyFields; ++i)
-        keyFields = _descriptor.fields[i].usagePage == HidGamepad::PAGE_KEYBOARD &&
+        keyFields = (_descriptor.fields[i].usagePage == HidGamepad::PAGE_KEYBOARD ||
+                     _descriptor.fields[i].usagePage == HidGamepad::PAGE_CONSUMER) &&
                     (!_descriptor.usesReportIds || _descriptor.fields[i].reportId == reportId);
     if (keyFields) {
         _keysByReport[reportId & 3] = reportKeys;

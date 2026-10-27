@@ -113,6 +113,12 @@ int main() {
     assert(held.count == 2 && held.has(0x0E) && held.has(0xE5) && held.otherPad == 0);
     char name[12];
     assert(!strcmp(keyName(0x0E, name), "K") && !strcmp(keyName(0x28, name), "Enter"));
+    // Media keys (consumer array, as the first pad's report 2) are keys too.
+    uint8_t volumeUp[] = {0xE9, 0x00};
+    Keys media;
+    decode(d, 2, volumeUp, sizeof(volumeUp), ANDROID_MAP, nullptr, &media);
+    assert(media.count == 1 && media.has(MEDIA_KEY | 0xE9));
+    assert(!strcmp(keyName(MEDIA_KEY | 0xE9, name), "Volume Up"));
 
     // Garbage is rejected without crashing.
     const uint8_t broken[] = {0x05, 0x01, 0x27};

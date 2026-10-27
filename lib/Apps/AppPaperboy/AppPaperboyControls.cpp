@@ -24,9 +24,9 @@ void AppPaperboy::loadPadMap() {
         Serial.println("Inkade: stored gamepad mapping is from an older version or unreadable; using defaults");
     _keyMap = KeyMapping::DEFAULTS;
     uint8_t keys[KeyMapping::STORED_BYTES];
-    if (prefs.getBytesLength(KEYBOARD_KEY) == sizeof(keys) &&
-        prefs.getBytes(KEYBOARD_KEY, keys, sizeof(keys)) == sizeof(keys) &&
-        !KeyMapping::restore(_keyMap, keys, sizeof(keys)))
+    const size_t keyBytes = prefs.getBytesLength(KEYBOARD_KEY);
+    if (keyBytes && keyBytes <= sizeof(keys) && prefs.getBytes(KEYBOARD_KEY, keys, keyBytes) == keyBytes &&
+        !KeyMapping::restore(_keyMap, keys, keyBytes))
         Serial.println("Inkade: stored keyboard mapping is unreadable; using defaults");
     prefs.end();
 }

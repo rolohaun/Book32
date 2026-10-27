@@ -65,25 +65,44 @@ inline uint16_t keyButton(uint16_t key) {
     return 0;
 }
 
-// Keyboard keys held in a report (HID usages: letters 0x04.., modifiers
-// 0xE0..0xE7), and the pad buttons that came from everything but keys.
+// Keys held in a report: keyboard usages (letters 0x04.., modifiers
+// 0xE0..0xE7), and media keys (consumer usages, such as volume or next
+// track) as MEDIA_KEY | usage. Plus the pad buttons from everything else.
+constexpr uint16_t MEDIA_KEY = 0x8000;
 struct Keys {
     static constexpr int MAX = 8;
-    uint8_t codes[MAX];
+    uint16_t codes[MAX];
     uint8_t count = 0;
     uint16_t otherPad = 0;
-    void add(uint8_t code) {
+    void add(uint16_t code) {
         if (!code || code == 1 || has(code) || count >= MAX) return;  // 1: too many keys
         codes[count++] = code;
     }
-    bool has(uint8_t code) const {
+    bool has(uint16_t code) const {
         for (int i = 0; i < count; ++i) if (codes[i] == code) return true;
         return false;
     }
 };
 
-// Short key name ("X", "Enter", "Left") for the Controls screen.
-inline const char* keyName(uint8_t key, char* buffer) {
+// Short key name ("X", "Enter", "Volume Up") for the Controls screen.
+inline const char* keyName(uint16_t key, char* buffer) {
+    if (key & MEDIA_KEY) {
+        switch (key & 0x3FF) {
+        case 0xB5: return "Next Track";
+        case 0xB6: return "Prev Track";
+        case 0xB7: return "Stop";
+        case 0xCD: return "Play/Pause";
+        case 0xE2: return "Mute";
+        case 0xE9: return "Volume Up";
+        case 0xEA: return "Volume Down";
+        case 0x6F: return "Bright Up";
+        case 0x70: return "Bright Down";
+        case 0x223: return "Home";
+        case 0x224: return "Back";
+        }
+        snprintf(buffer, 12, "Media %03X", unsigned(key & 0x3FF));
+        return buffer;
+    }
     if (key >= 0x04 && key <= 0x1D) { buffer[0] = char('A' + key - 0x04); buffer[1] = 0; return buffer; }
     if (key >= 0x1E && key <= 0x27) { buffer[0] = key == 0x27 ? '0' : char('1' + key - 0x1E); buffer[1] = 0; return buffer; }
     if (key >= 0x3A && key <= 0x45) { buffer[0] = 'F'; snprintf(buffer + 1, 3, "%u", unsigned(key - 0x39)); return buffer; }
@@ -253,9 +272,11 @@ inline uint16_t decode(const Descriptor& d, uint8_t reportId, const uint8_t* dat
             // of the key codes held.
             const uint16_t key = field.bitSize == 1 ? field.usage : uint16_t(value);
             keyPad |= keyButton(key);
-            if (keys && key <= 0xFF) keys->add(uint8_t(key));
+            if (keys && key <= 0xFF) keys->add(key);
         } else if (field.usagePage == PAGE_CONSUMER && value) {
             // Android-mode pads send Back / Home / Menu as consumer keys.
+            // Keyboards' media keys can be mapped like any key.
+            if (keys) keys->add(MEDIA_KEY | ((field.bitSize > 1 ? uint16_t(value) : field.usage) & 0x3FF));
             if (field.bitSize > 1) {  // an array of usage codes
                 if (value == 0x224) pad |= PAD_SELECT;       // AC Back
                 if (value == 0x223 || value == 0x40) pad |= PAD_HOME;  // AC Home / Menu

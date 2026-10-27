@@ -136,9 +136,12 @@ std::vector<AppPaperboy::PauseRow> AppPaperboy::pauseRows() const {
     }
     if (!_coreFault) rows.push_back({PAUSE_RESUME, 0});
     rows.push_back({PAUSE_SOUND, 0});
-    if (!_coreFault) for (uint8_t slot = 1; slot < 4; ++slot) rows.push_back({PAUSE_SAVE, slot});
-    for (uint8_t slot = 0; slot < 4; ++slot) if (_slots[slot]) rows.push_back({PAUSE_LOAD, slot});
-    rows.push_back({PAUSE_RESTART, 0});
+    // Arduboy games keep only their own saves (EEPROM): no slots or restart.
+    if (inkConsoleSystem() != INK_SYSTEM_ARDUBOY) {
+        if (!_coreFault) for (uint8_t slot = 1; slot < 4; ++slot) rows.push_back({PAUSE_SAVE, slot});
+        for (uint8_t slot = 0; slot < 4; ++slot) if (_slots[slot]) rows.push_back({PAUSE_LOAD, slot});
+        rows.push_back({PAUSE_RESTART, 0});
+    }
     rows.push_back({PAUSE_EXIT, 0});
     return rows;
 }
@@ -238,7 +241,18 @@ void AppPaperboy::paintRlcdGame() {
     useLandscape(true);
     d.setFullWindow();
     d.fillScreen(GxEPD_WHITE);
-    const bool nes = inkConsoleSystem() == INK_SYSTEM_NES;
+    const InkSystem system = inkConsoleSystem();
+    const bool nes = system == INK_SYSTEM_NES;
+    if (system == INK_SYSTEM_ARDUBOY) {
+        // 128x64 at 3x fills the width; the title and key hint sit above it.
+        constexpr int x = RlcdDisplay::ARDUBOY_X, y = RlcdDisplay::ARDUBOY_Y;
+        constexpr int w = RlcdDisplay::ARDUBOY_W, h = RlcdDisplay::ARDUBOY_H;
+        d.drawRect(x - 2, y - 2, w + 4, h + 4, GxEPD_BLACK);
+        text(d, fit(inkConsoleName(), 20), x, 14, 2);
+        text(d, "KEY: pause", d.width() - 8 - 60, 20, 1);
+        d.setGameRotation(landscapeRotation());
+        return;
+    }
     const int x = nes ? NesViewport::X : GameViewport::X, y = nes ? NesViewport::Y : GameViewport::Y;
     const int w = nes ? NesViewport::W : GameViewport::W, h = nes ? NesViewport::H : GameViewport::H;
     d.drawRect(x - 2, y - 2, w + 4, h + 4, GxEPD_BLACK);

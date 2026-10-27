@@ -46,6 +46,9 @@ public:
     // the rest of the canvas is left as painted.
     void setGameMode(bool active) { _gaming = active; }
     void setNesGame(bool nes) { _nesGame = nes; }
+    // Arduboy games: 128x64 (the start of the frame), shown 3x as large.
+    void setArduboyGame(bool arduboy) { _arduboyGame = arduboy; }
+    static constexpr int ARDUBOY_X = 8, ARDUBOY_Y = 54, ARDUBOY_W = 384, ARDUBOY_H = 192;
     // Borrowed until the next setGameFrame or setGameMode(false).
     void setGameFrame(const uint8_t* frame) { _gameFrame = frame; }
     // 0 or 2: the landscape rotation the game is played in.
@@ -55,7 +58,7 @@ public:
 private:
     SPIClass _spi;
     uint8_t* _panel = nullptr;  // The frame in controller order
-    bool _ready = false, _windowed = false, _gaming = false, _nesGame = false;
+    bool _ready = false, _windowed = false, _gaming = false, _nesGame = false, _arduboyGame = false;
     int16_t _wx0 = 0, _wy0 = 0, _wx1 = 0, _wy1 = 0;  // Partial window, rotated coordinates
     const uint8_t* _gameFrame = nullptr;
     uint8_t _gameRotation = 0;
@@ -66,6 +69,7 @@ private:
     void command(uint8_t cmd, const uint8_t* data = nullptr, size_t length = 0);
     void reset();
     void drawGameFrame();
+    void drawArduboyFrame();
     void flush();
 };
 #endif

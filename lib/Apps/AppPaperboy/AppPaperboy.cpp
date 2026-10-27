@@ -12,6 +12,7 @@
 #include "GameViewport.h"
 #include "NesViewport.h"
 #include "NesCore.h"
+#include "arduboy/ArduboyCore.h"
 #include "InkBoyUi.h"
 #include "InkBoyLibraryUi.h"
 #include <esp_timer.h>
@@ -165,6 +166,10 @@ void AppPaperboy::scan() {
         if (!_roms.empty()) _message = "Tap a game to play or resume. Saves stay with each ROM.";
 #endif
     }
+#if defined(BOARD_WAVESHARE_RLCD42)
+    // Built-in Arduboy games head the list, with or without an SD card.
+    for (unsigned i = 0; i < inkArduboyCount(); ++i) _roms.insert(_roms.begin() + i, inkArduboyPath(i));
+#endif
     if(!(_systemMask&(1<<_selectedSystem))) {
         _selectedSystem=INK_SYSTEM_NONE;
         for(int i=INK_SYSTEM_GB;i<=INK_SYSTEM_NES;i++)if(_systemMask&(1<<i)){_selectedSystem=(InkSystem)i;break;}
@@ -288,6 +293,8 @@ bool AppPaperboy::save() {
 }
 
 bool AppPaperboy::saveState(unsigned slot) {
+    // Arduboy games have no save states, only their EEPROM (save()).
+    if (inkConsoleSystem() == INK_SYSTEM_ARDUBOY) return slot == 0;
     if (!_mutex || _savePath.isEmpty() || slot > 3 || _coreFault) return false;
     xSemaphoreTake(_mutex, portMAX_DELAY);
     size_t size = inkConsoleStateSize();
@@ -497,9 +504,11 @@ void AppPaperboy::openBook(const String& path) {
     label(d,String(inkSystemName(selected))+" emulator",LEFT,264,2);
     String title=path.substring(path.lastIndexOf('/')+1);if(title.length()>TITLE_CHARS)title=title.substring(0,TITLE_CHARS-3)+"...";
     label(d,title,LEFT,310,2);label(d,"Loading ROM and saved progress...",LEFT,360,1);d.refresh(false);
-    File f = EbookFS.open(path, "r");
-    const size_t bytes = f ? f.size() : 0;
-    if (!inkRomSizeValid(selected,bytes)) { _message = "Invalid ROM size for this system"; _redraw = true; return; }
+    // Built-in Arduboy games have no ROM file: `bytes` is the game's index.
+    const int builtIn = selected == INK_SYSTEM_ARDUBOY ? inkArduboyFind(path.c_str()) : -1;
+    File f = builtIn < 0 ? EbookFS.open(path, "r") : File();
+    const size_t bytes = builtIn >= 0 ? size_t(builtIn) : f ? f.size() : 0;
+    if (builtIn < 0 && !inkRomSizeValid(selected,bytes)) { _message = "Invalid ROM size for this system"; _redraw = true; return; }
     xSemaphoreTake(_mutex, portMAX_DELAY);
     inkConsoleClose(); free(_rom); _rom = nullptr;
     // No renderer may retain a borrowed frame while changing its allocation.
@@ -512,6 +521,9 @@ void AppPaperboy::openBook(const String& path) {
         xSemaphoreGive(_mutex);return;
     }
     d.setNesGame(_nesVideo);
+#if defined(BOARD_WAVESHARE_RLCD42)
+    d.setArduboyGame(selected == INK_SYSTEM_ARDUBOY);
+#endif
     auto placeFrame = [selected](uint8_t*& frame, size_t size) {
         const bool wantInternal=selected==INK_SYSTEM_GB;
         if (esp_ptr_internal(frame)==wantInternal) return;
@@ -527,8 +539,8 @@ void AppPaperboy::openBook(const String& path) {
     if (_romFile) _romFile.close();
     bool banked = selected==INK_SYSTEM_GB && bytes > 4U * 1024U * 1024U;
     size_t loaded = banked ? 16384 : bytes;
-    _rom = (uint8_t*)ps_malloc(loaded);
-    bool readOk = _rom && f.read(_rom, loaded) == loaded;
+    _rom = builtIn < 0 ? (uint8_t*)ps_malloc(loaded) : nullptr;
+    bool readOk = builtIn >= 0 || (_rom && f.read(_rom, loaded) == loaded);
     bool ok = readOk;
     if (ok && banked) {
         _romFile = f;
@@ -537,11 +549,13 @@ void AppPaperboy::openBook(const String& path) {
             return file->seek(offset) && file->read(out, count) == count;
         }, &_romFile);
     } else {
-        f.close();
+        if (f) f.close();
         if (ok) ok = inkConsoleOpen(selected,_rom, bytes,nullptr,nullptr);
     }
     if (ok) {
-        _savePath = path + ".inkdeck.sav";
+        // A built-in game saves its EEPROM to /roms when there is a card.
+        if (builtIn >= 0 && romStorageReady() && !EbookFS.exists("/roms")) EbookFS.mkdir("/roms");
+        _savePath = builtIn >= 0 && !romStorageReady() ? String() : path + ".inkdeck.sav";
         size_t size; uint8_t* ram = inkConsoleRam(&size);
         String source = EbookFS.exists(_savePath) ? _savePath : _savePath + ".bak";
         if (ram && size && EbookFS.exists(source)) {
@@ -563,7 +577,7 @@ void AppPaperboy::openBook(const String& path) {
             }
         }
         inkConsoleSaved();
-    } else _message = !_rom ? "Not enough ROM memory" : !readOk ? "Could not read ROM from SD" : inkConsoleError();
+    } else _message = !_rom && builtIn < 0 ? "Not enough ROM memory" : !readOk ? "Could not read ROM from SD" : inkConsoleError();
     _producedSequence = _latestSequence = _snapshotSequence = 0;
     _snapshotValid = false;
     xSemaphoreGive(_mutex);

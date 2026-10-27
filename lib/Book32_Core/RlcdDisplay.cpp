@@ -210,8 +210,33 @@ void RlcdDisplay::drawGameFrame() {
     }
 }
 
+// Each Arduboy pixel becomes a 3x3 block; there are only two shades.
+void RlcdDisplay::drawArduboyFrame() {
+    static_assert(ARDUBOY_X % 8 == 0 && ARDUBOY_W % 8 == 0 && ARDUBOY_X * 2 + ARDUBOY_W == NATIVE_W &&
+                  ARDUBOY_Y * 2 + ARDUBOY_H == NATIVE_H, "byte-aligned and centered");
+    const bool flipped = _gameRotation == 2;
+    uint8_t* canvas = getBuffer();
+    for (int j = 0; j < ARDUBOY_H; ++j) {
+        const int y = (flipped ? ARDUBOY_H - 1 - j : j) / 3;
+        const uint8_t* source = _gameFrame + y * 128;
+        uint8_t* out = canvas + (ARDUBOY_Y + j) * CANVAS_PITCH + ARDUBOY_X / 8;
+        for (int b = 0; b < ARDUBOY_W / 8; ++b) {
+            uint8_t bits = 0;
+            for (int k = 0; k < 8; ++k) {
+                const int i = b * 8 + k;
+                const int x = (flipped ? ARDUBOY_W - 1 - i : i) / 3;
+                bits = (bits << 1) | (source[x] ? 0 : 1);
+            }
+            out[b] = bits;
+        }
+    }
+}
+
 bool RlcdDisplay::refreshGame(bool, bool) {
-    if (_gaming && _gameFrame) drawGameFrame();
+    if (_gaming && _gameFrame) {
+        if (_arduboyGame) drawArduboyFrame();
+        else drawGameFrame();
+    }
     flush();
     return true;
 }

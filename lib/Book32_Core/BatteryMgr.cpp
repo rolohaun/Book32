@@ -372,7 +372,7 @@ bool BatteryMgr::isCharging() {
 void BatteryMgr::loadSleepSettings() {
     _sleepTimeoutMinutes = SLEEP_TIMEOUT_DEFAULT_MINUTES;
     _sleepMessage = SLEEP_MESSAGE_DEFAULT;
-    _sleepShowCover = true;
+    _sleepScreen = SleepScreen::COVER_AND_MESSAGE;
     bool saveMigratedSettings = false;
 
     // Load from EbookFS partition. Sticky versions before 1.2.13 wrote an
@@ -390,7 +390,7 @@ void BatteryMgr::loadSleepSettings() {
                 _sleepMessage = doc["sleepMessage"] | SLEEP_MESSAGE_DEFAULT;
                 const bool messageMigrated = sleepMessageNeedsMigration(configVersion, _sleepMessage.c_str());
                 if (messageMigrated) _sleepMessage = SLEEP_MESSAGE_DEFAULT;
-                _sleepShowCover = strcmp(doc["sleepScreen"] | "cover", "message") != 0;
+                _sleepScreen = sleepScreenFromName(doc["sleepScreen"] | "cover");
 #if !defined(BOARD_LILYGO_T5S3_PRO)
                 // Sticky (v2) and Book32 (v3) once stored an implicit 0 because
                 // idle sleep was off by default; give them the 10-minute default
@@ -415,7 +415,7 @@ void BatteryMgr::loadSleepSettings() {
         doc["configVersion"] = SLEEP_CONFIG_VERSION;
         doc["sleepTimeout"] = _sleepTimeoutMinutes;
         doc["sleepMessage"] = _sleepMessage;
-        doc["sleepScreen"] = _sleepShowCover ? "cover" : "message";
+        doc["sleepScreen"] = sleepScreenName(_sleepScreen);
         File file = EbookFS.open("/sleep_config.json", FILE_WRITE);
         if (file) {
             serializeJson(doc, file);
@@ -471,12 +471,12 @@ void BatteryMgr::enterIdleSleep() {
     WiFi.disconnect(true, false);
     WiFi.mode(WIFI_OFF);
 
-    // Sleep screen: the cover of the book being read (default), with the
-    // message under it, or the message alone. Low battery always shows its
-    // warning.
+    // Sleep screen: the cover of the book being read with the message under
+    // it (default), the cover alone, or the message alone. Low battery always
+    // shows its warning.
     Book32Display& display = DisplayMgr::getInstance().getDisplay();
-    const bool drewCover = _sleepShowCover && !_lowBatterySleep && _coverRenderer &&
-                           _coverRenderer(_sleepMessage);
+    const bool drewCover = _sleepScreen != SleepScreen::MESSAGE_ONLY && !_lowBatterySleep && _coverRenderer &&
+                           _coverRenderer(_sleepScreen == SleepScreen::COVER_ONLY ? String() : _sleepMessage);
     Serial.printf("Sleep screen: %s\n", drewCover ? "book cover" : "message");
     if (!drewCover) {
     display.setFullWindow();

@@ -1060,7 +1060,7 @@ void WebMgr::setupEndpoints() {
                     const char* savedMessage = savedDoc["sleepMessage"] | SLEEP_MESSAGE_DEFAULT;
                     doc["sleepMessage"] = sleepMessageNeedsMigration(savedDoc["configVersion"] | 1, savedMessage)
                                                ? SLEEP_MESSAGE_DEFAULT : savedMessage;
-                    doc["sleepScreen"] = savedDoc["sleepScreen"] | "cover";
+                    doc["sleepScreen"] = sleepScreenName(sleepScreenFromName(savedDoc["sleepScreen"] | "cover"));
                 } else {
                     doc["sleepTimeout"] = SLEEP_TIMEOUT_DEFAULT_MINUTES;
                     doc["sleepMessage"] = SLEEP_MESSAGE_DEFAULT;
@@ -1092,7 +1092,7 @@ void WebMgr::setupEndpoints() {
             doc["configVersion"] = SLEEP_CONFIG_VERSION;
 
             if (json.containsKey("sleepScreen")) {
-                doc["sleepScreen"] = strcmp(json["sleepScreen"] | "cover", "message") == 0 ? "message" : "cover";
+                doc["sleepScreen"] = sleepScreenName(sleepScreenFromName(json["sleepScreen"] | "cover"));
             }
             if (json.containsKey("sleepTimeout")) {
                 doc["sleepTimeout"] = json["sleepTimeout"].as<int>();

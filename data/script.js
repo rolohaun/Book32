@@ -816,7 +816,7 @@ function getSleepSettings() {
             if (data.sleepMessage !== undefined) {
                 document.getElementById('sleep-message').value = data.sleepMessage;
             }
-            document.getElementById('sleep-screen').value = data.sleepScreen === 'message' ? 'message' : 'cover';
+            document.getElementById('sleep-screen').value = ['message', 'coverOnly'].includes(data.sleepScreen) ? data.sleepScreen : 'cover';
             if (data.defaultSleepMessage) document.getElementById('sleep-message').placeholder = data.defaultSleepMessage;
         })
         .catch(error => console.error('Error loading sleep settings:', error));

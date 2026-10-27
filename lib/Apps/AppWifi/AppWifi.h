@@ -1,4 +1,5 @@
 #pragma once
+#include "../../Book32_Core/SleepDefaults.h"
 #include "Config.h"
 
 #if BOOK32_HAS_TOUCH
@@ -51,7 +52,7 @@ private:
     String _messageDraft;
     String _status;
     int _sleepTimeoutMinutes = SLEEP_TIMEOUT_DEFAULT_MINUTES;
-    bool _sleepShowCover = true;  // sleep screen: book cover (default) or message
+    SleepScreen _sleepScreen = SleepScreen::COVER_AND_MESSAGE;
     int _fontSizePt = 18;
     int _rotation = 3;
     bool _showChapter = true;

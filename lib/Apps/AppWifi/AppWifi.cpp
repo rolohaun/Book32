@@ -9,6 +9,7 @@
 #include "../../Book32_Core/Book32FS.h"
 #include "../../Book32_Core/SoundMgr.h"
 #include "../../Book32_Core/SleepDefaults.h"
+#include "../../Book32_Core/AppSelection.h"
 #include "../../Book32_Apps/icon_settings.h"
 #include "../../Book32_Web/WebMgr.h"
 #include <ArduinoJson.h>
@@ -154,7 +155,7 @@ void AppWifi::handleInput(InputAction action) {
 void AppWifi::loadDeviceSettings() {
     _sleepTimeoutMinutes = SLEEP_TIMEOUT_DEFAULT_MINUTES;
     _sleepMessage = SLEEP_MESSAGE_DEFAULT;
-    _sleepShowCover = true;
+    _sleepScreen = SleepScreen::COVER_AND_MESSAGE;
     _fontSizePt = 18;
     _rotation = DisplayMgr::getInstance().getRotation();
     _showChapter = true;
@@ -175,7 +176,7 @@ void AppWifi::loadDeviceSettings() {
                 if (sleepMessageNeedsMigration(doc["configVersion"] | 1, _sleepMessage.c_str())) {
                     _sleepMessage = SLEEP_MESSAGE_DEFAULT;
                 }
-                _sleepShowCover = strcmp(doc["sleepScreen"] | "cover", "message") != 0;
+                _sleepScreen = sleepScreenFromName(doc["sleepScreen"] | "cover");
             }
             file.close();
         }
@@ -230,7 +231,7 @@ void AppWifi::saveSleepSettings() {
     doc["configVersion"] = SLEEP_CONFIG_VERSION;
     doc["sleepTimeout"] = _sleepTimeoutMinutes;
     doc["sleepMessage"] = _sleepMessage;
-    doc["sleepScreen"] = _sleepShowCover ? "cover" : "message";
+    doc["sleepScreen"] = sleepScreenName(_sleepScreen);
     File file = EbookFS.open("/sleep_config.json", FILE_WRITE);
     if (!file) {
         _status = "Could not save sleep settings";
@@ -519,7 +520,7 @@ void AppWifi::handleTouch(uint16_t x, uint16_t y) {
         if (row < 0 || row > 1 || withinRow >= SETTINGS_CARD_HEIGHT) return;
         SoundMgr::getInstance().beep();
         if (row == 0) {
-            _sleepShowCover = !_sleepShowCover;
+            _sleepScreen = nextSleepScreen(_sleepScreen);
             saveSleepSettings();
             _fullRefresh = true;
             _needsRedraw = true;
@@ -762,7 +763,9 @@ void AppWifi::drawSettingsHome() {
         display.fillScreen(GxEPD_WHITE);
         fontMgr.drawText(display, "Settings", 15, 35, FONT_SIZE_SUBTITLE, GxEPD_BLACK);
         display.drawLine(0, 50, display.width(), 50, GxEPD_BLACK);
-        drawCenteredButton(display, fontMgr, 10, 58, display.width() - 20, 52, "< Back to Menu");
+        // Home is the app menu, or the bookshelf when no app is installed.
+        drawCenteredButton(display, fontMgr, 10, 58, display.width() - 20, 52,
+                           AppSelection::getInstance().launcher() ? "< Back to Menu" : "< Back to Library");
         if (_status.length()) {
             String status = fittedText(fontMgr, _status, display.width() - 30, FONT_SIZE_SMALL);
             fontMgr.drawTextCentered(display, status.c_str(), 132, FONT_SIZE_SMALL, GxEPD_BLACK);
@@ -773,7 +776,9 @@ void AppWifi::drawSettingsHome() {
         drawSettingCard(display, fontMgr, SETTINGS_TOP + SETTINGS_ROW_HEIGHT * 1,
                         "Sleep timeout", timeoutValue);
         drawSettingCard(display, fontMgr, SETTINGS_TOP + SETTINGS_ROW_HEIGHT * 2,
-                        "Sleep screen", _sleepShowCover ? String("Book cover") : "Message: " + _sleepMessage);
+                        "Sleep screen", _sleepScreen == SleepScreen::COVER_ONLY ? String("Book cover only") :
+                                        _sleepScreen == SleepScreen::COVER_AND_MESSAGE ? String("Book cover and message") :
+                                        "Message: " + _sleepMessage);
         drawSettingCard(display, fontMgr, SETTINGS_TOP + SETTINGS_ROW_HEIGHT * 3,
                         "Reading display", readerDisplayValue);
         drawSettingCard(display, fontMgr, SETTINGS_TOP + SETTINGS_ROW_HEIGHT * 4,
@@ -957,10 +962,10 @@ void AppWifi::drawSleepScreen() {
         }
 
         drawSettingCard(display, fontMgr, SETTINGS_TOP + SETTINGS_ROW_HEIGHT * 0,
-                        "While asleep, show", _sleepShowCover ? "Cover of the book you're reading" : "Sleep message");
+                        "While asleep, show", sleepScreenLabel(_sleepScreen));
         drawSettingCard(display, fontMgr, SETTINGS_TOP + SETTINGS_ROW_HEIGHT * 1,
                         "Sleep message", _sleepMessage);
-        fontMgr.drawTextCentered(display, "The message is shown under the cover", 760,
+        fontMgr.drawTextCentered(display, "Tap to switch: cover and message, cover, message", 760,
                                  FONT_SIZE_SMALL, GxEPD_BLACK);
     } while (display.nextPage());
 }

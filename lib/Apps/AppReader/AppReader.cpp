@@ -521,10 +521,10 @@ void AppReader::scanBooks() {
         file = root.openNextFile();
     }
     root.close();
-    if (_books.empty()) {
+    if (shelfItems() == 0) {
         // With nothing to open, make the center button's only useful action Back.
-        _selectedBookIndex = -1;
-    } else if (_selectedBookIndex < 0 || _selectedBookIndex >= static_cast<int>(_books.size())) {
+        _selectedBookIndex = _home ? 0 : -1;
+    } else if (_selectedBookIndex < 0 || _selectedBookIndex >= shelfItems()) {
         _selectedBookIndex = 0;
     }
     _previousBookIndex = _selectedBookIndex;
@@ -619,6 +619,31 @@ void AppReader::drawPlainCover(Book32Display& display, int x, int y, int w, int 
         baseline += lineH;
     }
     display.drawFastHLine(labelX + 6, y + h - 14, labelW - 12, GxEPD_BLACK);
+}
+
+// Settings (a gear) or Update (an arrow into a tray), drawn as a book.
+void AppReader::drawActionBook(Book32Display& display, int x, int y, int w, int h, LibraryButton action) {
+    display.fillRect(x + w, y + 4, 3, h - 4, GxEPD_BLACK);  // shadow
+    display.fillRect(x, y, w, h, GxEPD_WHITE);
+    display.drawRect(x, y, w, h, GxEPD_BLACK);
+    display.fillRect(x, y, 9, h, GxEPD_BLACK);
+    display.drawFastVLine(x + 12, y, h, GxEPD_BLACK);
+    const int cx = x + 12 + (w - 12) / 2, cy = y + h * 2 / 5;
+    if (action == LibraryButton::SETTINGS) {
+        for (int tooth = 0; tooth < 8; ++tooth) {
+            const float a = tooth * PI / 4;
+            display.fillCircle(cx + int(25 * cosf(a)), cy + int(25 * sinf(a)), 7, GxEPD_BLACK);
+        }
+        display.fillCircle(cx, cy, 24, GxEPD_BLACK);
+        display.fillCircle(cx, cy, 10, GxEPD_WHITE);
+    } else {
+        display.fillRect(cx - 6, cy - 28, 12, 26, GxEPD_BLACK);
+        display.fillTriangle(cx - 18, cy - 4, cx + 18, cy - 4, cx, cy + 16, GxEPD_BLACK);
+        display.fillRect(cx - 26, cy + 22, 52, 5, GxEPD_BLACK);
+        display.fillRect(cx - 26, cy + 10, 5, 14, GxEPD_BLACK);
+        display.fillRect(cx + 21, cy + 10, 5, 14, GxEPD_BLACK);
+    }
+    display.drawFastHLine(x + 20, y + h - 14, w - 28, GxEPD_BLACK);
 }
 
 void AppReader::loadBookCover(BookEntry& book, int width, int height) {
@@ -753,8 +778,8 @@ void AppReader::handleInput(InputAction action) {
 #endif
     if (_state == VIEW_LIBRARY) {
         // Index -1 is the header button (when there is one), 0+ the books.
-        const int first = libraryButton() == LibraryButton::NONE ? 0 : -1;
-        const int maxIndex = (int)_books.size() - 1;
+        const int first = _home ? 0 : -1;
+        const int maxIndex = shelfItems() - 1;
         if (action == INPUT_NEXT || action == INPUT_PREV) {
             if (maxIndex < first) return;
             _previousBookIndex = _selectedBookIndex;
@@ -764,10 +789,11 @@ void AppReader::handleInput(InputAction action) {
             _librarySelectionOnlyRedraw = _booksScanned;
             _needsRedraw = true;
         } else if (action == INPUT_SELECT) {
-            if (_selectedBookIndex == -1) {
+            const int book = bookOfItem(_selectedBookIndex);
+            if (_selectedBookIndex == -1 || (shelfAction() && _selectedBookIndex == 0)) {
                 pressLibraryButton();
-            } else if (_selectedBookIndex >= 0 && _selectedBookIndex < static_cast<int>(_books.size())) {
-                openBook(_books[_selectedBookIndex].path.c_str());
+            } else if (book >= 0 && book < static_cast<int>(_books.size())) {
+                openBook(_books[book].path.c_str());
             }
         }
     } else if (_state == VIEW_READING) {
@@ -835,7 +861,7 @@ void AppReader::handleTouch(uint16_t x, uint16_t y) {
     }
 
     const Bookcase shelf(SCREEN_WIDTH, SCREEN_HEIGHT);
-    if (libraryButton() != LibraryButton::NONE && shelf.button(_home).contains(x, y)) {
+    if (!_home && shelf.button(false).contains(x, y)) {
         pressLibraryButton();
         return;
     }
@@ -846,18 +872,19 @@ void AppReader::handleTouch(uint16_t x, uint16_t y) {
         return;
     }
     const int slot = shelf.slotAt(x, y);
-    const int bookIndex = slot < 0 ? -1 : _scrollOffset + slot;
-    if (bookIndex >= 0 && bookIndex < static_cast<int>(_books.size())) {
-        SoundMgr::getInstance().beep();
-        _selectedBookIndex = bookIndex;
-        openBook(_books[bookIndex].path);
-    }
+    const int item = slot < 0 ? -1 : _scrollOffset + slot;
+    if (item < 0 || item >= shelfItems()) return;
+    _selectedBookIndex = item;
+    const int book = bookOfItem(item);
+    if (book < 0) { pressLibraryButton(); return; }
+    SoundMgr::getInstance().beep();
+    openBook(_books[book].path);
 }
 
 void AppReader::showLibraryPage(int page) {
     const int pageSize = max(1, _libraryPageSize);
-    const int pageCount = max(1, (static_cast<int>(_books.size()) + pageSize - 1) / pageSize);
-    if (page < 0 || page >= pageCount || _books.empty()) return;
+    const int pageCount = max(1, (shelfItems() + pageSize - 1) / pageSize);
+    if (page < 0 || page >= pageCount || shelfItems() == 0) return;
     SoundMgr::getInstance().beep();
     _previousBookIndex = _selectedBookIndex;
     _selectedBookIndex = page * pageSize;  // The selection moves to the page's first book
@@ -1321,16 +1348,18 @@ void AppReader::drawLibrary() {
     // selection, or the one chosen with the Prev and Next buttons.
     const int perPage = Bookcase::PER_PAGE;
     _libraryPageSize = perPage;
-    const int pageCount = max(1, (static_cast<int>(_books.size()) + perPage - 1) / perPage);
+    const int items = shelfItems();
+    const int pageCount = max(1, (items + perPage - 1) / perPage);
     int previousScrollOffset = _scrollOffset;
     if (_selectedBookIndex >= 0) _scrollOffset = (_selectedBookIndex / perPage) * perPage;
     _scrollOffset = constrain(_scrollOffset, 0, (pageCount - 1) * perPage);
     if (_scrollOffset != previousScrollOffset) _librarySelectionOnlyRedraw = false;
 
-    int lastVisibleBook = min(static_cast<int>(_books.size()), _scrollOffset + perPage);
+    const int lastVisibleItem = min(items, _scrollOffset + perPage);
     bool coversNeedLoading = false;
-    for (int index = _scrollOffset; index < lastVisibleBook; index++) {
-        if (!_books[index].coverAttempted &&
+    for (int item = _scrollOffset; item < lastVisibleItem; item++) {
+        const int index = bookOfItem(item);
+        if (index >= 0 && !_books[index].coverAttempted &&
             !loadCachedCover(_books[index], LIBRARY_COVER_WIDTH, LIBRARY_COVER_HEIGHT)) {
             coversNeedLoading = true;
         }
@@ -1338,8 +1367,9 @@ void AppReader::drawLibrary() {
     if (initialLoad && coversNeedLoading) {
         showLibraryLoading("Loading book covers...", 60);
     }
-    for (int index = _scrollOffset; index < lastVisibleBook; index++) {
-        loadBookCover(_books[index], LIBRARY_COVER_WIDTH, LIBRARY_COVER_HEIGHT);
+    for (int item = _scrollOffset; item < lastVisibleItem; item++) {
+        const int index = bookOfItem(item);
+        if (index >= 0) loadBookCover(_books[index], LIBRARY_COVER_WIDTH, LIBRARY_COVER_HEIGHT);
     }
     // A loading screen already gave the panel a clean full refresh.
     if (initialLoad && _libraryLoadingShown) _libraryFirstDraw = false;
@@ -1351,7 +1381,7 @@ void AppReader::drawLibrary() {
 
     const LibraryButton button = libraryButton();
     auto selectionRect = [&](int index) {
-        if (index < 0) return shelf.button(_home);
+        if (index < 0) return shelf.button(false);
         const int slot = index - _scrollOffset;
         return slot >= 0 && slot < perPage ? shelf.cell(slot) : LibraryRect{0, 0, 0, 0};
     };
@@ -1395,11 +1425,10 @@ void AppReader::drawLibrary() {
         snprintf(countText, sizeof(countText), _books.size() == 1 ? "%d book" : "%d books", (int)_books.size());
         fontMgr.drawText(display, countText, 22, 78, FONT_SIZE_SMALL, GxEPD_BLACK);
         if (_home) drawBattery(display, screenW - 62, 32);
-        if (button != LibraryButton::NONE) {
-            const LibraryRect r = shelf.button(_home);
+        if (button == LibraryButton::MENU) {
+            const LibraryRect r = shelf.button(false);
             const bool selected = _selectedBookIndex == -1 && !BOOK32_HAS_TOUCH;
-            const char* label = button == LibraryButton::MENU ? "<  Menu" :
-                                button == LibraryButton::SETTINGS ? "Settings" : "Update";
+            const char* label = "<  Menu";
             if (selected) display.fillRoundRect(r.x, r.y, r.w, r.h, 8, GxEPD_BLACK);
             display.drawRoundRect(r.x, r.y, r.w, r.h, 8, GxEPD_BLACK);
             display.drawRoundRect(r.x + 1, r.y + 1, r.w - 2, r.h - 2, 7, GxEPD_BLACK);
@@ -1417,7 +1446,7 @@ void AppReader::drawLibrary() {
         for (int row = 0; row < Bookcase::ROWS; ++row) drawPlank(display, caseLeft, shelf.plankY(row), caseRight - caseLeft);
 
         if (_books.empty()) {
-            const int y = shelf.plankY(0) - 70;
+            const int y = shelf.plankY(shelfAction() ? 1 : 0) - 70;
             const char* empty = "Your bookcase is empty";
             drawTextWithFont(display, empty, (screenW - textWidthForFont(display, empty, &FreeSansBold12pt7b)) / 2, y,
                              &FreeSansBold12pt7b, GxEPD_BLACK);
@@ -1425,12 +1454,29 @@ void AppReader::drawLibrary() {
         }
 
         // === Books standing on the shelves, titles on the plank's edge ===
-        for (int index = _scrollOffset; index < lastVisibleBook; index++) {
-            const BookEntry& book = _books[index];
-            const int slot = index - _scrollOffset;
+        for (int item = _scrollOffset; item < lastVisibleItem; item++) {
+            const int slot = item - _scrollOffset;
             const LibraryRect cell = shelf.cell(slot), box = shelf.cover(slot);
             const int plankY = shelf.plankY(slot / Bookcase::COLS);
-            const bool selected = index == _selectedBookIndex && !BOOK32_HAS_TOUCH;
+            const bool selected = item == _selectedBookIndex && !BOOK32_HAS_TOUCH;
+            const int index = bookOfItem(item);
+            if (index < 0) {
+                // Settings or Update: a book of its own at the shelf's start.
+                const String caption = button == LibraryButton::SETTINGS ? String("Settings") :
+                                       "Update " + HomeServices::getInstance().updateVersion();
+                drawActionBook(display, box.x, plankY - box.h, box.w, box.h, button);
+                if (selected) {
+                    for (int inset = 0; inset < 3; ++inset)
+                        display.drawRoundRect(box.x - 8 + inset, plankY - box.h - 8 + inset, box.w + 19 - 2 * inset,
+                                              box.h + 8 - inset, 6, GxEPD_BLACK);
+                }
+                const GFXfont* font = &FreeSansBold9pt7b;
+                const int captionW = textWidthForFont(display, caption.c_str(), font);
+                drawTextWithFont(display, caption.c_str(), cell.x + (cell.w - captionW) / 2,
+                                 plankY + Bookcase::PLANK_H + 17, font, GxEPD_BLACK);
+                continue;
+            }
+            const BookEntry& book = _books[index];
             const bool picture = book.cover && book.cover->valid();
             // A picture keeps its own shape; books stand on the plank.
             const int bw = picture ? book.cover->width : box.w, bh = picture ? book.cover->height : box.h;
@@ -1480,22 +1526,26 @@ void AppReader::drawLibrary() {
             char pageText[24];
             snprintf(pageText, sizeof(pageText), "Page %d of %d", page + 1, pageCount);
             fontMgr.drawTextCentered(display, pageText, line1Y, FONT_SIZE_SMALL, GxEPD_BLACK);
-        } else if (!_books.empty()) {
+        } else if (items > 0) {
             fontMgr.drawTextCentered(display, "Tap a book to open", line1Y, FONT_SIZE_SMALL, GxEPD_BLACK);
         }
 #else
         char pageStr[24];
-        if (_selectedBookIndex == -1) snprintf(pageStr, sizeof(pageStr), button == LibraryButton::MENU ? "Menu" : "Update");
-        else snprintf(pageStr, sizeof(pageStr), "%d/%d", _selectedBookIndex + 1, (int)_books.size());
+        const int selectedBook = bookOfItem(_selectedBookIndex);
+        if (_selectedBookIndex == -1) snprintf(pageStr, sizeof(pageStr), "Menu");
+        else if (selectedBook < 0) snprintf(pageStr, sizeof(pageStr), "Update");
+        else snprintf(pageStr, sizeof(pageStr), "%d/%d", selectedBook + 1, (int)_books.size());
         fontMgr.drawText(display, "Next: Move  |  Hold: Open", 22, line1Y, FONT_SIZE_SMALL, GxEPD_BLACK);
-        if (!_books.empty() || _selectedBookIndex == -1)
+        if (items > 0 || _selectedBookIndex == -1)
             fontMgr.drawTextRight(display, pageStr, screenW - 20, line1Y, FONT_SIZE_SMALL, GxEPD_BLACK);
 #endif
         if (_home) {
-            String status = HomeServices::getInstance().footerText();
-            if (HomeServices::getInstance().updateAvailable())
-                status += "  |  Update " + HomeServices::getInstance().updateVersion() + " ready";
-            fontMgr.drawTextCentered(display, status.c_str(), screenH - 10, FONT_SIZE_SMALL, GxEPD_BLACK);
+            // With no app menu, this is where InkDeck names itself.
+            char version[24];
+            snprintf(version, sizeof(version), "InkDeck v%s", SYSTEM_VERSION);
+            fontMgr.drawText(display, version, 22, screenH - 10, FONT_SIZE_SMALL, GxEPD_BLACK);
+            const String status = HomeServices::getInstance().footerText();
+            fontMgr.drawTextRight(display, status.c_str(), screenW - 20, screenH - 10, FONT_SIZE_SMALL, GxEPD_BLACK);
         }
 
     } while (display.nextPage());
@@ -1599,8 +1649,8 @@ void AppReader::update() {
         // Wi-Fi and update notices in the footer; a new update adds the
         // Book32's header button.
         if (HomeServices::getInstance().poll()) {
-            if (libraryButton() != _drawnButton) _libraryHeaderOnly = true;
-            else _libraryFooterOnly = true;
+            // A new Update book moves every book along: repaint them all.
+            if (libraryButton() == _drawnButton) _libraryFooterOnly = true;
             _needsRedraw = true;
         }
         if (millis() - _lastBatteryPoll >= 30000) {

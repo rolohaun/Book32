@@ -86,10 +86,16 @@ private:
     int _shownBattery = -1;
     void powerDownRadio();
     void backToLibrary();
-    // The header button: "< Menu", "Settings" (touch boards at home) or
-    // "Update" (the Book32 at home, when one is ready). Index -1 selects it.
+    // The library's own action: "< Menu" in the header (index -1) inside the
+    // app menu; at home a book on the shelf, first in the list: Settings on
+    // touch boards, Update on the Book32 when one is ready.
     enum class LibraryButton : uint8_t { NONE, MENU, SETTINGS, UPDATE };
     LibraryButton libraryButton() const;
+    void drawActionBook(Book32Display& display, int x, int y, int w, int h, LibraryButton action);
+    bool shelfAction() const { return _home && libraryButton() != LibraryButton::NONE; }
+    // Shelf items: the action's book, then the books. -1 for the action.
+    int shelfItems() const { return static_cast<int>(_books.size()) + (shelfAction() ? 1 : 0); }
+    int bookOfItem(int item) const { return shelfAction() ? item - 1 : item; }
     LibraryButton _drawnButton = LibraryButton::NONE;
     void pressLibraryButton();
     void loadBookCover(BookEntry& book, int width, int height);

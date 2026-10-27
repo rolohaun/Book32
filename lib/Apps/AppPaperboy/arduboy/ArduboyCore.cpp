@@ -2,7 +2,7 @@
 // the built-in games. Drawing goes through Adafruit GFX into the Arduboy's own
 // screen layout (eight-pixel vertical bytes), so games that poke sBuffer
 // directly see what they expect.
-#if defined(BOARD_WAVESHARE_RLCD42)
+#if defined(BOARD_LILYGO_T5S3_PRO) || defined(BOARD_SEEED_STICKY) || defined(BOARD_WAVESHARE_RLCD42)
 #define INK_ARDUBOY_HOST
 #include "ArduboyCompat.h"
 #include "ArduboyCore.h"
@@ -235,11 +235,25 @@ bool inkArduboyFrame(uint16_t pad, uint8_t* shades) {
 
 bool inkArduboyImage(uint8_t* shades) {
     if (!shades) return false;
-    // Lit Arduboy pixels are ink on the reflective panel's white.
+#if defined(BOARD_WAVESHARE_RLCD42)
+    // The RLCD scales 128x64 itself (3x): the screen alone, 128 wide.
+    constexpr int PITCH = SCREEN_W, LEFT = 0, TOP = 0;
+#else
+    // Elsewhere it sits in the middle of the Game Boy frame (160x144), which
+    // the board's game window then scales whole.
+    constexpr int PITCH = 160, LEFT = (160 - SCREEN_W) / 2, TOP = (144 - SCREEN_H) / 2;
+    memset(shades, 0, 160 * 144);
+#endif
+    // Lit Arduboy pixels are ink on the paper's white.
     for (int y = 0; y < SCREEN_H; ++y)
         for (int x = 0; x < SCREEN_W; ++x)
-            shades[y * SCREEN_W + x] = (Arduboy2Base::sBuffer[(y >> 3) * SCREEN_W + x] >> (y & 7)) & 1 ? 3 : 0;
+            shades[(TOP + y) * PITCH + LEFT + x] =
+                (Arduboy2Base::sBuffer[(y >> 3) * SCREEN_W + x] >> (y & 7)) & 1 ? 3 : 0;
     return true;
+}
+
+unsigned inkArduboyToneHz(void) {
+    return game && toneCount && Arduboy2Audio::enabled() ? 1000000U / (toneCount + 1U) : 0;
 }
 
 uint8_t* inkArduboyRam(size_t* bytes) {

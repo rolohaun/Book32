@@ -36,12 +36,12 @@ inline int navAt(int x,int y){
     for(int i=0;i<3;i++)if(x>=navX(i)&&x<navX(i)+NAV_W)return i;
     return -1;
 }
-inline unsigned tabCount(uint8_t mask){unsigned n=0;for(int i=INK_SYSTEM_GB;i<=INK_SYSTEM_NES;i++)if(mask&(1<<i))++n;return n;}
+inline unsigned tabCount(uint8_t mask){unsigned n=0;for(int i=INK_SYSTEM_GB;i<=INK_SYSTEM_ARDUBOY;i++)if(mask&(1<<i))++n;return n;}
 inline int tabWidth(uint8_t mask){unsigned n=tabCount(mask);return n ? (CONTENT_W-8*(n-1))/n : 0;}
 inline InkSystem tabAt(uint8_t mask,int x,int y){
     if(y<TAB_Y||y>=TAB_Y+TAB_H)return INK_SYSTEM_NONE;
     int left=LEFT,w=tabWidth(mask);
-    for(int i=INK_SYSTEM_GB;i<=INK_SYSTEM_NES;i++)if(mask&(1<<i)){if(x>=left&&x<left+w)return (InkSystem)i;left+=w+8;}
+    for(int i=INK_SYSTEM_GB;i<=INK_SYSTEM_ARDUBOY;i++)if(mask&(1<<i)){if(x>=left&&x<left+w)return (InkSystem)i;left+=w+8;}
     return INK_SYSTEM_NONE;
 }
 inline bool controlsAt(int x,int y){return y<60&&x>=CONTROLS_X&&x<CONTROLS_X+CONTROLS_W;}
@@ -70,7 +70,7 @@ inline void header(Adafruit_GFX& d,uint8_t mask,InkSystem selected,unsigned coun
     d.drawRoundRect(CONTROLS_X,12,CONTROLS_W,40,8,0);center(d,"Controls >",CONTROLS_X,24,CONTROLS_W);
     text(d,"Inkade",LEFT,91,4);text(d,"Your games, one place.",LEFT+2,138,2);
     int left=LEFT,w=tabWidth(mask);char label[24];
-    for(int i=INK_SYSTEM_GB;i<=INK_SYSTEM_NES;i++)if(mask&(1<<i)){
+    for(int i=INK_SYSTEM_GB;i<=INK_SYSTEM_ARDUBOY;i++)if(mask&(1<<i)){
         if(i==selected)d.fillRoundRect(left,TAB_Y,w,TAB_H,10,0);
         else d.drawRoundRect(left,TAB_Y,w,TAB_H,10,0);
         center(d,inkSystemName((InkSystem)i),left,TAB_Y+(TAB_H-16)/2,w,2,i==selected?1:0);left+=w+8;

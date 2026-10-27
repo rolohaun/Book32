@@ -22,6 +22,7 @@
 #include "NetworkWork.h"
 #include "GamepadMgr.h"
 #include "GameAudio.h"
+#include "SoundMgr.h"
 #include "InkBoyDrive.h"
 
 namespace {
@@ -166,13 +167,14 @@ void AppPaperboy::scan() {
         if (!_roms.empty()) _message = "Tap a game to play or resume. Saves stay with each ROM.";
 #endif
     }
-#if defined(BOARD_WAVESHARE_RLCD42)
     // Built-in Arduboy games head the list, with or without an SD card.
-    for (unsigned i = 0; i < inkArduboyCount(); ++i) _roms.insert(_roms.begin() + i, inkArduboyPath(i));
-#endif
+    for (unsigned i = 0; i < inkArduboyCount(); ++i) {
+        _roms.insert(_roms.begin() + i, inkArduboyPath(i));
+        _systemMask |= 1 << INK_SYSTEM_ARDUBOY;
+    }
     if(!(_systemMask&(1<<_selectedSystem))) {
         _selectedSystem=INK_SYSTEM_NONE;
-        for(int i=INK_SYSTEM_GB;i<=INK_SYSTEM_NES;i++)if(_systemMask&(1<<i)){_selectedSystem=(InkSystem)i;break;}
+        for(int i=INK_SYSTEM_GB;i<=INK_SYSTEM_ARDUBOY;i++)if(_systemMask&(1<<i)){_selectedSystem=(InkSystem)i;break;}
     }
     filterRoms();
     _redraw = true;
@@ -348,6 +350,7 @@ void AppPaperboy::inspectSlots() {
 void AppPaperboy::pauseGame() {
     _playing = false; _buttons = 0;
     GameAudio::getInstance().stop();
+    SoundMgr::getInstance().tone(0);
     if (_task) xTaskNotifyGive(_task);
     DisplayMgr::getInstance().getDisplay().setGameMode(false);
     xSemaphoreTake(_mutex, portMAX_DELAY); // Wait for a complete core frame.
@@ -394,6 +397,7 @@ void AppPaperboy::stop() {
     }
     _playing = false; _buttons = 0;
     GameAudio::getInstance().stop();
+    SoundMgr::getInstance().tone(0);
     if (_task) xTaskNotifyGive(_task); // Never leave a producer waiting on exit.
     // Neutralize pending video drive before SD saves or other blocking work.
     DisplayMgr::getInstance().getDisplay().setGameMode(false);
@@ -644,6 +648,9 @@ void AppPaperboy::tap(uint16_t x, uint16_t y) {
                 _redraw = true;
             }
         } else if (inside(x,y,p.left,p.resumeY,p.width,p.resumeH)) resumeGame();
+        else if (inkConsoleSystem() == INK_SYSTEM_ARDUBOY) {  // only Resume and Exit
+            if (inside(x,y,p.left,p.exitY,p.width,p.exitH)) exitGame();
+        }
         else if (y >= p.slotY && y < p.slotY + 4 * p.slotStep) {
             unsigned slot = (y - p.slotY) / p.slotStep;
             if ((y - p.slotY) % p.slotStep < p.slotH) {
@@ -736,6 +743,10 @@ void AppPaperboy::run(void* argument) {
                 const int64_t packingStarted = esp_timer_get_time();
                 app->packVideo(app->_packedFrame);
                 const uint32_t packingUs = esp_timer_get_time() - packingStarted;
+#if BOOK32_HAS_BUZZER
+                // The Arduboy's one-voice beeper fits the piezo buzzer.
+                SoundMgr::getInstance().tone(inkConsoleSystem() == INK_SYSTEM_ARDUBOY ? inkArduboyToneHz() : 0);
+#endif
 #if defined(BOARD_WAVESHARE_RLCD42)
                 // Sound for this frame; waits only while the I2S queue is full.
                 static int16_t pcm[1024];
@@ -860,6 +871,15 @@ void AppPaperboy::paintPause() {
         button("Confirm",p.confirmRightX,p.confirmY,p.confirmW,p.confirmH);
     } else {
         button("Resume game",p.left,p.resumeY,p.width,p.resumeH);
+        if (inkConsoleSystem() == INK_SYSTEM_ARDUBOY) {
+            // The game keeps its own saves (its EEPROM, stored on the card).
+            label(d,"This Arduboy game saves its own progress.",p.left,p.slotY+10);
+            label(d,"Save slots are for Game Boy and NES games.",p.left,p.slotY+37);
+            button("Save & exit to ROM list",p.left,p.exitY,p.width,p.exitH);
+            label(d,_message,p.left,p.messageY);
+            d.refresh(false);
+            return;
+        }
         for (unsigned i = 0; i < 4; ++i) {
             int y = p.slotY + i*p.slotStep;
             label(d, i ? "Slot " + String(i) : "Auto resume",p.left,y+10);

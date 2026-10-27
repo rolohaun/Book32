@@ -9,7 +9,7 @@ extern "C" {
 unsigned inkArduboyCount(void);
 // "/roms/<Title_with_underscores>.arduboy": a path the game list can show.
 const char* inkArduboyPath(unsigned index);
-#if defined(BOARD_WAVESHARE_RLCD42)
+#if defined(BOARD_LILYGO_T5S3_PRO) || defined(BOARD_SEEED_STICKY) || defined(BOARD_WAVESHARE_RLCD42)
 int inkArduboyFind(const char* path);  // -1 when no built-in game has it
 #else
 static inline int inkArduboyFind(const char* path) { (void)path; return -1; }  // RLCD only
@@ -24,6 +24,7 @@ bool inkArduboyImage(uint8_t* shades);
 uint8_t* inkArduboyRam(size_t* bytes);  // the 1 KB EEPROM
 unsigned inkArduboyPeriod(void);
 size_t inkArduboyAudio(int16_t* out, size_t max);
+unsigned inkArduboyToneHz(void);  // the beeper's note now, 0 when silent
 const char* inkArduboyName(void);
 #ifdef __cplusplus
 }

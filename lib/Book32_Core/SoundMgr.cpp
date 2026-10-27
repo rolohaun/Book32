@@ -52,6 +52,16 @@ void SoundMgr::beep() {
 #endif
 }
 
+void SoundMgr::tone(unsigned hz) {
+#if BOOK32_HAS_BUZZER
+    if (!_initialized || hz == _tone) return;
+    _tone = hz;
+    ledcWriteTone(BUZZER_CHANNEL, hz);
+#else
+    (void)hz;
+#endif
+}
+
 void SoundMgr::setEnabled(bool enabled, bool persist) {
     _enabled = isSupported() && enabled;
     if (persist) save();

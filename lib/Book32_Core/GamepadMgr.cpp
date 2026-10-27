@@ -24,8 +24,9 @@ class ScanCallbacks : public NimBLEAdvertisedDeviceCallbacks {
     void onResult(NimBLEAdvertisedDevice* d) override {
         const bool hid = d->isAdvertisingService(HID_SERVICE);
         const uint16_t appearance = d->haveAppearance() ? d->getAppearance() : 0;
-        // Appearance 0x03C0..0x03C4: generic HID, keyboard, mouse, joystick, gamepad.
-        const bool pad = hid || (appearance >= 0x03C3 && appearance <= 0x03C4);
+        // Appearance 0x03C0..0x03C4: generic HID, keyboard, mouse, joystick,
+        // gamepad. Keyboards work like a pad (HidGamepad::keyButton).
+        const bool pad = hid || appearance == 0x03C1 || (appearance >= 0x03C3 && appearance <= 0x03C4);
         if (!pad && !d->haveName()) return;
         GamepadMgr::Found found;
         found.name = d->haveName() ? String(d->getName().c_str()) : String("");

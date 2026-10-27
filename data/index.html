@@ -140,7 +140,7 @@
                     <div class="action-row"><button class="btn primary" onclick="saveSleepSettings()">Save sleep settings</button><div id="sleep-settings-status" class="status-msg" role="status"></div></div>
                 </article>
                 <article id="gamepad-card" class="card section-card">
-                    <div class="card-heading"><div><h2>Bluetooth gamepad</h2><p>Pair a Bluetooth LE gamepad for menus, the eReader and Inkade games. Put the pad in pairing mode (BLE / Android mode), then scan. Classic-only pads cannot connect.</p></div></div>
+                    <div class="card-heading"><div><h2>Bluetooth gamepad or keyboard</h2><p>Pair a Bluetooth LE gamepad or keyboard for menus, the eReader and Inkade games. Put it in pairing mode (BLE / Android mode for pads), then scan. Classic-only devices cannot connect. On a keyboard: arrows move, Enter selects (Start in games), Backspace goes back, X / Space are A, Z is B, Esc pauses, Page Up / Down turn pages.</p></div></div>
                     <p id="gamepad-status" class="status-msg" role="status">Loading...</p>
                     <div class="action-row"><button class="btn primary" onclick="scanGamepads()">Scan for gamepads</button><button class="btn" id="gamepad-forget" onclick="forgetGamepad()" hidden>Forget gamepad</button></div>
                     <ul id="gamepad-found" class="gamepad-list"></ul>

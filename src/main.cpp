@@ -15,11 +15,13 @@
 #include "BatteryMgr.h"
 #include "FontMgr.h"
 #include "SoundMgr.h"
+#include "AppSelection.h"
 #if BOOK32_HAS_INKBOY
 #include "../Apps/AppPaperboy/AppPaperboy.h"
 #endif
 
 #include "../Book32_Apps/AppMainMenu.h"
+#include "../Book32_Apps/HomeServices.h"
 #include "../Apps/AppReader/AppReader.h"
 #include "../Apps/AppKlipper/AppKlipper.h"
 #include "../Apps/AppTodo/AppTodo.h"
@@ -89,8 +91,10 @@ static void networkStartupWork(void* parameter) {
     Serial.println(WiFi.localIP());
 
     App* currentApp = AppMgr::getInstance().getCurrentApp();
-    if (currentApp && (strcmp(currentApp->getName(), "eReader") == 0 || strcmp(currentApp->getName(), "Inkade") == 0)) {
-        Serial.println("Network startup skipped services; eReader is active");
+    // A book or game opened while connecting keeps the radio off. The library,
+    // when it is the home screen, keeps Wi-Fi for the web page.
+    if (currentApp && HomeServices::getInstance().offlineAppActive()) {
+        Serial.println("Network startup skipped services; a book or game is open");
         if (strcmp(currentApp->getName(),"Inkade")==0) {
             gNetworkStartupInProgress=false;
             return; // Inkade is the sole radio-shutdown owner.
@@ -240,14 +244,19 @@ void setup() {
     AppReader* readerApp = new AppReader();
     appMgr.registerApp(readerApp);
     BatteryMgr::getInstance().setSleepCoverRenderer(AppReader::drawSleepCover);
-    appMgr.registerApp(new AppTodo());
-    appMgr.registerApp(new AppKlipper());
+    // Optional apps, as chosen in the web installer or on the web page.
+    // Without any, the library is home and the main menu never shows.
+    AppSelection& selection = AppSelection::getInstance();
+    selection.begin();
+    if (selection.enabled(AppSelection::TODO)) appMgr.registerApp(new AppTodo());
+    if (selection.enabled(AppSelection::KLIPPER)) appMgr.registerApp(new AppKlipper());
 #if BOOK32_HAS_TOUCH
     appMgr.registerApp(new AppWifi());
 #endif
 #if BOOK32_HAS_INKBOY
-    appMgr.registerApp(new AppPaperboy());
+    if (selection.enabled(AppSelection::INKADE)) appMgr.registerApp(new AppPaperboy());
 #endif
+    if (!selection.launcher()) appMgr.setHome(1);  // the eReader's library
 
     displayMgr.showBootScreen(90, "Starting network");
     gNetworkStartupInProgress = true;

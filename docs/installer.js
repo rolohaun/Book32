@@ -6,9 +6,15 @@ const RELEASE_VERSION = '1.4.6';
 const SERIAL_FILTERS = [0x303a, 0x1a86, 0x10c4, 0x0403].map((usbVendorId) => ({ usbVendorId }));
 const IS_LINUX = /Linux/.test(navigator.userAgent || '') && !/Android/.test(navigator.userAgent || '');
 
+// The apps the user ticks reach the firmware as a record in the last 4 KB
+// sector of the app0 partition (see AppSelection.h): 0x10000 + app0 size.
+const APP_RECORD_SIZE = 0x1000;
+
 const profiles = {
   book32: {
     version: RELEASE_VERSION,
+    appRecordAddress: 0x10000 + 0x280000 - APP_RECORD_SIZE,
+    apps: ['todo', 'klipper'],
     name: 'Book32 — 7.5 inch',
     manifest: `manifest-update-v${RELEASE_VERSION}.json`,
     flashSize: '16MB',
@@ -17,6 +23,8 @@ const profiles = {
   },
   sticky: {
     version: RELEASE_VERSION,
+    appRecordAddress: 0x10000 + 0x400000 - APP_RECORD_SIZE,
+    apps: ['todo', 'klipper', 'inkade'],
     name: 'Seeed Studio Sticky — 3.97 inch',
     manifest: `manifest-sticky-update-v${RELEASE_VERSION}.json`,
     flashSize: '32MB',
@@ -26,6 +34,8 @@ const profiles = {
   },
   lilygo: {
     version: RELEASE_VERSION,
+    appRecordAddress: 0x10000 + 0x400000 - APP_RECORD_SIZE,
+    apps: ['todo', 'klipper', 'inkade'],
     experimental: true,
     name: 'LILYGO T5 E-Paper S3 Pro Lite — H752-01',
     manifest: `manifest-lilygo-update-v${RELEASE_VERSION}.json`,
@@ -36,6 +46,7 @@ const profiles = {
 };
 
 const deviceCards = [...document.querySelectorAll('[data-profile]')];
+const appCards = [...document.querySelectorAll('[data-app]')];
 const flashButton = document.querySelector('#flash-button');
 const flashDeviceName = document.querySelector('#flash-device-name');
 const flashDescription = document.querySelector('#flash-description');
@@ -73,6 +84,13 @@ function selectDevice(profileId) {
     const selected = card.dataset.profile === profileId;
     card.classList.toggle('selected', selected);
     card.setAttribute('aria-pressed', String(selected));
+  });
+
+  // Only the apps this hardware has; an app it lacks is never flashed ticked.
+  appCards.forEach((card) => {
+    const available = profile.apps.includes(card.dataset.app);
+    card.hidden = !available;
+    if (!available) card.querySelector('input').checked = false;
   });
 
   flashDeviceName.textContent = profile.name;
@@ -153,6 +171,35 @@ async function loadFirmware(profile) {
   return downloaded;
 }
 
+function crc32(bytes) {
+  let crc = 0xffffffff;
+  for (const byte of bytes) {
+    crc ^= byte;
+    for (let bit = 0; bit < 8; bit += 1) crc = (crc >>> 1) ^ (0xedb88320 & -(crc & 1));
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+// The InstallRecord (AppSelection.h): "INKAPPS1", version 1, the app bits,
+// two reserved bytes, a random install ID (applied once) and a CRC-32.
+function selectedApps(profile) {
+  return appCards
+    .filter((card) => profile.apps.includes(card.dataset.app) && card.querySelector('input').checked)
+    .reduce((mask, card) => mask | Number(card.querySelector('input').value), 0);
+}
+
+function appRecord(apps) {
+  const sector = new Uint8Array(APP_RECORD_SIZE).fill(0xff);
+  const record = new DataView(sector.buffer, 0, 20);
+  new TextEncoder().encode('INKAPPS1').forEach((byte, index) => record.setUint8(index, byte));
+  record.setUint8(8, 1);
+  record.setUint8(9, apps);
+  record.setUint16(10, 0, true);
+  record.setUint32(12, crypto.getRandomValues(new Uint32Array(1))[0] || 1, true);
+  record.setUint32(16, crc32(sector.subarray(0, 16)), true);
+  return sector;
+}
+
 function bytesEqual(left, right) {
   if (left.length !== right.length) return false;
   for (let index = 0; index < left.length; index += 1) {
@@ -220,6 +267,7 @@ async function flashSelectedDevice() {
   flashButton.disabled = true;
   flashButton.lastChild.textContent = ' Flashing…';
   deviceCards.forEach((card) => { card.disabled = true; });
+  appCards.forEach((card) => { card.querySelector('input').disabled = true; });
   resetProgress(profile);
 
   let transport;
@@ -240,7 +288,13 @@ async function flashSelectedDevice() {
 
     setStep('download', 'running', 'Downloading InkDeck files');
     const parts = await loadFirmware(profile);
-    setStep('download', 'done', `${parts.length} files ready`);
+    const firmware = parts.find((part) => part.address === 0x10000);
+    if (firmware && firmware.address + firmware.data.length > profile.appRecordAddress) {
+      throw new Error('The firmware is too large for its app choice record. Please report this.');
+    }
+    const apps = selectedApps(profile);
+    parts.push({ address: profile.appRecordAddress, data: appRecord(apps), path: 'app choice' });
+    setStep('download', 'done', `${parts.length - 1} files ready · ${apps ? 'apps chosen' : 'eReader only'}`);
     setProgress(17);
 
     setStep('write', 'running', 'Preparing flash memory');
@@ -294,6 +348,7 @@ async function flashSelectedDevice() {
     }
     flashing = false;
     deviceCards.forEach((card) => { card.disabled = false; });
+    appCards.forEach((card) => { card.querySelector('input').disabled = false; });
     flashButton.disabled = !selectedProfile || !setBrowserSupport();
     flashButton.lastChild.textContent = ` Flash InkDeck ${profile.version}`;
   }

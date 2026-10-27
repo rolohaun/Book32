@@ -16,6 +16,7 @@
 #include "RomUpload.h"
 #include "LilygoControls.h"
 #include "../Book32_Core/GamepadMgr.h"
+#include "../Book32_Core/AppSelection.h"
 
 static const char* READER_PROGRESS_PATH = "/reader_progress.json";
 
@@ -433,8 +434,15 @@ void WebMgr::setupEndpoints() {
         doc["voltage"] = BatteryMgr::getInstance().getVoltage();
         doc["charging"] = BatteryMgr::getInstance().isCharging();
         doc["version"] = SYSTEM_VERSION;
+        {
+            AppSelection& apps = AppSelection::getInstance();
+            JsonObject enabled = doc.createNestedObject("apps");
+            enabled["todo"] = apps.enabled(AppSelection::TODO);
+            enabled["klipper"] = apps.enabled(AppSelection::KLIPPER);
+            enabled["inkade"] = BOOK32_HAS_INKBOY && apps.enabled(AppSelection::INKADE);
+        }
 #if BOOK32_HAS_INKBOY
-        doc["romUpload"] = true;
+        doc["romUpload"] = AppSelection::getInstance().enabled(AppSelection::INKADE);
         doc["romMaxBytes"] = INK_ROM_MAX_BYTES;
 #endif
 #if defined(BOARD_LILYGO_T5S3_PRO)
@@ -843,6 +851,40 @@ void WebMgr::setupEndpoints() {
         }
     );
     server->addHandler(displaySettingsHandler);
+
+    // API: Optional apps. Saving restarts InkDeck, which registers its apps at
+    // boot; with none the library becomes the home screen.
+    server->on("/api/apps", HTTP_GET, [](AsyncWebServerRequest *request) {
+        AsyncResponseStream *response = request->beginResponseStream("application/json");
+        DynamicJsonDocument doc(256);
+        AppSelection& apps = AppSelection::getInstance();
+        doc["todo"] = apps.enabled(AppSelection::TODO);
+        doc["klipper"] = apps.enabled(AppSelection::KLIPPER);
+        doc["inkade"] = BOOK32_HAS_INKBOY && apps.enabled(AppSelection::INKADE);
+        doc["inkadeAvailable"] = bool(BOOK32_HAS_INKBOY);
+        serializeJson(doc, *response);
+        request->send(response);
+    });
+
+    AsyncCallbackJsonWebHandler* appsHandler = new AsyncCallbackJsonWebHandler("/api/apps",
+        [](AsyncWebServerRequest *request, JsonVariant &json) {
+            uint8_t mask = 0;
+            if (json["todo"] | false) mask |= AppSelection::TODO;
+            if (json["klipper"] | false) mask |= AppSelection::KLIPPER;
+            if (json["inkade"] | false) mask |= AppSelection::INKADE;
+            if (!AppSelection::getInstance().save(mask)) {
+                request->send(500, "application/json", "{\"status\":\"error\"}");
+                return;
+            }
+            request->send(200, "application/json", "{\"status\":\"ok\"}");
+            Serial.printf("Apps: saved 0x%02X from the web page; restarting\n", mask);
+            xTaskCreate([](void*) {
+                vTaskDelay(pdMS_TO_TICKS(1500));  // Let the reply reach the browser
+                ESP.restart();
+            }, "AppsRestart", 2048, nullptr, 1, nullptr);
+        }
+    );
+    server->addHandler(appsHandler);
 
     // API: Touch sounds. Unsupported hardware reports itself so the web UI can
     // hide the control instead of presenting a setting that cannot take effect.

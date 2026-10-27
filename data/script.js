@@ -38,6 +38,7 @@ function showTab(tabId) {
     } else if (tabId === 'settings') {
         getDisplaySettings();
         getSoundSettings();
+        getApps();
         getLilygoControls();
     }
 }
@@ -74,6 +75,43 @@ async function saveLilygoControls() {
 }
 
 // === Touch Sounds ===
+function getApps() {
+    fetch('/api/apps')
+        .then(response => response.json())
+        .then(data => {
+            document.getElementById('app-todo').checked = data.todo === true;
+            document.getElementById('app-klipper').checked = data.klipper === true;
+            document.getElementById('app-inkade').checked = data.inkade === true;
+            document.getElementById('app-inkade-choice').classList.toggle('hidden', data.inkadeAvailable !== true);
+        })
+        .catch(error => console.error('Error loading apps:', error));
+}
+
+function saveApps() {
+    const statusDiv = document.getElementById('apps-status');
+    statusDiv.textContent = 'Saving…';
+    statusDiv.style.color = 'var(--muted)';
+    fetch('/api/apps', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            todo: document.getElementById('app-todo').checked,
+            klipper: document.getElementById('app-klipper').checked,
+            inkade: document.getElementById('app-inkade').checked,
+        }),
+    })
+        .then(response => response.json())
+        .then(data => {
+            const ok = data.status === 'ok';
+            statusDiv.textContent = ok ? 'Saved. InkDeck is restarting; reload this page in a minute.' : 'Could not save the apps.';
+            statusDiv.style.color = ok ? 'var(--accent)' : 'var(--danger)';
+        })
+        .catch(() => {
+            statusDiv.textContent = 'Connection error.';
+            statusDiv.style.color = 'var(--danger)';
+        });
+}
+
 function getSoundSettings() {
     fetch('/api/settings/sound')
         .then(response => response.json())
@@ -136,6 +174,11 @@ async function fetchStatus() {
         if (newlySupported) getLilygoControls();
         romMaxBytes = Number(data.romMaxBytes) || 0;
         document.getElementById('games-nav').classList.toggle('hidden', !romUploadsSupported);
+        // Tabs for apps that are not installed.
+        if (data.apps) {
+            document.getElementById('klipper-nav').classList.toggle('hidden', data.apps.klipper !== true);
+            document.getElementById('todo-nav').classList.toggle('hidden', data.apps.todo !== true);
+        }
         document.getElementById('games').classList.toggle('hidden', !romUploadsSupported);
         document.getElementById('rom-limit').textContent = romUploadsSupported ? `Maximum ROM size: ${formatStorage(romMaxBytes)}. MicroSD required.` : '';
         document.getElementById('battery-val').innerText = data.battery + '%' + (data.charging ? ' (Charging)' : '');

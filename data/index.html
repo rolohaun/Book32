@@ -19,8 +19,8 @@
                     <li><button class="active" data-tab="dashboard" onclick="showTab('dashboard')"><span>⌂</span>Dashboard</button></li>
                     <li><button data-tab="ereader" onclick="showTab('ereader')"><span>▤</span>Ereader</button></li>
                     <li id="games-nav" class="hidden"><button data-tab="games" onclick="showTab('games')"><span>⊞</span>Game ROMs</button></li>
-                    <li><button data-tab="klipper" onclick="showTab('klipper')"><span>◫</span>Klipper</button></li>
-                    <li><button data-tab="todo" onclick="showTab('todo')"><span>✓</span>Todo</button></li>
+                    <li id="klipper-nav"><button data-tab="klipper" onclick="showTab('klipper')"><span>◫</span>Klipper</button></li>
+                    <li id="todo-nav"><button data-tab="todo" onclick="showTab('todo')"><span>✓</span>Todo</button></li>
                     <li><button data-tab="settings" onclick="showTab('settings')"><span>⚙</span>Settings</button></li>
                 </ul>
             </nav>
@@ -138,6 +138,15 @@
                     <label class="text-field" for="sleep-screen"><span>While asleep, show</span><select id="sleep-screen"><option value="cover">Cover of the book you're reading</option><option value="message">Sleep message only</option></select></label>
                     <label class="text-field" for="sleep-message"><span>Sleep message</span><input type="text" id="sleep-message" maxlength="100" placeholder="Shown under the cover, or on its own"></label>
                     <div class="action-row"><button class="btn primary" onclick="saveSleepSettings()">Save sleep settings</button><div id="sleep-settings-status" class="status-msg" role="status"></div></div>
+                </article>
+                <article id="apps-card" class="card section-card">
+                    <div class="card-heading"><div><h2>Apps</h2><p>Choose the apps beside the eReader. With none, InkDeck opens straight to your bookshelf; with any, it opens to the app menu. Saving restarts InkDeck.</p></div></div>
+                    <fieldset class="choice-fieldset"><legend class="sr-only">Apps</legend><div class="choice-grid three-up">
+                        <label class="choice-card" for="app-todo"><input type="checkbox" id="app-todo"><span class="choice-check">✓</span><strong>Todo</strong><small>A task list on the device</small></label>
+                        <label class="choice-card" for="app-klipper"><input type="checkbox" id="app-klipper"><span class="choice-check">✓</span><strong>Klipper</strong><small>3D printer status</small></label>
+                        <label class="choice-card" id="app-inkade-choice" for="app-inkade"><input type="checkbox" id="app-inkade"><span class="choice-check">✓</span><strong>Inkade</strong><small>Game Boy, NES and Arduboy games</small></label>
+                    </div></fieldset>
+                    <div class="action-row"><button class="btn primary" onclick="saveApps()">Save and restart</button><div id="apps-status" class="status-msg" role="status"></div></div>
                 </article>
                 <article id="gamepad-card" class="card section-card">
                     <div class="card-heading"><div><h2>Bluetooth gamepad or keyboard</h2><p>Pair a Bluetooth LE gamepad or keyboard for menus, the eReader and Inkade games. Put it in pairing mode (BLE / Android mode for pads), then scan. Classic-only devices cannot connect. On a keyboard: arrows move, Enter selects (Start in games), Backspace goes back, X / Space are A, Z is B, Esc pauses, Page Up / Down turn pages.</p></div></div>

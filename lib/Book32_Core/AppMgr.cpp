@@ -17,6 +17,7 @@ void AppMgr::switchTo(int index) {
 #if BOOK32_HAS_INKBOY
     if (RomStorage::uploading()) return;
 #endif
+    if (index == 0) index = home;
     if (index >= 0 && index < apps.size()) {
         if (currentApp) currentApp->stop();
         currentApp = apps[index];

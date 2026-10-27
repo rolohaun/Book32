@@ -2,11 +2,11 @@
 // the console API (inkArduboy*) the way Inkade does, one loop() per frame.
 // Build (from the repo root):
 //   zig c++ -std=c++17 -DBOARD_SEEED_STICKY -Itest/arduboy_host/stubs
-//     -I".pio/libdeps/waveshare_rlcd_42/Adafruit GFX Library"
+//     -I".pio/libdeps/lilygo_t5s3_pro/Adafruit GFX Library"
 //     -Ilib/Apps/AppPaperboy/arduboy test/arduboy_host/test.cpp
 //     lib/Apps/AppPaperboy/arduboy/ArduboyCore.cpp lib/Apps/AppPaperboy/arduboy/ArduboyGames.cpp
 //     lib/Apps/AppPaperboy/arduboy/UltraHop/UltraHop.cpp
-//     ".pio/libdeps/waveshare_rlcd_42/Adafruit GFX Library/Adafruit_GFX.cpp"
+//     ".pio/libdeps/lilygo_t5s3_pro/Adafruit GFX Library/Adafruit_GFX.cpp"
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>

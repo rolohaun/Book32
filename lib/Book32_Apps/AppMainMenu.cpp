@@ -7,13 +7,9 @@
 #include "../Book32_Core/SoundMgr.h"
 #include "../Book32_Web/WebMgr.h"
 #include "../../include/Config.h"
-#include "../../include/NetworkState.h"
-#include <WiFi.h>
 #include "icon_update.h"
 #include "../Book32_Update/GitHubMgr.h"
-#if BOOK32_HAS_INKBOY
-#include "NetworkWork.h"
-#endif
+#include "HomeServices.h"
 
 #if defined(BOARD_SEEED_STICKY)
 // With Inkade the Sticky and Book32 have five tiles: three tighter rows end above the
@@ -52,203 +48,7 @@ static MenuDirtyRect unionRect(MenuDirtyRect a, MenuDirtyRect b) {
     return {x1, y1, x2 - x1, y2 - y1};
 }
 
-static bool isReaderActive() {
-    App* current = AppMgr::getInstance().getCurrentApp();
-    return current && (strcmp(current->getName(), "eReader") == 0 || strcmp(current->getName(), "Inkade") == 0);
-}
-
-void AppMainMenu::updateCheckTask(void* parameter) {
-    AppMainMenu* self = (AppMainMenu*)parameter;
-    
-    // Wait for connection (max 10s)
-    int attempts = 0;
-    while (WiFi.status() != WL_CONNECTED && attempts < 20) {
-#if BOOK32_HAS_INKBOY
-        if (NetworkWork::gate().paused()) break;
-#endif
-        vTaskDelay(pdMS_TO_TICKS(500));
-        attempts++;
-    }
-    
-    if (WiFi.status() == WL_CONNECTED) {
-        UpdateInfo info = GitHubMgr::getInstance().checkUpdate(SYSTEM_VERSION);
-        self->_updateAvailable = info.available;
-        if (info.available) {
-            self->_updateVersion = info.version;
-            self->_needsRedraw = true; // Trigger redraw to show icon
-        } else {
-            self->_updateVersion = "";
-        }
-    }
-    
-    self->_updateTaskHandle = nullptr;
-    vTaskDelete(NULL);
-}
-
-void AppMainMenu::wifiWakeTask(void* parameter) {
-#if BOOK32_HAS_INKBOY
-    {
-        NetworkWork::Lease network;
-        if (network) wifiWakeWork(parameter);
-        else {
-            auto* self=static_cast<AppMainMenu*>(parameter);
-            self->_wifiStarting=false;
-            self->_wifiTaskHandle=nullptr;
-        }
-    } // Destroy the lease BEFORE vTaskDelete (which does not unwind C++).
-#else
-    wifiWakeWork(parameter);
-#endif
-    vTaskDelete(nullptr);
-}
-
-void AppMainMenu::wifiWakeWork(void* parameter) {
-    AppMainMenu* self = (AppMainMenu*)parameter;
-    Serial.println("Main menu WiFi wake task started");
-
-    if (isReaderActive()) {
-        self->_wifiStarting = false;
-        self->_wifiTaskHandle = nullptr;
-        return;
-    }
-
-    WiFi.mode(WIFI_STA);
-    WiFi.begin();
-
-    int attempts = 0;
-    while (WiFi.status() != WL_CONNECTED && attempts < 40) {
-#if BOOK32_HAS_INKBOY
-        if (NetworkWork::gate().paused()) {
-            self->_wifiStarting=false;
-            self->_wifiTaskHandle=nullptr;
-            return; // The offline app shuts down radio after all owners drain.
-        }
-#endif
-#if BOOK32_HAS_TOUCH
-        App* current = AppMgr::getInstance().getCurrentApp();
-        if (current && strcmp(current->getName(), "Settings") == 0) {
-            self->_wifiStarting = false;
-            self->_wifiTaskHandle = nullptr;
-            Serial.println("Main menu WiFi wake handed radio to Settings app");
-            return;
-        }
-#endif
-        if (isReaderActive()) {
-#if BOOK32_HAS_INKBOY
-            App* owner=AppMgr::getInstance().getCurrentApp();
-            if (owner && strcmp(owner->getName(),"Inkade")==0) {
-                self->_wifiStarting=false;self->_wifiTaskHandle=nullptr;
-                return; // Inkade alone drains HTTPS then powers down radio.
-            }
-#endif
-            WebMgr::getInstance().stop();
-            WiFi.disconnect(false);
-            WiFi.mode(WIFI_OFF);
-        self->_wifiStarting = false;
-        self->_footerOnlyRedraw = true;
-        self->_needsRedraw = true;
-        self->_wifiTaskHandle = nullptr;
-            Serial.println("Main menu WiFi wake cancelled; eReader is active");
-            return;
-        }
-        vTaskDelay(pdMS_TO_TICKS(250));
-        attempts++;
-    }
-
-    if (WiFi.status() == WL_CONNECTED && !isReaderActive()) {
-        Serial.println("Main menu WiFi connected");
-        Serial.println(WiFi.localIP());
-        WebMgr::getInstance().init();
-    } else {
-        Serial.println("Main menu WiFi wake did not connect");
-        self->_wifiTaskHandle = nullptr;  // Clear before starting the hotspot
-#if !BOOK32_HAS_TOUCH
-        if (!isReaderActive()) self->startHotspot();
-#else
-        Serial.println("Sticky is offline; use Wi-Fi inside the on-device Settings app");
-#endif
-        self->_wifiStarting = false;
-        self->_footerOnlyRedraw = true;
-        self->_needsRedraw = true;
-        return;
-    }
-
-    self->_wifiStarting = false;
-    self->_footerOnlyRedraw = true;
-    self->_needsRedraw = true;
-    self->_wifiTaskHandle = nullptr;
-}
-
-String AppMainMenu::getWifiFooterText() const {
-    if (WiFi.status() == WL_CONNECTED) {
-        IPAddress ip = WiFi.localIP();
-        if (ip != INADDR_NONE) {
-            return ip.toString();
-        }
-    }
-    if (_hotspotActive) {
-        return String("Wi-Fi: ") + AP_SSID + "  ->  192.168.4.1";
-    }
-    return _wifiStarting ? "WiFi starting" : "WiFi offline";
-}
-
-void AppMainMenu::startHotspot() {
-    if (_hotspotActive) return;
-    if (isReaderActive()) return;
-
-    Serial.println("Main menu: starting InkDeck management hotspot (offline)");
-    WiFi.mode(WIFI_AP_STA);  // AP serves the web UI; STA stays available for joining a network
-    WiFi.softAP(AP_SSID);
-    delay(100);  // Let the AP interface come up before binding the server
-    WebMgr::getInstance().init();
-    _hotspotActive = true;
-
-    Serial.print("Hotspot ready at ");
-    Serial.println(WiFi.softAPIP());
-
-    _selectionOnlyRedraw = false;
-    _batteryOnlyRedraw = false;
-    _footerOnlyRedraw = !_firstDraw;
-    _needsRedraw = true;
-}
-
-void AppMainMenu::stopHotspot() {
-    if (!_hotspotActive) return;
-
-    Serial.println("Main menu: stopping management hotspot");
-    WiFi.softAPdisconnect(true);
-    // Drop back to station-only; preserves an active connection if one exists.
-    WiFi.mode(WIFI_STA);
-    _hotspotActive = false;
-}
-
-void AppMainMenu::ensureWifiAwake() {
-    if (WiFi.status() == WL_CONNECTED) {
-        WebMgr::getInstance().init();
-        _wifiStarting = false;
-        return;
-    }
-
-    if (gNetworkStartupInProgress) {
-        _wifiStarting = true;
-        return;
-    }
-
-#if BOOK32_HAS_TOUCH
-    // A failed or cancelled attempt leaves STA enabled. Do not continually
-    // retry it and starve the interactive scanner. Wi-Fi is woken here only
-    // after the reader deliberately powered the radio fully off.
-    if (WiFi.getMode() != WIFI_OFF) {
-        _wifiStarting = false;
-        return;
-    }
-#endif
-
-    if (!_wifiTaskHandle) {
-        _wifiStarting = true;
-        xTaskCreatePinnedToCore(wifiWakeTask, "WiFiWake", 6144, this, 1, &_wifiTaskHandle, 0);
-    }
-}
+bool AppMainMenu::updateAvailable() const { return HomeServices::getInstance().updateAvailable(); }
 
 void AppMainMenu::start() {
     selectedIndex = 1; // Start with first app (skip main menu itself)
@@ -257,27 +57,17 @@ void AppMainMenu::start() {
     _selectionOnlyRedraw = false;
     _batteryOnlyRedraw = false;
     _previousSelectedIndex = selectedIndex;
-    _lastWifiConnected = WiFi.status() == WL_CONNECTED;
-    _lastIp = _lastWifiConnected ? WiFi.localIP().toString() : "";
     _lastWifiFooterText = "";
     _lastBatteryPoll = millis();
     _lastBatteryStatus = BatteryMgr::getInstance().refreshNow();
     InputMgr::getInstance().setCallback(std::bind(&AppMainMenu::handleInput, this, std::placeholders::_1));
     InputMgr::getInstance().setTouchCallback(std::bind(&AppMainMenu::handleTouch, this,
                                                        std::placeholders::_1, std::placeholders::_2));
-    ensureWifiAwake();
-    
-    // Spawn update check task if not already found
-    if (!_updateTaskHandle && !_updateAvailable) {
-        xTaskCreatePinnedToCore(updateCheckTask, "UpdateCheck", 8192, this, 1, &_updateTaskHandle, 0);
-    }
+    HomeServices::getInstance().enter();
 }
 
 void AppMainMenu::stop() {
-    // Hotspot is a main-menu-only convenience. Leaving the menu tears it down so
-    // it doesn't keep the radio (and battery) busy inside other apps. Normal
-    // station connections are left untouched (Klipper still needs WiFi).
-    stopHotspot();
+    HomeServices::getInstance().leave();
     InputMgr::getInstance().clearCallback();
     InputMgr::getInstance().clearTouchCallback();
 }
@@ -288,7 +78,7 @@ void AppMainMenu::handleTouch(uint16_t x, uint16_t y) {
 #if BOOK32_HAS_TOUCH
     int maxSelectable = static_cast<int>(apps.size()) - 1;
 #else
-    int maxSelectable = static_cast<int>(apps.size()) - 1 + (_updateAvailable ? 1 : 0);
+    int maxSelectable = static_cast<int>(apps.size()) - 1 + (updateAvailable() ? 1 : 0);
     int updateIndex = static_cast<int>(apps.size());
 #endif
     for (int index = 1; index <= maxSelectable; ++index) {
@@ -299,7 +89,7 @@ void AppMainMenu::handleTouch(uint16_t x, uint16_t y) {
 #if BOOK32_HAS_TOUCH
             if (index < static_cast<int>(apps.size())) appMgr.switchTo(index);
 #else
-            if (_updateAvailable && index == updateIndex) {
+            if (updateAvailable() && index == updateIndex) {
                 GitHubMgr::getInstance().triggerUpdate(SYSTEM_VERSION);
             } else if (index < static_cast<int>(apps.size())) {
                 appMgr.switchTo(index);
@@ -328,7 +118,7 @@ void AppMainMenu::handleInput(InputAction action) {
     AppMgr& appMgr = AppMgr::getInstance();
     std::vector<App*>& apps = appMgr.getApps();
 
-    int maxSelectable = apps.size() - 1 + (_updateAvailable ? 1 : 0);
+    int maxSelectable = apps.size() - 1 + (updateAvailable() ? 1 : 0);
     int updateIndex = static_cast<int>(apps.size());
 
     if (action == INPUT_NEXT) {
@@ -340,7 +130,7 @@ void AppMainMenu::handleInput(InputAction action) {
         _needsRedraw = true;
     }
     else if (action == INPUT_SELECT) {
-        if (_updateAvailable && selectedIndex == updateIndex) {
+        if (updateAvailable() && selectedIndex == updateIndex) {
             // Update selected
              GitHubMgr::getInstance().triggerUpdate(SYSTEM_VERSION);
         }
@@ -354,33 +144,13 @@ void AppMainMenu::handleInput(InputAction action) {
 void AppMainMenu::update() {
     unsigned long now = millis();
 
-    if (now - _lastNetworkPoll >= 1000) {
-        _lastNetworkPoll = now;
-
-        bool connected = WiFi.status() == WL_CONNECTED;
-        String ip = connected ? WiFi.localIP().toString() : "";
-        if (connected) {
-            _wifiStarting = false;
-        } else if (!gNetworkStartupInProgress && !_wifiTaskHandle) {
-            _wifiStarting = false;
-            // Offline and idle: bring up the management hotspot so a phone can
-            // still reach the web interface without a router.
-#if !BOOK32_HAS_TOUCH
-            if (!_hotspotActive && !isReaderActive()) {
-                startHotspot();
-            }
-#endif
-        }
-
-        String footerText = getWifiFooterText();
-        if (connected != _lastWifiConnected || ip != _lastIp || footerText != _lastWifiFooterText) {
-            _lastWifiConnected = connected;
-            _lastIp = ip;
-            _selectionOnlyRedraw = false;
-            _batteryOnlyRedraw = false;
-            _footerOnlyRedraw = !_firstDraw;
-            _needsRedraw = true;
-        }
+    if (HomeServices::getInstance().poll()) {
+        // A new update notice adds a tile; Wi-Fi changes only touch the footer.
+        const bool update = updateAvailable() != _shownUpdate;
+        _selectionOnlyRedraw = false;
+        _batteryOnlyRedraw = false;
+        _footerOnlyRedraw = !_firstDraw && !update;
+        _needsRedraw = true;
     }
 
     if (now - _lastBatteryPoll >= 10000) {
@@ -547,28 +317,29 @@ void AppMainMenu::draw() {
             fontMgr.drawText(display, name, nameX, y + ICON_SIZE + 25, FONT_SIZE_MENU, GxEPD_BLACK);
 #endif
         }
-        
+
         // The original Book32 keeps its virtual update tile. Sticky keeps its
         // fourth tile dedicated to Settings and installs updates from the web UI.
 #if !BOOK32_HAS_TOUCH
-        if (_updateAvailable) {
+        _shownUpdate = updateAvailable();
+        if (_shownUpdate) {
             int i = apps.size(); // Index for update app (virtual index)
             int idx = i - 1;
             int col = idx % COLS;
             int row = idx / COLS;
-            
+
             int x = col * colWidth + (colWidth - ICON_SIZE) / 2;
             int y = START_Y + row * ROW_HEIGHT;
-            
+
              if ((int)i == selectedIndex) {
                  // Selection Box
                 display.drawRect(x - 8, y - 8, ICON_SIZE + 16, ICON_SIZE + 16, GxEPD_BLACK);
                 display.drawRect(x - 7, y - 7, ICON_SIZE + 14, ICON_SIZE + 14, GxEPD_BLACK);
             }
-            
+
             display.drawBitmap(x, y, icon_update_160x160, ICON_SIZE, ICON_SIZE, GxEPD_BLACK);
-            
-            String updateText = "Update " + _updateVersion;
+
+            String updateText = "Update " + HomeServices::getInstance().updateVersion();
             int nameWidth = fontMgr.getTextWidth(updateText.c_str(), FONT_SIZE_MENU);
             int nameX = x + (ICON_SIZE - nameWidth) / 2;
             fontMgr.drawText(display, updateText.c_str(), nameX, y + ICON_SIZE + 25, FONT_SIZE_MENU, GxEPD_BLACK);
@@ -581,7 +352,7 @@ void AppMainMenu::draw() {
 #else
         fontMgr.drawTextCentered(display, "Press: Next  |  Hold: Select", screenH - 45, FONT_SIZE_SMALL, GxEPD_BLACK);
 #endif
-        String ipStr = getWifiFooterText();
+        String ipStr = HomeServices::getInstance().footerText();
         fontMgr.drawTextCentered(display, ipStr.c_str(), screenH - 20, FONT_SIZE_SMALL, GxEPD_BLACK);
         _lastWifiFooterText = ipStr;
 

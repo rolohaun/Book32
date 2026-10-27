@@ -98,9 +98,37 @@
         </button>
       </section>
 
-      <section class="flow-step" aria-labelledby="flash-title">
+      <section class="flow-step" aria-labelledby="apps-title">
         <div class="step-heading">
           <span class="step-number" aria-hidden="true">3</span>
+          <div>
+            <p class="step-kicker">Choose apps (optional)</p>
+            <h2 id="apps-title">Add apps beside the eReader</h2>
+          </div>
+        </div>
+        <p class="apps-intro">Leave everything unticked for a pure eReader that opens straight to your bookshelf. Tick apps to get the app menu instead. You can change this later on the device's web page.</p>
+        <div class="app-grid" role="group" aria-label="Optional apps">
+          <label class="choice-card app-card" data-app="todo">
+            <input type="checkbox" value="1">
+            <span class="card-check" aria-hidden="true">✓</span>
+            <span class="card-copy"><strong>Todo</strong><span>A task list, edited from the web page</span></span>
+          </label>
+          <label class="choice-card app-card" data-app="klipper">
+            <input type="checkbox" value="2">
+            <span class="card-check" aria-hidden="true">✓</span>
+            <span class="card-copy"><strong>Klipper</strong><span>Your 3D printer's status at a glance</span></span>
+          </label>
+          <label class="choice-card app-card" data-app="inkade">
+            <input type="checkbox" value="4">
+            <span class="card-check" aria-hidden="true">✓</span>
+            <span class="card-copy"><strong>Inkade</strong><span>Game Boy, NES and Arduboy games</span></span>
+          </label>
+        </div>
+      </section>
+
+      <section class="flow-step" aria-labelledby="flash-title">
+        <div class="step-heading">
+          <span class="step-number" aria-hidden="true">4</span>
           <div>
             <p class="step-kicker">Flash</p>
             <h2 id="flash-title">Connect and install</h2>

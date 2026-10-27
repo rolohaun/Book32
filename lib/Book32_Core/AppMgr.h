@@ -8,7 +8,9 @@ public:
     static AppMgr& getInstance();
     
     void registerApp(App* app);
+    // Index 0 means home: the main menu, or the app set with setHome().
     void switchTo(int index);
+    void setHome(int index) { home = index; }
     void switchTo(const char* name);
     
     void update(); // Main loop update
@@ -21,4 +23,5 @@ private:
     AppMgr();
     std::vector<App*> apps;
     App* currentApp = nullptr;
+    int home = 0;
 };

@@ -72,7 +72,26 @@ private:
     void scanBooks();
     void drawLibrary();
     void drawLoadingScreen(const char* title, const char* status, uint8_t progress, bool fullRefresh);
-    void drawBookTile(Book32Display& display, int x, int y, int w, int h, bool selected);
+    // A book without a cover picture: a cloth binding with its title.
+    void drawPlainCover(Book32Display& display, int x, int y, int w, int h, const String& title);
+    // The library is the home screen when no optional app is installed: it
+    // keeps Wi-Fi up for the web page until a book opens (HomeServices).
+    bool _home = false;        // no main menu: the library is home
+    bool _homeShown = false;   // HomeServices currently runs for the library
+    bool _libraryFooterOnly = false;
+    void syncHome();
+    void leaveHome();
+    bool _libraryHeaderOnly = false;
+    unsigned long _lastBatteryPoll = 0;
+    int _shownBattery = -1;
+    void powerDownRadio();
+    void backToLibrary();
+    // The header button: "< Menu", "Settings" (touch boards at home) or
+    // "Update" (the Book32 at home, when one is ready). Index -1 selects it.
+    enum class LibraryButton : uint8_t { NONE, MENU, SETTINGS, UPDATE };
+    LibraryButton libraryButton() const;
+    LibraryButton _drawnButton = LibraryButton::NONE;
+    void pressLibraryButton();
     void loadBookCover(BookEntry& book, int width, int height);
     // Decoded covers persist in /.covers so a book is only decoded once per
     // upload instead of after every restart.

@@ -521,10 +521,10 @@ void AppReader::scanBooks() {
         file = root.openNextFile();
     }
     root.close();
-    if (shelfItems() == 0) {
+    if (lastItem() < 0) {
         // With nothing to open, make the center button's only useful action Back.
         _selectedBookIndex = _home ? 0 : -1;
-    } else if (_selectedBookIndex < 0 || _selectedBookIndex >= shelfItems()) {
+    } else if (_selectedBookIndex < 0 || bookOfItem(_selectedBookIndex) == -2) {
         _selectedBookIndex = 0;
     }
     _previousBookIndex = _selectedBookIndex;
@@ -779,7 +779,7 @@ void AppReader::handleInput(InputAction action) {
     if (_state == VIEW_LIBRARY) {
         // Index -1 is the header button (when there is one), 0+ the books.
         const int first = _home ? 0 : -1;
-        const int maxIndex = shelfItems() - 1;
+        const int maxIndex = lastItem();
         if (action == INPUT_NEXT || action == INPUT_PREV) {
             if (maxIndex < first) return;
             _previousBookIndex = _selectedBookIndex;
@@ -790,7 +790,7 @@ void AppReader::handleInput(InputAction action) {
             _needsRedraw = true;
         } else if (action == INPUT_SELECT) {
             const int book = bookOfItem(_selectedBookIndex);
-            if (_selectedBookIndex == -1 || (shelfAction() && _selectedBookIndex == 0)) {
+            if (_selectedBookIndex == -1 || book == -1) {
                 pressLibraryButton();
             } else if (book >= 0 && book < static_cast<int>(_books.size())) {
                 openBook(_books[book].path.c_str());
@@ -873,18 +873,39 @@ void AppReader::handleTouch(uint16_t x, uint16_t y) {
     }
     const int slot = shelf.slotAt(x, y);
     const int item = slot < 0 ? -1 : _scrollOffset + slot;
-    if (item < 0 || item >= shelfItems()) return;
-    _selectedBookIndex = item;
     const int book = bookOfItem(item);
+    if (book == -2) return;
+    _selectedBookIndex = item;
     if (book < 0) { pressLibraryButton(); return; }
     SoundMgr::getInstance().beep();
     openBook(_books[book].path);
 }
 
+int AppReader::libraryPages() const {
+    const int per = booksPerPage();
+    return max(1, (static_cast<int>(_books.size()) + per - 1) / per);
+}
+
+int AppReader::bookOfItem(int item) const {
+    if (item < 0) return -2;
+    const int page = item / LIBRARY_PER_PAGE, slot = item % LIBRARY_PER_PAGE;
+    if (page >= libraryPages()) return -2;
+    const int first = page * booksPerPage();
+    const int onPage = min(booksPerPage(), static_cast<int>(_books.size()) - first);
+    if (slot < onPage) return first + slot;
+    return shelfAction() && slot == onPage ? -1 : -2;
+}
+
+int AppReader::lastItem() const {
+    const int page = libraryPages() - 1;
+    const int onPage = max(0, min(booksPerPage(), static_cast<int>(_books.size()) - page * booksPerPage()));
+    const int count = onPage + (shelfAction() ? 1 : 0);
+    return count ? page * LIBRARY_PER_PAGE + count - 1 : -1;
+}
+
 void AppReader::showLibraryPage(int page) {
-    const int pageSize = max(1, _libraryPageSize);
-    const int pageCount = max(1, (shelfItems() + pageSize - 1) / pageSize);
-    if (page < 0 || page >= pageCount || shelfItems() == 0) return;
+    const int pageSize = LIBRARY_PER_PAGE;
+    if (page < 0 || page >= libraryPages() || lastItem() < 0) return;
     SoundMgr::getInstance().beep();
     _previousBookIndex = _selectedBookIndex;
     _selectedBookIndex = page * pageSize;  // The selection moves to the page's first book
@@ -1346,16 +1367,16 @@ void AppReader::drawLibrary() {
 
     // The library shows a bookcase of books at a time: the one holding the
     // selection, or the one chosen with the Prev and Next buttons.
+    static_assert(Bookcase::PER_PAGE == LIBRARY_PER_PAGE, "one bookcase per library page");
     const int perPage = Bookcase::PER_PAGE;
     _libraryPageSize = perPage;
-    const int items = shelfItems();
-    const int pageCount = max(1, (items + perPage - 1) / perPage);
+    const int pageCount = libraryPages();
     int previousScrollOffset = _scrollOffset;
     if (_selectedBookIndex >= 0) _scrollOffset = (_selectedBookIndex / perPage) * perPage;
     _scrollOffset = constrain(_scrollOffset, 0, (pageCount - 1) * perPage);
     if (_scrollOffset != previousScrollOffset) _librarySelectionOnlyRedraw = false;
 
-    const int lastVisibleItem = min(items, _scrollOffset + perPage);
+    const int lastVisibleItem = _scrollOffset + perPage;  // empty places are skipped
     bool coversNeedLoading = false;
     for (int item = _scrollOffset; item < lastVisibleItem; item++) {
         const int index = bookOfItem(item);
@@ -1456,8 +1477,9 @@ void AppReader::drawLibrary() {
             const int plankY = shelf.plankY(slot / Bookcase::COLS);
             const bool selected = item == _selectedBookIndex && !BOOK32_HAS_TOUCH;
             const int index = bookOfItem(item);
+            if (index == -2) continue;
             if (index < 0) {
-                // Settings or Update: a book of its own at the shelf's start.
+                // Settings or Update: a book of its own, after the page's books.
                 const String caption = button == LibraryButton::SETTINGS ? String("Settings") :
                                        "Update " + HomeServices::getInstance().updateVersion();
                 drawActionBook(display, box.x, plankY - box.h, box.w, box.h, button);

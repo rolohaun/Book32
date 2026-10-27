@@ -93,9 +93,14 @@ private:
     LibraryButton libraryButton() const;
     void drawActionBook(Book32Display& display, int x, int y, int w, int h, LibraryButton action);
     bool shelfAction() const { return _home && libraryButton() != LibraryButton::NONE; }
-    // Shelf items: the action's book, then the books. -1 for the action.
-    int shelfItems() const { return static_cast<int>(_books.size()) + (shelfAction() ? 1 : 0); }
-    int bookOfItem(int item) const { return shelfAction() ? item - 1 : item; }
+    // Shelf items are numbered page * LIBRARY_PER_PAGE + slot. With an action
+    // book, each page holds up to eight books and then the action's book, so
+    // it ends every page: bottom right when the page is full.
+    static constexpr int LIBRARY_PER_PAGE = 9;
+    int booksPerPage() const { return LIBRARY_PER_PAGE - (shelfAction() ? 1 : 0); }
+    int libraryPages() const;
+    int bookOfItem(int item) const;  // the book, -1 for the action's book, -2 an empty place
+    int lastItem() const;            // the last item, -1 when the shelf is empty
     LibraryButton _drawnButton = LibraryButton::NONE;
     void pressLibraryButton();
     void loadBookCover(BookEntry& book, int width, int height);

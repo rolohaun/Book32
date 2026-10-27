@@ -22,6 +22,11 @@ bool inkConsoleFrame(uint16_t buttons,uint8_t* shades){
     if(activeSystem==INK_SYSTEM_NES)return inkNesFrame(buttons,shades);
     return false;
 }
+size_t inkConsoleAudio(int16_t* out,size_t max){
+    if(activeSystem==INK_SYSTEM_GB)return inkGameAudio(out,max);
+    if(activeSystem==INK_SYSTEM_NES)return inkNesAudio(out,max);
+    return 0;
+}
 bool inkConsoleImage(uint8_t* shades){
     if(activeSystem==INK_SYSTEM_GB)return inkGameImage(shades);
     if(activeSystem==INK_SYSTEM_NES)return inkNesImage(shades);

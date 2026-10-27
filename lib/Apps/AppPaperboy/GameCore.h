@@ -25,6 +25,8 @@ size_t inkGameStateSize(void);
 bool inkGameStateExport(void* state, size_t size);
 bool inkGameStateImport(const void* state, size_t size);
 bool inkGameImage(uint8_t* shades);
+// The last frame's sound as 44.1 kHz mono; returns the sample count.
+size_t inkGameAudio(int16_t* out, size_t max);
 bool inkGameRestart(void);
 #ifdef __cplusplus
 }

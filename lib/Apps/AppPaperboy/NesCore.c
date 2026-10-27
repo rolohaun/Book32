@@ -47,7 +47,11 @@ bool inkNesOpenGame(uint8_t* rom,size_t bytes) {
     video=frameAlloc(NES_SCREEN_PITCH*NES_SCREEN_HEIGHT);
     image=frameAlloc(INK_CONSOLE_IMAGE_BYTES);
     nativeImage=frameAlloc(NATIVE_BYTES);
+#if defined(BOARD_WAVESHARE_RLCD42)
+    machine=nes_init(SYS_DETECT,44100,false,NULL); // played through the ES8311
+#else
     machine=nes_init(SYS_DETECT,8000,false,NULL);
+#endif
     if (!video || !image || !nativeImage || !machine) { inkNesCloseGame(); return false; }
     rom_t* cart=rom_loadmem(rom,bytes);
     if (!cart) { inkNesCloseGame(); return false; }
@@ -106,6 +110,11 @@ bool inkNesFrame(uint16_t buttons,uint8_t* shades) {
     }
 #endif
     return true;
+}
+size_t inkNesAudio(int16_t* out,size_t max) {
+    if(!machine||!machine->apu||!out)return 0;
+    size_t n=machine->apu->samples_per_frame;if(n>max)n=max;
+    memcpy(out,machine->apu->buffer,n*sizeof(int16_t));return n;
 }
 bool inkNesImage(uint8_t* out) { if(!image||!out)return false;makeThumbnail();memcpy(out,image,INK_CONSOLE_IMAGE_BYTES);return true; }
 const uint8_t* inkNesNativeImage(void) { makeNative();return nativeImage; }

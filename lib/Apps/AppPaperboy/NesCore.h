@@ -10,6 +10,8 @@ void inkNesCloseGame(void);
 // shades may be NULL when the caller uses the native image (no thumbnail work).
 bool inkNesFrame(uint16_t buttons,uint8_t* shades);
 bool inkNesImage(uint8_t* shades);
+// The last frame's sound, mono at the rate given to nes_init.
+size_t inkNesAudio(int16_t* out,size_t max);
 // Borrowed 256x240 shade image; valid until the next core operation / close.
 // Call while holding the core lock, then publish a separately packed snapshot.
 const uint8_t* inkNesNativeImage(void);

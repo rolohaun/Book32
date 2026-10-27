@@ -119,7 +119,7 @@ private:
     // RLCD: no touch, so every screen is a list moved through with keys
     // (KEY: next, hold to select; BOOT: previous, hold for back) or a
     // gamepad. Games and their pause menu are landscape. See AppPaperboyRlcd.cpp.
-    enum PauseItem : uint8_t { PAUSE_RESUME, PAUSE_SAVE, PAUSE_LOAD, PAUSE_RESTART, PAUSE_EXIT,
+    enum PauseItem : uint8_t { PAUSE_RESUME, PAUSE_SAVE, PAUSE_LOAD, PAUSE_RESTART, PAUSE_EXIT, PAUSE_SOUND,
                                PAUSE_CANCEL, PAUSE_CONFIRM };
     struct PauseRow { PauseItem item; uint8_t slot; };
     int _menuCursor = 0;  // pause menu row

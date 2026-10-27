@@ -139,6 +139,7 @@ void setup() {
         gpio_deep_sleep_hold_dis();
         gpio_hold_dis(static_cast<gpio_num_t>(RLCD_CS));
         gpio_hold_dis(static_cast<gpio_num_t>(RLCD_RST));
+        gpio_hold_dis(static_cast<gpio_num_t>(AUDIO_PA));
         if (wokeFromButton) {
             pinMode(PIN_BUTTON, INPUT_PULLUP);
             while (digitalRead(PIN_BUTTON) == LOW) delay(20);

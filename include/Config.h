@@ -106,6 +106,15 @@
 #define PIN_BAT_VOLT     4  // 1:3 divider
 #define BATTERY_DIVIDER  3.0f
 
+// ES8311 codec (I2C address 0x18) and its speaker amplifier: Inkade sound.
+#define AUDIO_I2C_SDA    13
+#define AUDIO_I2C_SCL    14
+#define AUDIO_I2S_MCLK   16
+#define AUDIO_I2S_BCLK   9
+#define AUDIO_I2S_WS     45
+#define AUDIO_I2S_DOUT   8
+#define AUDIO_PA         46 // high: amplifier on
+
 #define BOOK32_HAS_TOUCH 0
 #define BOOK32_HAS_SD    1
 #define BOOK32_HAS_BUZZER 0

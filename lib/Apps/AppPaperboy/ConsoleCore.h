@@ -8,6 +8,8 @@ bool inkConsoleOpen(InkSystem system,uint8_t* rom,size_t bytes,InkRomRead read,v
 void inkConsoleClose(void);
 bool inkConsoleFrame(uint16_t buttons,uint8_t* shades);
 bool inkConsoleImage(uint8_t* shades);
+// The last frame's sound as 44.1 kHz mono (RLCD only); returns the samples.
+size_t inkConsoleAudio(int16_t* out,size_t max);
 bool inkConsoleRestart(void);
 uint8_t* inkConsoleRam(size_t* size);
 bool inkConsoleDirty(void);

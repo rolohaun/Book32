@@ -162,6 +162,22 @@ bool inkGameFrame(uint8_t buttons, uint8_t* shades) {
     else gb_run_frame__dmg(core);
     return inkGameImage(shades);
 }
+// Mixes the frame's sound (all four channels) as 44.1 kHz mono. A Game Boy
+// frame lasts 70224 / 4194304 s, about 738.4 samples.
+size_t inkGameAudio(int16_t* out, size_t max) {
+    static uint32_t remainder;
+    if (!core || !out) return 0;
+    remainder += 44100u * 70224u % 4194304u;
+    size_t samples = 44100u * 70224u / 4194304u;
+    if (remainder >= 4194304u) { remainder -= 4194304u; ++samples; }
+    if (samples > max) samples = max;
+    memset(out, 0, samples * sizeof(int16_t));
+    audio_update_wave(&core->audio, out, out, samples);
+    audio_update_square(&core->audio, out, out, 0, samples);
+    audio_update_square(&core->audio, out, out, 1, samples);
+    audio_update_noise(&core->audio, out, out, samples);
+    return samples;
+}
 bool inkGameImage(uint8_t* shades) {
     if (!core || !shades) return false;
     // Packed little-endian, four 2-bit shades per byte; 0=white..3=black.

@@ -527,6 +527,7 @@ void BatteryMgr::enterIdleSleep() {
     delay(50);
     holdSleepPin(RLCD_CS, HIGH);
     holdSleepPin(RLCD_RST, HIGH);
+    holdSleepPin(AUDIO_PA, LOW);  // speaker amplifier off
     gpio_deep_sleep_hold_en();
     esp_sleep_enable_ext0_wakeup((gpio_num_t)PIN_BUTTON, 0);
     rtc_gpio_pullup_en((gpio_num_t)PIN_BUTTON);

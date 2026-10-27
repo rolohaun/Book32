@@ -9,6 +9,7 @@
 #include "Book32FS.h"
 #include "ConsoleCore.h"
 #include "DisplayMgr.h"
+#include "GameAudio.h"
 #include "GamepadMgr.h"
 #include "InkBoyLibraryUi.h"
 #include "NesViewport.h"
@@ -37,7 +38,7 @@ void row(Book32Display& d, int x, int y, int w, int h, const String& label, bool
 }
 
 constexpr int LIST_TOP = 46, LIST_ROW = 34, LIST_ROWS = 9;  // portrait game list
-constexpr int PAUSE_TOP = 44, PAUSE_ROW = 24;               // landscape pause menu
+constexpr int PAUSE_TOP = 42, PAUSE_ROW = 22;               // landscape pause menu
 constexpr int CTRL_TOP = 46, CTRL_ROW = 26;                 // portrait controls
 }
 
@@ -134,6 +135,7 @@ std::vector<AppPaperboy::PauseRow> AppPaperboy::pauseRows() const {
         return rows;
     }
     if (!_coreFault) rows.push_back({PAUSE_RESUME, 0});
+    rows.push_back({PAUSE_SOUND, 0});
     if (!_coreFault) for (uint8_t slot = 1; slot < 4; ++slot) rows.push_back({PAUSE_SAVE, slot});
     for (uint8_t slot = 0; slot < 4; ++slot) if (_slots[slot]) rows.push_back({PAUSE_LOAD, slot});
     rows.push_back({PAUSE_RESTART, 0});
@@ -156,6 +158,12 @@ void AppPaperboy::rlcdPauseKey(InputAction a) {
     _redraw = true;
     switch (choice.item) {
     case PAUSE_RESUME: resumeGame(); return;
+    case PAUSE_SOUND: {  // Off, Low, Medium, High, then Off again
+        GameAudio& audio = GameAudio::getInstance();
+        audio.setLevel((audio.level() + 1) % GameAudio::LEVELS);
+        _menuCursor = !_coreFault;  // stay on this row
+        return;
+    }
     case PAUSE_SAVE:
         _selectedSlot = choice.slot;
         if (_slots[choice.slot]) _confirmation = 1;
@@ -210,6 +218,7 @@ void AppPaperboy::paintRlcdPause() {
         String label;
         switch (r.item) {
         case PAUSE_RESUME: label = "Resume game"; break;
+        case PAUSE_SOUND: label = String("Sound: ") + GameAudio::getInstance().levelName(); break;
         case PAUSE_SAVE: label = "Save to slot " + String(r.slot) + (_slots[r.slot] ? "  (replace)" : ""); break;
         case PAUSE_LOAD: label = r.slot ? "Load slot " + String(r.slot) : String("Load auto resume"); break;
         case PAUSE_RESTART: label = "Restart game"; break;

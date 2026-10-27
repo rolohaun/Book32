@@ -20,6 +20,7 @@
 #include <soc/soc_memory_types.h>
 #include "NetworkWork.h"
 #include "GamepadMgr.h"
+#include "GameAudio.h"
 #include "InkBoyDrive.h"
 
 namespace {
@@ -339,6 +340,7 @@ void AppPaperboy::inspectSlots() {
 }
 void AppPaperboy::pauseGame() {
     _playing = false; _buttons = 0;
+    GameAudio::getInstance().stop();
     if (_task) xTaskNotifyGive(_task);
     DisplayMgr::getInstance().getDisplay().setGameMode(false);
     xSemaphoreTake(_mutex, portMAX_DELAY); // Wait for a complete core frame.
@@ -366,6 +368,7 @@ void AppPaperboy::resumeGame() {
     _renderUs = _refreshUs = _regularUpdates = 0;
     _presentations.clearCounts();
     resetFrameTiming(); _playing = true;
+    GameAudio::getInstance().start();
     xTaskNotifyGive(_task);
 }
 void AppPaperboy::exitGame() {
@@ -383,6 +386,7 @@ void AppPaperboy::stop() {
         InputMgr::getInstance().clearCallback(); InputMgr::getInstance().clearTouchCallback(); return;
     }
     _playing = false; _buttons = 0;
+    GameAudio::getInstance().stop();
     if (_task) xTaskNotifyGive(_task); // Never leave a producer waiting on exit.
     // Neutralize pending video drive before SD saves or other blocking work.
     DisplayMgr::getInstance().getDisplay().setGameMode(false);
@@ -581,7 +585,8 @@ void AppPaperboy::openBook(const String& path) {
         resetFrameTiming();
         Serial.println(_nesVideo ? "Inkade NES 2x: native 256x240, window 512x480, four shades, fixed Contrast" :
                                   INKBOY_GB_VIDEO_LOG);
-        Serial.printf("Game core: %s; %u us/frame (grayscale, no audio); CPU %u MHz\n",inkConsoleName(),_gamePeriodUs,getCpuFrequencyMhz());
+        Serial.printf("Game core: %s; %u us/frame (grayscale, %s); CPU %u MHz\n",inkConsoleName(),_gamePeriodUs,
+                      GameAudio::getInstance().isSupported() ? "sound" : "no audio",getCpuFrequencyMhz());
         _lastClean = _lastStats = millis(); _frames = 0; _drawnFrames = 0; _updates = 0;
         if (autoFailed) { _paused = true; _redraw = true; }
         else resumeGame();
@@ -717,6 +722,13 @@ void AppPaperboy::run(void* argument) {
                 const int64_t packingStarted = esp_timer_get_time();
                 app->packVideo(app->_packedFrame);
                 const uint32_t packingUs = esp_timer_get_time() - packingStarted;
+#if defined(BOARD_WAVESHARE_RLCD42)
+                // Sound for this frame; waits only while the I2S queue is full.
+                static int16_t pcm[1024];
+                GameAudio& audio = GameAudio::getInstance();
+                if (audio.running())
+                    if (const size_t samples = inkConsoleAudio(pcm, 1024)) audio.write(pcm, samples);
+#endif
                 app->_packingUs.fetch_add(packingUs);
                 // Publish only complete pictures at scan boundaries.
                 xSemaphoreTake(app->_frameMutex, portMAX_DELAY);

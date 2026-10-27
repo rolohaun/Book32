@@ -5,6 +5,10 @@
 // Bluetooth LE gamepads describe their input reports with a HID report
 // descriptor (the "report map"). This parses one and decodes input reports into
 // a fixed set of buttons. Hardware-free, so host tests can exercise it.
+//
+// Bluetooth LE keyboards (such as the Rii i8+ mini keyboard) decode into the
+// same buttons, so they drive menus, page turns and games like a pad: see
+// keyButton(). Relative inputs (a keyboard's touchpad or a mouse) are ignored.
 namespace HidGamepad {
 
 // Decoded state. D-pad bits match Inkade's Game Boy button mask.
@@ -26,6 +30,7 @@ struct Field {
 
 constexpr int MAX_FIELDS = 64;
 constexpr uint16_t PAGE_DESKTOP = 0x01, PAGE_BUTTON = 0x09, PAGE_CONSUMER = 0x0C, PAGE_SIMULATION = 0x02;
+constexpr uint16_t PAGE_KEYBOARD = 0x07;
 constexpr uint16_t USAGE_X = 0x30, USAGE_Y = 0x31, USAGE_HAT = 0x39;
 constexpr uint16_t USAGE_DPAD_UP = 0x90, USAGE_DPAD_DOWN = 0x91, USAGE_DPAD_RIGHT = 0x92, USAGE_DPAD_LEFT = 0x93;
 
@@ -35,6 +40,29 @@ constexpr uint16_t USAGE_DPAD_UP = 0x90, USAGE_DPAD_DOWN = 0x91, USAGE_DPAD_RIGH
 // 12 Start, 13 Home.
 struct ButtonMap { uint8_t a, b, x, y, l, r, select, start, home, l2, r2; };
 constexpr ButtonMap ANDROID_MAP = {1, 2, 4, 5, 7, 8, 11, 12, 13, 9, 10};
+
+// Keyboard keys (HID keyboard page usages) as pad buttons, after common
+// emulator layouts: arrows move, X / Space are A, Z is B, Enter is Start,
+// Backspace / right Shift are Select (Back in menus), Esc / Home pause.
+// Page Up / Down turn pages. 0 for keys with no button.
+inline uint16_t keyButton(uint16_t key) {
+    switch (key) {
+    case 0x4F: case 0x4E: return PAD_RIGHT;           // Right arrow, Page Down
+    case 0x50: case 0x4B: return PAD_LEFT;            // Left arrow, Page Up
+    case 0x51: return PAD_DOWN;
+    case 0x52: return PAD_UP;
+    case 0x1B: case 0x2C: return PAD_A;               // X, Space
+    case 0x1D: return PAD_B;                          // Z
+    case 0x16: return PAD_X;                          // S
+    case 0x04: return PAD_Y;                          // A
+    case 0x14: return PAD_L;                          // Q
+    case 0x1A: return PAD_R;                          // W
+    case 0x28: case 0x58: return PAD_START;           // Enter, keypad Enter
+    case 0x2A: case 0xE5: return PAD_SELECT;          // Backspace, right Shift
+    case 0x29: case 0x4A: return PAD_HOME;            // Esc, Home
+    }
+    return 0;
+}
 
 class Descriptor {
 public:
@@ -84,9 +112,11 @@ public:
             } else if (type == 0) {  // main
                 if (tag == 0x8) {  // input
                     uint16_t& offset = offsets[g.id];
-                    const bool constant = u & 1;
+                    // Relative values (mouse or touchpad motion) are skipped:
+                    // read as a stick they would press the d-pad.
+                    const bool constant = u & 1, relative = u & 4;
                     for (uint16_t n = 0; n < g.reportCount; ++n) {
-                        if (!constant && count < MAX_FIELDS && g.size && g.size <= 32) {
+                        if (!constant && !relative && count < MAX_FIELDS && g.size && g.size <= 32) {
                             uint16_t usage = 0;
                             if (range && usageMin + n <= usageMax) usage = usageMin + n;
                             else if (usageCount) usage = usages[n < usageCount ? n : usageCount - 1];
@@ -151,6 +181,10 @@ inline uint16_t decode(const Descriptor& d, uint8_t reportId, const uint8_t* dat
             if (field.usage == USAGE_DPAD_DOWN) pad |= PAD_DOWN;
             if (field.usage == USAGE_DPAD_RIGHT) pad |= PAD_RIGHT;
             if (field.usage == USAGE_DPAD_LEFT) pad |= PAD_LEFT;
+        } else if (field.usagePage == PAGE_KEYBOARD && value) {
+            // One bit per key (modifiers, or a bitmap keyboard), or an array
+            // of the key codes held.
+            pad |= keyButton(field.bitSize == 1 ? field.usage : uint16_t(value));
         } else if (field.usagePage == PAGE_CONSUMER && value) {
             // Android-mode pads send Back / Home / Menu as consumer keys.
             if (field.bitSize > 1) {  // an array of usage codes

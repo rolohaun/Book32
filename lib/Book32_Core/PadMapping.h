@@ -140,3 +140,60 @@ inline bool restore(Map& map, const uint8_t* in, size_t length) {
     return true;
 }
 }  // namespace PadMapping
+
+// The same game actions on a Bluetooth keyboard: one key each (HID keyboard
+// usage), any key. Kept apart from the pad mapping, so a keyboard and a
+// gamepad each keep their own layout.
+namespace KeyMapping {
+using PadMapping::ACTION_COUNT;
+constexpr uint8_t VERSION = 1;
+
+struct Map {
+    uint8_t keys[ACTION_COUNT];
+};
+
+// X is A and Z is B (emulator custom), Backspace Select, Enter Start,
+// the arrows, and Esc pauses.
+constexpr Map DEFAULTS = {{0x1B, 0x1D, 0x2A, 0x28, 0x4F, 0x50, 0x52, 0x51, 0x29}};
+
+// The Game Boy / NES buttons (bit order as PadMapping::Action) held.
+inline uint8_t gameButtons(const Map& map, const HidGamepad::Keys& held) {
+    uint8_t buttons = 0;
+    for (int action = PadMapping::GAME_A; action <= PadMapping::GAME_DOWN; ++action)
+        if (held.has(map.keys[action])) buttons |= 1 << action;
+    return buttons;
+}
+
+inline bool pauses(const Map& map, const HidGamepad::Keys& held) { return held.has(map.keys[PadMapping::PAUSE]); }
+
+// Puts `key` on the action; an action that had it takes the old key.
+// Returns that other action, or -1 when nothing swapped.
+inline int assign(Map& map, int action, uint8_t key) {
+    if (action < 0 || action >= ACTION_COUNT || !key) return -1;
+    const uint8_t previous = map.keys[action];
+    if (previous == key) return -1;
+    int swapped = -1;
+    for (int other = 0; other < ACTION_COUNT; ++other)
+        if (other != action && map.keys[other] == key) { map.keys[other] = previous; swapped = other; }
+    map.keys[action] = key;
+    return swapped;
+}
+
+inline bool isDefault(const Map& map) { return !memcmp(&map, &DEFAULTS, sizeof(Map)); }
+
+constexpr size_t STORED_BYTES = 1 + ACTION_COUNT;
+inline void store(const Map& map, uint8_t* out) {
+    out[0] = VERSION;
+    memcpy(out + 1, map.keys, ACTION_COUNT);
+}
+// False (and `map` untouched) for anything but a current, one-to-one record.
+inline bool restore(Map& map, const uint8_t* in, size_t length) {
+    if (length != STORED_BYTES || in[0] != VERSION) return false;
+    for (int i = 0; i < ACTION_COUNT; ++i) {
+        if (!in[1 + i]) return false;
+        for (int j = 0; j < i; ++j) if (in[1 + i] == in[1 + j]) return false;
+    }
+    memcpy(map.keys, in + 1, ACTION_COUNT);
+    return true;
+}
+}  // namespace KeyMapping

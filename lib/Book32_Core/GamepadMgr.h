@@ -42,6 +42,12 @@ public:
 
     // Decoded buttons (HidGamepad::PAD_*), 0 when disconnected.
     uint16_t buttons() const { return _state == CONNECTED ? _buttons.load() : 0; }
+    // Buttons from everything but keyboard keys (games map keys separately).
+    uint16_t padButtons() const { return _state == CONNECTED ? _padOnly.load() : 0; }
+    // Keyboard keys held now (none when disconnected or not a keyboard).
+    HidGamepad::Keys keys();
+    // The connected device has keyboard keys (Controls then maps keys).
+    bool isKeyboard() const { return _state == CONNECTED && _keyboard.load(); }
     // Raw HID button bits of the last report (for diagnostics and mapping).
     uint32_t rawButtons() const { return _raw.load(); }
     unsigned long lastInputAt() const { return _lastInputAt.load(); }
@@ -70,7 +76,10 @@ private:
     bool connectSaved();
 
     std::atomic<State> _state{OFF};
-    std::atomic<uint16_t> _buttons{0};
+    std::atomic<uint16_t> _buttons{0}, _padOnly{0};
+    std::atomic<bool> _keyboard{false};
+    portMUX_TYPE _keysLock = portMUX_INITIALIZER_UNLOCKED;
+    HidGamepad::Keys _keys;
     std::atomic<uint32_t> _raw{0};
     std::atomic<uint8_t> _battery{0};
     std::atomic<unsigned long> _lastInputAt{0};
@@ -86,6 +95,8 @@ private:
     bool _reportLogged = false;
     uint16_t _padByReport[256] = {};
     uint32_t _rawByReport[256] = {};
+    uint16_t _otherByReport[256] = {};
+    HidGamepad::Keys _keysByReport[4];  // keyboards use few report IDs: by id & 3
     String _saved;
     bool _savedLoaded = false;
     // Menu action state (main loop only).

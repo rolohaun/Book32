@@ -101,23 +101,24 @@ inline void footer(Adafruit_GFX& d,unsigned page,unsigned pages,const char* mess
     d.setTextWrap(true);
 }
 // Controls screen: one row per game action, then "Reset to defaults".
+// `values` names each action's button or key, `keyboard` says which.
 // `cursor` is the key/gamepad selection (-1 none), `capture` the action
-// waiting for a gamepad press (-1 none).
+// waiting for a press (-1 none).
 constexpr int CONTROL_ROWS=PadMapping::ACTION_COUNT+1;
-inline void controls(Adafruit_GFX& d,const PadMapping::Map& map,int cursor,int capture,const char* message){
+inline void controls(Adafruit_GFX& d,const char* const* values,bool keyboard,int cursor,int capture,const char* message){
     d.fillScreen(1);text(d,"< Inkade",LEFT,26);
-    text(d,"Controls",LEFT,CTRL_Y-86,4);text(d,"Gamepad buttons in games",LEFT+2,CTRL_Y-40,2);
+    text(d,"Controls",LEFT,CTRL_Y-86,4);text(d,keyboard?"Keyboard keys in games":"Gamepad buttons in games",LEFT+2,CTRL_Y-40,2);
     for(int row=0;row<CONTROL_ROWS;row++){
         const int y=CTRL_Y+row*CTRL_STEP,textY=y+(CTRL_H-16)/2;
         if(row==PadMapping::ACTION_COUNT){
             d.drawRoundRect(LEFT,y,CONTENT_W,CTRL_H,10,0);center(d,"Reset to defaults",LEFT,textY,CONTENT_W);
         }else if(row==capture){
             d.fillRoundRect(LEFT,y,CONTENT_W,CTRL_H,10,0);text(d,PadMapping::actionName(row),LEFT+14,textY,2,1);
-            const char* prompt="Press a gamepad button";text(d,prompt,RIGHT-14-int(strlen(prompt))*6,textY+4,1,1);
+            const char* prompt=keyboard?"Press a key":"Press a gamepad button";text(d,prompt,RIGHT-14-int(strlen(prompt))*6,textY+4,1,1);
         }else{
             d.drawRoundRect(LEFT,y,CONTENT_W,CTRL_H,10,0);
             const char* name=PadMapping::actionName(row);text(d,name,LEFT+14,textY);
-            char value[64];PadMapping::describe(map.masks[row],value,sizeof(value));
+            const char* value=values[row];
             // Size 2 when it fits beside the name, else the smaller size.
             const int room=CONTENT_W-28-int(strlen(name))*12-16;
             const int size=int(strlen(value))*12<=room?2:1;
@@ -126,8 +127,8 @@ inline void controls(Adafruit_GFX& d,const PadMapping::Map& map,int cursor,int c
         if(row==cursor&&row!=capture)
             for(int inset=1;inset<=3;inset++)d.drawRoundRect(LEFT+inset,y+inset,CONTENT_W-2*inset,CTRL_H-2*inset,9,0);
     }
-    text(d,"Tap an action, then press the gamepad button for it.",LEFT,CTRL_HINT_Y,1);
-    text(d,"A button already in use swaps with that action.",LEFT,CTRL_HINT_Y+16,1);
+    text(d,keyboard?"Tap an action, then press the key for it.":"Tap an action, then press the gamepad button for it.",LEFT,CTRL_HINT_Y,1);
+    text(d,keyboard?"A key already in use swaps with that action.":"A button already in use swaps with that action.",LEFT,CTRL_HINT_Y+16,1);
     text(d,"Select + Start together always opens the pause menu.",LEFT,CTRL_HINT_Y+32,1);
     if(message&&*message){char status[80];snprintf(status,sizeof(status),"%.78s",message);text(d,status,LEFT,CTRL_HINT_Y+56,1);}
     d.setTextWrap(true);

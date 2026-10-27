@@ -784,8 +784,9 @@ void AppPaperboy::update() {
     GamepadMgr& pad = GamepadMgr::getInstance();
     if (_controls) updateControls();
     pad.setRawMode(_playing || (_controls && (_capture >= 0 || _captureRelease)));
-    const uint16_t padButtons = _playing ? pad.buttons() : 0;
-    const bool padHome = PadMapping::pauses(_padMap, padButtons);
+    const uint16_t padButtons = _playing ? pad.padButtons() : 0;
+    const HidGamepad::Keys keys = _playing ? pad.keys() : HidGamepad::Keys();
+    const bool padHome = PadMapping::pauses(_padMap, padButtons) || KeyMapping::pauses(_keyMap, keys);
     if (padHome && !_padHomeHeld) { _padHomeHeld = true; back(); return; }  // Home pauses
     _padHomeHeld = padHome;
     if (!_playing) return;
@@ -802,7 +803,7 @@ void AppPaperboy::update() {
     if (digitalRead(PIN_BUTTON_DOWN) == LOW) buttons |= 2;
 #endif
     // Pad: the Controls mapping, in the Game Boy / NES button bit order.
-    buttons |= PadMapping::gameButtons(_padMap, padButtons);
+    buttons |= PadMapping::gameButtons(_padMap, padButtons) | KeyMapping::gameButtons(_keyMap, keys);
     _buttons = buttons;
     if (buttons) BatteryMgr::getInstance().resetIdleTimer();
     if (millis() - _lastStats >= 5000) {

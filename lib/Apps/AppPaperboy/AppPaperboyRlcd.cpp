@@ -287,7 +287,8 @@ void AppPaperboy::paintRlcdControls() {
     d.fillScreen(GxEPD_WHITE);
     const int w = d.width(), h = d.height();
     text(d, "Controls", 12, 8, 2);
-    text(d, "Gamepad buttons in games", 12, 28, 1);
+    const bool keyboard = keyboardControls();
+    text(d, keyboard ? "Keyboard keys in games" : "Gamepad buttons in games", 12, 28, 1);
     d.drawFastHLine(12, 40, w - 24, GxEPD_BLACK);
     const int cursor = _controlsCursor < 0 ? 0 : _controlsCursor;
     constexpr int ROWS = InkBoyLibraryUi::CONTROL_ROWS + 1;
@@ -299,15 +300,13 @@ void AppPaperboy::paintRlcdControls() {
         if (i == PadMapping::ACTION_COUNT) { row(d, 8, y, w - 16, CTRL_ROW - 2, "Reset to defaults", selected); continue; }
         if (selected) d.fillRoundRect(8, y, w - 16, CTRL_ROW - 2, 6, GxEPD_BLACK);
         text(d, PadMapping::actionName(i), 18, y + 5, 2, ink);
-        char value[64];
-        if (i == _capture) snprintf(value, sizeof(value), "Press a pad button");
-        else PadMapping::describe(_padMap.masks[i], value, sizeof(value));
-        const String shown = fit(value, 20);
+        const String shown = fit(i == _capture ? String(keyboard ? "Press a key" : "Press a pad button")
+                                               : controlValue(i), 20);
         text(d, shown, w - 18 - int(shown.length()) * 6, y + 9, 1, ink);
     }
     text(d, fit(_controlsMessage, (w - 24) / 6), 12, h - 48, 1);
     text(d, "Hold KEY on an action, then", 12, h - 34, 1);
-    text(d, "press the pad button for it.", 12, h - 24, 1);
+    text(d, keyboard ? "press the key for it." : "press the pad button for it.", 12, h - 24, 1);
     text(d, "Select + Start always pauses.", 12, h - 12, 1);
     d.refresh(!_controlsFull);
     _controlsFull = false;

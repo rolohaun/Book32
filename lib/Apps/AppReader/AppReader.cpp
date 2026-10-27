@@ -275,7 +275,7 @@ static LibraryRect unionLibraryRect(LibraryRect a, LibraryRect b) {
 // refreshes and touch alike.
 struct Bookcase {
     static constexpr int COLS = 3, ROWS = 3, PER_PAGE = COLS * ROWS;
-    static constexpr int HEADER_H = 92, FOOTER_H = 60;
+    static constexpr int HEADER_H = 92, FOOTER_H = 72;
     static constexpr int SIDE = 22;                    // inside the case's posts
     static constexpr int PLANK_H = 12, CAPTION_H = 44; // two caption lines
     int w, h;
@@ -1393,9 +1393,6 @@ void AppReader::drawLibrary() {
         _libraryFirstDraw = false;
     } else if (_librarySelectionOnlyRedraw) {
         LibraryRect dirty = unionLibraryRect(selectionRect(_previousBookIndex), selectionRect(_selectedBookIndex));
-#if !BOOK32_HAS_TOUCH
-        dirty = unionLibraryRect(dirty, shelf.footer());  // The "3/12" position
-#endif
         dirty.x = max(0, dirty.x);
         dirty.y = max(0, dirty.y);
         if (dirty.x + dirty.w > screenW) dirty.w = screenW - dirty.x;
@@ -1424,7 +1421,6 @@ void AppReader::drawLibrary() {
         char countText[24];
         snprintf(countText, sizeof(countText), _books.size() == 1 ? "%d book" : "%d books", (int)_books.size());
         fontMgr.drawText(display, countText, 22, 78, FONT_SIZE_SMALL, GxEPD_BLACK);
-        if (_home) drawBattery(display, screenW - 62, 32);
         if (button == LibraryButton::MENU) {
             const LibraryRect r = shelf.button(false);
             const bool selected = _selectedBookIndex == -1 && !BOOK32_HAS_TOUCH;
@@ -1505,47 +1501,38 @@ void AppReader::drawLibrary() {
             }
         }
 
-        // === Footer: pages, how to open, and (at home) Wi-Fi for the web page ===
+        // === Footer: page buttons when there are several, then InkDeck's
+        // version and Wi-Fi (at home) and the battery along the bottom ===
         const int footerY = screenH - Bookcase::FOOTER_H;
-        const int line1Y = _home ? screenH - 34 : screenH - 20;
         display.drawFastHLine(20, footerY + 4, screenW - 40, GxEPD_BLACK);
 #if BOOK32_HAS_TOUCH
         if (pageCount > 1) {
             // Prev and Next buttons (handleTouch: the footer's outer thirds).
             const int page = _scrollOffset / perPage;
-            const int buttonW = 100, buttonH = 34, buttonY = footerY + 14;
+            const int buttonW = 100, buttonH = 28, buttonY = footerY + 10;
             auto pageButton = [&](int x, const char* label, bool enabled) {
                 if (!enabled) return;
                 display.drawRoundRect(x, buttonY, buttonW, buttonH, 8, GxEPD_BLACK);
                 display.drawRoundRect(x + 1, buttonY + 1, buttonW - 2, buttonH - 2, 7, GxEPD_BLACK);
                 const int labelW = textWidthForFont(display, label, &FreeSans9pt7b);
-                drawTextWithFont(display, label, x + (buttonW - labelW) / 2, buttonY + 23, &FreeSans9pt7b, GxEPD_BLACK);
+                drawTextWithFont(display, label, x + (buttonW - labelW) / 2, buttonY + 20, &FreeSans9pt7b, GxEPD_BLACK);
             };
             pageButton(20, "<  Prev", page > 0);
             pageButton(screenW - 20 - buttonW, "Next  >", page < pageCount - 1);
             char pageText[24];
             snprintf(pageText, sizeof(pageText), "Page %d of %d", page + 1, pageCount);
-            fontMgr.drawTextCentered(display, pageText, line1Y, FONT_SIZE_SMALL, GxEPD_BLACK);
-        } else if (items > 0) {
-            fontMgr.drawTextCentered(display, "Tap a book to open", line1Y, FONT_SIZE_SMALL, GxEPD_BLACK);
+            fontMgr.drawTextCentered(display, pageText, buttonY + 20, FONT_SIZE_SMALL, GxEPD_BLACK);
         }
-#else
-        char pageStr[24];
-        const int selectedBook = bookOfItem(_selectedBookIndex);
-        if (_selectedBookIndex == -1) snprintf(pageStr, sizeof(pageStr), "Menu");
-        else if (selectedBook < 0) snprintf(pageStr, sizeof(pageStr), "Update");
-        else snprintf(pageStr, sizeof(pageStr), "%d/%d", selectedBook + 1, (int)_books.size());
-        fontMgr.drawText(display, "Next: Move  |  Hold: Open", 22, line1Y, FONT_SIZE_SMALL, GxEPD_BLACK);
-        if (items > 0 || _selectedBookIndex == -1)
-            fontMgr.drawTextRight(display, pageStr, screenW - 20, line1Y, FONT_SIZE_SMALL, GxEPD_BLACK);
 #endif
+        const int bottomY = screenH - 13;
+        drawBattery(display, screenW - 62, screenH - 31);
         if (_home) {
             // With no app menu, this is where InkDeck names itself.
             char version[24];
             snprintf(version, sizeof(version), "InkDeck v%s", SYSTEM_VERSION);
-            fontMgr.drawText(display, version, 22, screenH - 10, FONT_SIZE_SMALL, GxEPD_BLACK);
+            fontMgr.drawText(display, version, 22, bottomY, FONT_SIZE_SMALL, GxEPD_BLACK);
             const String status = HomeServices::getInstance().footerText();
-            fontMgr.drawTextRight(display, status.c_str(), screenW - 20, screenH - 10, FONT_SIZE_SMALL, GxEPD_BLACK);
+            fontMgr.drawTextRight(display, status.c_str(), screenW - 74, bottomY, FONT_SIZE_SMALL, GxEPD_BLACK);
         }
 
     } while (display.nextPage());
@@ -1657,7 +1644,7 @@ void AppReader::update() {
             _lastBatteryPoll = millis();
             const int battery = BatteryMgr::getInstance().refreshNow().percentage;
             if (_shownBattery >= 0 && abs(battery - _shownBattery) >= 5) {
-                _libraryHeaderOnly = true;
+                _libraryFooterOnly = true;  // the battery sits in the footer
                 _needsRedraw = true;
             }
         }

@@ -586,6 +586,78 @@ getKlipperSettings();
 getSleepSettings();
 getGamepad();
 getDisplaySettings();
+getWifiStatus();
+
+// === Wi-Fi ===
+let wifiPoll = null;
+
+function getWifiStatus(waitingFor, tries = 0) {
+    fetch('/api/wifi/status')
+        .then(response => response.json())
+        .then(data => {
+            const status = document.getElementById('wifi-status');
+            if (data.sta_connected) {
+                status.textContent = `Connected to ${data.sta_ssid} at ${data.sta_ip}.` +
+                    (data.ap_active ? ` Join ${data.sta_ssid} again and open http://${data.sta_ip}` : '');
+            } else if (waitingFor && tries >= 15) {
+                status.textContent = `Could not join ${waitingFor}. Check the password and try again.`;
+            } else if (waitingFor) {
+                status.textContent = `Connecting to ${waitingFor}...`;
+                clearTimeout(wifiPoll);
+                wifiPoll = setTimeout(() => getWifiStatus(waitingFor, tries + 1), 2000);
+            } else {
+                status.textContent = data.ap_active ? `Not connected. InkDeck is running its own hotspot, ${data.ap_ssid}.` : 'Not connected.';
+            }
+        })
+        .catch(() => {
+            // Joining a network on another channel can briefly drop the hotspot.
+            if (waitingFor && tries < 15) { clearTimeout(wifiPoll); wifiPoll = setTimeout(() => getWifiStatus(waitingFor, tries + 1), 3000); }
+        });
+}
+
+function scanWifi() {
+    document.getElementById('wifi-status').textContent = 'Scanning...';
+    fetch('/api/wifi/scan')
+        .then(response => response.json().then(data => ({ code: response.status, data })))
+        .then(({ code, data }) => {
+            if (code === 202) { clearTimeout(wifiPoll); wifiPoll = setTimeout(scanWifi, 1500); return; }
+            const list = document.getElementById('wifi-found');
+            list.innerHTML = '';
+            const seen = new Set();
+            (data.networks || []).filter(n => n.ssid && !seen.has(n.ssid) && seen.add(n.ssid)).sort((a, b) => b.rssi - a.rssi).forEach(n => {
+                const item = document.createElement('li');
+                const label = document.createElement('span');
+                label.textContent = n.ssid + (n.secure ? '' : ' (open)');
+                const button = document.createElement('button');
+                button.className = 'btn';
+                button.textContent = 'Choose';
+                button.onclick = () => {
+                    document.getElementById('wifi-ssid').value = n.ssid;
+                    document.getElementById('wifi-password').focus();
+                };
+                item.append(label, button);
+                list.append(item);
+            });
+            document.getElementById('wifi-status').textContent = seen.size ? 'Choose your network.' : 'No networks found. Scan again.';
+        })
+        .catch(() => { document.getElementById('wifi-status').textContent = 'Connection error.'; });
+}
+
+function connectWifi() {
+    const ssid = document.getElementById('wifi-ssid').value.trim();
+    const password = document.getElementById('wifi-password').value;
+    const status = document.getElementById('wifi-status');
+    if (!ssid) { status.textContent = 'Choose or type a network name.'; return; }
+    if (password && (password.length < 8 || password.length > 63)) { status.textContent = 'Wi-Fi passwords are 8 to 63 characters.'; return; }
+    status.textContent = `Connecting to ${ssid}...`;
+    fetch('/api/wifi/connect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ssid, password }),
+    })
+        .then(() => { clearTimeout(wifiPoll); wifiPoll = setTimeout(() => getWifiStatus(ssid), 3000); })
+        .catch(() => { status.textContent = 'Connection error.'; });
+}
 
 function setRadioValue(name, value) {
     const option = document.querySelector(`input[name="${name}"][value="${value}"]`);

@@ -132,6 +132,15 @@
 
             <section id="settings" class="tab-content">
                 <div class="page-heading"><p class="eyebrow">InkDeck</p><h1>Device settings</h1><p>Adjust sleep behavior, touch feedback, orientation, and software updates.</p></div>
+                <article id="wifi-card" class="card section-card">
+                    <div class="card-heading"><div><h2>Wi-Fi network</h2><p>Join your home Wi-Fi. InkDeck remembers it and connects on its own from then on.</p></div></div>
+                    <p id="wifi-status" class="status-msg" role="status">Loading...</p>
+                    <div class="action-row"><button class="btn primary" onclick="scanWifi()">Scan for networks</button></div>
+                    <ul id="wifi-found" class="gamepad-list"></ul>
+                    <label class="text-field" for="wifi-ssid"><span>Network name</span><input type="text" id="wifi-ssid" maxlength="32" placeholder="Pick one above or type it"></label>
+                    <label class="text-field" for="wifi-password"><span>Password</span><input type="password" id="wifi-password" maxlength="63" placeholder="Leave empty for an open network"></label>
+                    <div class="action-row"><button class="btn primary" onclick="connectWifi()">Connect</button></div>
+                </article>
                 <article class="card section-card">
                     <div class="card-heading"><div><h2>Sleep settings</h2><p>Save battery when InkDeck is left idle.</p></div></div>
                     <div class="inline-setting"><div><label for="sleep-timeout">Idle sleep timeout</label><p>Defaults to 10 minutes. Use 0 to disable automatic sleep.</p></div><div class="number-control"><input type="number" id="sleep-timeout" min="0" max="60" value="10"><span>minutes</span></div></div>

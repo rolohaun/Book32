@@ -1,6 +1,7 @@
 #include "RlcdDisplay.h"
 #if defined(BOARD_WAVESHARE_RLCD42)
 #include <esp_heap_caps.h>
+#include "NesViewport.h"
 
 namespace {
 // Waveshare's U8g2 example drives the ST7305 at 24 MHz.
@@ -32,7 +33,7 @@ constexpr InitStep INIT[] = {
     {0xC4, 4, {0x4B, 0x4B, 0x4B, 0x4B}},
     {0xC5, 4, {0x19, 0x19, 0x19, 0x19}},
     {0xD8, 2, {0x80, 0xE9}},
-    {0xB2, 1, {0x02}},              // Frame rate
+    {0xB2, 1, {0x12}},              // Frame rate: 51 Hz in high power mode (bit 4; 0x02 is 25.5 Hz), 1 Hz in low
     {0xB3, 10, {0xE5, 0xF6, 0x05, 0x46, 0x77, 0x77, 0x77, 0x77, 0x76, 0x45}},
     {0xB4, 8, {0x05, 0x46, 0x77, 0x77, 0x77, 0x77, 0x76, 0x45}},
     {0x62, 3, {0x32, 0x03, 0x1F}},  // Gate timing
@@ -221,24 +222,30 @@ void RlcdDisplay::drawGameFrame() {
     const int sourceW = nes ? 256 : 160;
     const int top = nes ? NES_Y : GB_Y, rows = nes ? NES_H : GB_H;
     const bool flipped = _gameRotation == 2;
-    // Source column for each native column of the window.
+    // For each native column of the window: the source byte, and for NES's
+    // 2-bit pixels (NesViewport) the shift that brings its shade down.
     static uint16_t columns[GAME_W];
+    static uint8_t shifts[GAME_W];
     for (int i = 0; i < GAME_W; ++i) {
         const int x = flipped ? GAME_W - 1 - i : i;
-        columns[i] = nes ? x * 4 / 5 : x / 2;
+        const int sx = nes ? x * 4 / 5 : x / 2;
+        columns[i] = nes ? sx / 4 : sx;
+        shifts[i] = nes ? 6 - 2 * (sx & 3) : 0;
     }
+    const int sourcePitch = nes ? NesViewport::ROW_BYTES : sourceW;
     uint8_t* canvas = getBuffer();
     for (int j = 0; j < rows; ++j) {
         const int y = flipped ? rows - 1 - j : j;
         const int ny = top + j;
-        const uint8_t* source = _gameFrame + (nes ? y * 4 / 5 : y / 2) * sourceW;
+        const uint8_t* source = _gameFrame + (nes ? y * 4 / 5 : y / 2) * sourcePitch;
         const uint8_t* threshold = THRESHOLD[ny & 1];
         uint8_t* out = canvas + ny * CANVAS_PITCH + GAME_X / 8;
         const uint16_t* column = columns;
+        const uint8_t* shift = shifts;
         for (int b = 0; b < GAME_W / 8; ++b) {
             uint8_t bits = 0;
             for (int k = 0; k < 8; ++k) {
-                const bool black = threshold[k & 1] < DENSITY[source[*column++] & 3];
+                const bool black = threshold[k & 1] < DENSITY[(source[*column++] >> *shift++) & 3];
                 bits = (bits << 1) | (black ? 0 : 1);
             }
             out[b] = bits;

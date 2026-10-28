@@ -9,22 +9,38 @@
 #endif
 
 #if defined(BOARD_WAVESHARE_RLCD42)
-// RLCD: one shade per NES pixel; RlcdDisplay scales it 1.25x to 320x300 on
-// the landscape panel.
+// RLCD: 2-bit shades, four NES pixels a byte, the leftmost in the top bits;
+// RlcdDisplay scales them 1.25x to 320x300 on the landscape panel. The
+// frames live in PSRAM, so a quarter of the bytes is most of the speed: at
+// one byte a pixel, packing took 5.5 ms of the NES's 16.7 ms frame.
 namespace NesViewport {
 constexpr int SOURCE_W=256, SOURCE_H=240, SCALE=1;
 constexpr int X=40, Y=0, W=320, H=300;
-constexpr int PACKED_BYTES=SOURCE_W*SOURCE_H;
-inline void packIndexed(uint8_t* packed,const uint8_t* pixels,int pitch,const uint8_t* palette,uint8_t) {
+constexpr int ROW_BYTES=SOURCE_W/4, PACKED_BYTES=ROW_BYTES*SOURCE_H;
+static INK_NES_PACK_FAST void packIndexed(uint8_t* packed,const uint8_t* pixels,int pitch,const uint8_t* palette,uint8_t) {
     if(!packed || !pixels) return;
+    uint8_t shades[256];
+    for(int i=0;i<256;++i) shades[i]=palette ? palette[i]&3 : i&3;
     for(int y=0;y<SOURCE_H;++y) {
-        const uint8_t* row=pixels+y*pitch;
-        uint8_t* out=packed+y*SOURCE_W;
-        for(int x=0;x<SOURCE_W;++x) out[x]=palette ? palette[row[x]] : row[x]&3;
+        // 16 pixels in, one 32-bit word out (little-endian: byte 0 first).
+        const uint32_t* row=reinterpret_cast<const uint32_t*>(pixels+y*pitch);
+        uint32_t* out=reinterpret_cast<uint32_t*>(packed+y*ROW_BYTES);
+        for(int w=0;w<SOURCE_W/16;++w) {
+            uint32_t word=0;
+            for(int b=0;b<4;++b) {
+                const uint32_t p=row[w*4+b];
+                const uint32_t bits=shades[p&0xff]<<6 | shades[(p>>8)&0xff]<<4 | shades[(p>>16)&0xff]<<2 | shades[p>>24];
+                word|=bits<<(8*b);
+            }
+            out[w]=word;
+        }
     }
 }
 inline void pack2x(uint8_t* packed,const uint8_t* shades,uint8_t rotation) {
     packIndexed(packed,shades,SOURCE_W,nullptr,rotation);
+}
+inline uint8_t shadeAt(const uint8_t* packed,int x,int y) {
+    return (packed[y*ROW_BYTES+x/4]>>(6-2*(x&3)))&3;
 }
 }
 #else

@@ -47,6 +47,19 @@ constexpr InitStep AFTER_WAKE[] = {
     {0xB8, 1, {0x29}},
 };
 constexpr uint8_t COLUMNS[] = {0x12, 0x2A}, ROWS[] = {0x00, 0xC7};
+
+// The tearing-effect line pulses as the panel starts a new scan. Sending the
+// frame right after it (about 5 ms at 24 MHz) stays ahead of the scan, so a
+// scan never shows half of one frame and half of the next.
+SemaphoreHandle_t teSignal = nullptr;
+volatile uint32_t tePulses = 0;
+
+void IRAM_ATTR onTearingEffect() {
+    ++tePulses;
+    BaseType_t woken = pdFALSE;
+    xSemaphoreGiveFromISR(teSignal, &woken);
+    if (woken) portYIELD_FROM_ISR();
+}
 }
 
 RlcdDisplay::RlcdDisplay() : GFXcanvas1(NATIVE_W, NATIVE_H), _spi(FSPI) {}
@@ -100,6 +113,11 @@ void RlcdDisplay::init(uint32_t, bool, uint16_t, bool) {
     command(0xD0, &d0, 1);
     command(0x38);                  // High power mode
     command(0x29);                  // Display on
+    if (!teSignal) {
+        teSignal = xSemaphoreCreateBinary();
+        pinMode(RLCD_TE, INPUT);
+        attachInterrupt(digitalPinToInterrupt(RLCD_TE), onTearingEffect, RISING);
+    }
     _ready = true;
     clearScreen();
 }
@@ -177,7 +195,25 @@ void RlcdDisplay::flush() {
     }
     command(0x2A, COLUMNS, sizeof(COLUMNS));
     command(0x2B, ROWS, sizeof(ROWS));
+    waitForScanStart();
     command(0x2C, _panel, PANEL_BYTES);
+}
+
+void RlcdDisplay::waitForScanStart() {
+    if (!teSignal) return;
+    xSemaphoreTake(teSignal, 0);  // A pulse from before now is stale
+    // A missing pulse (the line not wired, say) costs one frame's wait, no more.
+    if (xSemaphoreTake(teSignal, pdMS_TO_TICKS(40)) != pdTRUE && !_teMissingLogged) {
+        _teMissingLogged = true;
+        Serial.println("RLCD: no tearing-effect pulse; sending frames unsynchronized");
+    }
+    const uint32_t now = millis();
+    if (now - _teReportAt >= 10000) {
+        const uint32_t pulses = tePulses;
+        if (_teReportAt) Serial.printf("RLCD: panel scans %.1f/s\n", (pulses - _tePulsesAt) * 1000.0f / (now - _teReportAt));
+        _teReportAt = now;
+        _tePulsesAt = pulses;
+    }
 }
 
 void RlcdDisplay::drawGameFrame() {

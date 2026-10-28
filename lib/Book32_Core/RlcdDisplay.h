@@ -71,5 +71,8 @@ private:
     void drawGameFrame();
     void drawArduboyFrame();
     void flush();
+    void waitForScanStart();
+    bool _teMissingLogged = false;
+    uint32_t _teReportAt = 0, _tePulsesAt = 0;
 };
 #endif

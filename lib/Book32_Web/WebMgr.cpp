@@ -4,6 +4,9 @@
 #include <WiFi.h>
 #include <LittleFS.h>
 #include <esp_partition.h>
+#include <lwip/sockets.h>
+#include <lwip/priv/tcp_priv.h>
+#include <lwip/priv/tcpip_priv.h>
 #include "../Book32_Core/Book32FS.h"
 #include "../Book32_Update/GitHubMgr.h"
 #include "../Book32_Core/BatteryMgr.h"
@@ -165,6 +168,36 @@ void WebMgr::mountFilesystems() {
     Serial.println("============================\n");
 }
 
+// The Wi-Fi setup page closes its connections first, so they wait in TIME_WAIT
+// on port 80 for up to two minutes and block our bind. Those belong to a page
+// that is gone, so drop them (on the lwIP thread, which owns the list).
+struct DropTimeWait {
+    tcpip_api_call_data call;
+    uint16_t port;
+};
+
+static err_t dropTimeWaitOnLwip(tcpip_api_call_data* call) {
+    const uint16_t port = reinterpret_cast<DropTimeWait*>(call)->port;
+    for (tcp_pcb* pcb = tcp_tw_pcbs; pcb;) {
+        tcp_pcb* next = pcb->next;
+        if (pcb->local_port == port) tcp_abort(pcb);
+        pcb = next;
+    }
+    return ERR_OK;
+}
+
+static bool portFree(uint16_t port) {
+    const int s = lwip_socket(AF_INET, SOCK_STREAM, 0);
+    if (s < 0) return true;  // Let the server try
+    sockaddr_in addr = {};
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(port);
+    addr.sin_addr.s_addr = htonl(INADDR_ANY);
+    const bool bound = lwip_bind(s, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == 0;
+    lwip_close(s);
+    return bound;
+}
+
 void WebMgr::init() {
     if (_initialized) return;
     if (!_endpointsConfigured) {
@@ -174,6 +207,20 @@ void WebMgr::init() {
 #endif
         setupEndpoints();
         _endpointsConfigured = true;
+    }
+    // AsyncTCP keeps a freed connection after a failed bind and frees it again
+    // in end(), so only start when port 80 can be had.
+    DropTimeWait drop = {};
+    drop.port = 80;
+    tcpip_api_call(dropTimeWaitOnLwip, &drop.call);
+    bool available = portFree(80);
+    for (int tries = 0; !available && tries < 20; ++tries) {
+        delay(250);
+        available = portFree(80);
+    }
+    if (!available) {
+        Serial.println("Web Server not started: port 80 is busy");
+        return;
     }
     server->begin();
     _initialized = true;

@@ -133,6 +133,11 @@
             <section id="settings" class="tab-content">
                 <div class="page-heading"><p class="eyebrow">InkDeck</p><h1>Device settings</h1><p>Adjust sleep behavior, touch feedback, orientation, and software updates.</p></div>
                 <article class="card section-card">
+                    <div class="card-heading"><div><h2>Your bookshelf</h2><p>Your name goes on the library's title, as in "Ron's Bookshelf". Leave it empty for "My Bookshelf".</p></div></div>
+                    <label class="text-field" for="shelf-name"><span>Your name</span><input type="text" id="shelf-name" maxlength="20" placeholder="Ron"></label>
+                    <div class="action-row"><button class="btn primary" onclick="saveShelfName()">Save name</button><div id="shelf-name-status" class="status-msg" role="status"></div></div>
+                </article>
+                <article class="card section-card">
                     <div class="card-heading"><div><h2>Sleep settings</h2><p>Save battery when InkDeck is left idle.</p></div></div>
                     <div class="inline-setting"><div><label for="sleep-timeout">Idle sleep timeout</label><p>Defaults to 10 minutes. Use 0 to disable automatic sleep.</p></div><div class="number-control"><input type="number" id="sleep-timeout" min="0" max="60" value="10"><span>minutes</span></div></div>
                     <label class="text-field" for="sleep-screen"><span>While asleep, show</span><select id="sleep-screen"><option value="cover">Book cover and sleep message</option><option value="coverOnly">Book cover only</option><option value="message">Sleep message only</option></select></label>

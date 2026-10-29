@@ -82,6 +82,9 @@ private:
     void syncHome();
     void leaveHome();
     bool _libraryHeaderOnly = false;
+    // The header's title, from ShelfName, reread when the web page changes it.
+    String _shelfTitle;
+    uint32_t _shelfTitleRevision = UINT32_MAX;
     unsigned long _lastBatteryPoll = 0;
     int _shownBattery = -1;
     void powerDownRadio();

@@ -39,6 +39,7 @@ function showTab(tabId) {
         getDisplaySettings();
         getSoundSettings();
         getApps();
+        getShelfName();
         getLilygoControls();
     }
 }
@@ -75,6 +76,35 @@ async function saveLilygoControls() {
 }
 
 // === Touch Sounds ===
+function getShelfName() {
+    fetch('/api/settings/shelf')
+        .then(response => response.json())
+        .then(data => { document.getElementById('shelf-name').value = data.name || ''; })
+        .catch(error => console.error('Error loading the bookshelf name:', error));
+}
+
+function saveShelfName() {
+    const statusDiv = document.getElementById('shelf-name-status');
+    const name = document.getElementById('shelf-name').value.trim();
+    statusDiv.textContent = 'Saving…';
+    statusDiv.style.color = 'var(--muted)';
+    fetch('/api/settings/shelf', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }),
+    })
+        .then(response => response.json())
+        .then(data => {
+            const ok = data.status === 'ok';
+            statusDiv.textContent = ok ? `Saved: ${name ? name + "'s" : 'My'} Bookshelf.` : 'Could not save the name.';
+            statusDiv.style.color = ok ? 'var(--accent)' : 'var(--danger)';
+        })
+        .catch(() => {
+            statusDiv.textContent = 'Connection error.';
+            statusDiv.style.color = 'var(--danger)';
+        });
+}
+
 function getApps() {
     fetch('/api/apps')
         .then(response => response.json())

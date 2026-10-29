@@ -12,6 +12,7 @@
 #include "AppSelection.h"
 #include "GitHubMgr.h"
 #include "HomeServices.h"
+#include "ShelfName.h"
 #include <WiFi.h>
 #include <LittleFS.h>
 #include <ArduinoJson.h>
@@ -1405,6 +1406,10 @@ void AppReader::drawLibrary() {
     }
 
     const LibraryButton button = libraryButton();
+    if (_shelfTitleRevision != ShelfName::revision()) {
+        _shelfTitleRevision = ShelfName::revision();
+        _shelfTitle = ShelfName::title();
+    }
     auto selectionRect = [&](int index) {
         if (index < 0) return shelf.button(false);
         const int slot = index - _scrollOffset;
@@ -1441,8 +1446,17 @@ void AppReader::drawLibrary() {
     do {
         display.fillScreen(GxEPD_WHITE);
 
-        // === Header: title, count, battery (at home) and the one button ===
-        fontMgr.drawText(display, "Library", 20, 52, FONT_SIZE_TITLE, GxEPD_BLACK);
+        // === Header: the shelf's title, the count and "< Menu" with apps ===
+        {
+            // Long names step down a size, then lose letters, to clear the button.
+            const int maxW = (_home ? screenW - 20 : shelf.button(false).x - 12) - 20;
+            int size = FONT_SIZE_TITLE;
+            String title = _shelfTitle;
+            if (fontMgr.getTextWidth(title.c_str(), size) > maxW) size = FONT_SIZE_BODY;
+            for (int cut = 1; fontMgr.getTextWidth(title.c_str(), size) > maxW && cut < int(_shelfTitle.length()); ++cut)
+                title = _shelfTitle.substring(0, _shelfTitle.length() - cut) + "...";
+            fontMgr.drawText(display, title.c_str(), 20, size == FONT_SIZE_TITLE ? 52 : 48, size, GxEPD_BLACK);
+        }
         char countText[24];
         snprintf(countText, sizeof(countText), _books.size() == 1 ? "%d book" : "%d books", (int)_books.size());
         fontMgr.drawText(display, countText, 22, 78, FONT_SIZE_SMALL, GxEPD_BLACK);
@@ -1695,6 +1709,11 @@ void AppReader::update() {
         }
     }
 #endif
+    // A new name from the web page: repaint the header.
+    if (_state == VIEW_LIBRARY && _shelfTitleRevision != ShelfName::revision() && !_needsRedraw) {
+        _libraryHeaderOnly = true;
+        _needsRedraw = true;
+    }
     // Library rendering is static unless input changes selection.
     if (_progressSavePending && millis() - _lastPageTurnAt >= PROGRESS_SAVE_DELAY_MS) {
         const unsigned long startedAt = millis();

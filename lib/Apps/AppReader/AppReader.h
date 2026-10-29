@@ -90,12 +90,13 @@ private:
     void powerDownRadio();
     void backToLibrary();
     // The library's actions: "< Menu" in the header (index -1) when there is
-    // an app menu, and a book of its own on the shelf: Settings on touch
-    // boards, Update on the Book32 when one is ready.
+    // an app menu, which has Settings and Update; at home a book of its own on
+    // the shelf instead: Settings on touch boards, Update on the Book32 when
+    // one is ready.
     enum class LibraryButton : uint8_t { NONE, MENU, SETTINGS, UPDATE };
     LibraryButton libraryButton() const;  // the shelf's action book
     void drawActionBook(Book32Display& display, int x, int y, int w, int h, LibraryButton action);
-    bool shelfAction() const { return libraryButton() != LibraryButton::NONE; }
+    bool shelfAction() const { return _home && libraryButton() != LibraryButton::NONE; }
     // Shelf items are numbered page * LIBRARY_PER_PAGE + slot. With an action
     // book, each page holds up to eight books and then the action's book, so
     // it ends every page: bottom right when the page is full.

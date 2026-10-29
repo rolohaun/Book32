@@ -10,6 +10,7 @@
 #include "icon_update.h"
 #include "../Book32_Update/GitHubMgr.h"
 #include "HomeServices.h"
+#include "HomeFooter.h"
 
 #if defined(BOARD_SEEED_STICKY)
 // With Inkade the Sticky and Book32 have five tiles: three tighter rows end above the
@@ -18,6 +19,8 @@ static constexpr int MENU_START_Y = 120, MENU_ROW_HEIGHT = 200;
 #else
 static constexpr int MENU_START_Y = 180, MENU_ROW_HEIGHT = 240;
 #endif
+// The footer's partial refresh: the Book32's hint line over the home footer.
+static constexpr int FOOTER_H = BOOK32_HAS_TOUCH ? HomeFooter::HEIGHT + 6 : HomeFooter::HEIGHT + 34;
 
 struct MenuDirtyRect {
     int x;
@@ -220,10 +223,8 @@ void AppMainMenu::draw() {
         if (dirty.x + dirty.w > screenW) dirty.w = screenW - dirty.x;
         if (dirty.y + dirty.h > screenH) dirty.h = screenH - dirty.y;
         display.setPartialWindow(dirty.x, dirty.y, dirty.w, dirty.h);
-    } else if (_batteryOnlyRedraw) {
-        display.setPartialWindow(screenW - 150, 0, 150, 42);
-    } else if (_footerOnlyRedraw) {
-        display.setPartialWindow(0, screenH - 70, screenW, 70);
+    } else if (_batteryOnlyRedraw || _footerOnlyRedraw) {  // the battery is in the footer
+        display.setPartialWindow(0, screenH - FOOTER_H, screenW, FOOTER_H);
     } else {
         display.setPartialWindow(0, 0, screenW, screenH);
     }
@@ -236,33 +237,8 @@ void AppMainMenu::draw() {
         display.fillScreen(GxEPD_WHITE);
         display.setTextColor(GxEPD_BLACK);
 
-        // === Firmware title and version on both devices ===
+        // === Title; the version and battery are in the footer ===
         fontMgr.drawText(display, "InkDeck", 15, 35, FONT_SIZE_SUBTITLE, GxEPD_BLACK);
-        int inkDeckWidth = fontMgr.getTextWidth("InkDeck", FONT_SIZE_SUBTITLE);
-        char versionStr[16];
-        snprintf(versionStr, sizeof(versionStr), " v%s", SYSTEM_VERSION);
-        fontMgr.drawText(display, versionStr, 15 + inkDeckWidth, 35, FONT_SIZE_SMALL, GxEPD_BLACK);
-
-        // === Battery Status (single cached read) ===
-        BatteryStatus bat = BatteryMgr::getInstance().getStatus();
-        int batX = screenW - 60;
-        int batY = 10;
-
-        display.drawRect(batX, batY, 40, 20, GxEPD_BLACK);
-        display.fillRect(batX + 40, batY + 5, 3, 10, GxEPD_BLACK);
-
-        int fillWidth = (bat.percentage * 36) / 100;
-        if(fillWidth > 36) fillWidth = 36;
-        if(fillWidth < 0) fillWidth = 0;
-        if (bat.percentage > 0) {
-            display.fillRect(batX + 2, batY + 2, fillWidth, 16, GxEPD_BLACK);
-        }
-        // Draw lightning bolt if charging
-        if (bat.charging) {
-            display.drawLine(batX + 20, batY + 2, batX + 14, batY + 10, GxEPD_WHITE);
-            display.drawLine(batX + 14, batY + 10, batX + 24, batY + 10, GxEPD_WHITE);
-            display.drawLine(batX + 24, batY + 10, batX + 18, batY + 18, GxEPD_WHITE);
-        }
 
         // === App Icons Grid ===
         int colWidth = screenW / COLS;
@@ -346,15 +322,13 @@ void AppMainMenu::draw() {
         }
 #endif
 
-        // === Footer ===
-#if BOOK32_HAS_TOUCH
-        fontMgr.drawTextCentered(display, "Tap an icon to open", screenH - 45, FONT_SIZE_SMALL, GxEPD_BLACK);
-#else
-        fontMgr.drawTextCentered(display, "Press: Next  |  Hold: Select", screenH - 45, FONT_SIZE_SMALL, GxEPD_BLACK);
+        // === Footer: the buttons' hint on the Book32, then the home footer ===
+#if !BOOK32_HAS_TOUCH
+        fontMgr.drawTextCentered(display, "Press: Next  |  Hold: Select", screenH - FOOTER_H + 22,
+                                 FONT_SIZE_SMALL, GxEPD_BLACK);
 #endif
-        String ipStr = HomeServices::getInstance().footerText();
-        fontMgr.drawTextCentered(display, ipStr.c_str(), screenH - 20, FONT_SIZE_SMALL, GxEPD_BLACK);
-        _lastWifiFooterText = ipStr;
+        HomeFooter::draw(display, true);
+        _lastWifiFooterText = HomeServices::getInstance().footerText();
 
     } while (display.nextPage());
 }

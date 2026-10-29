@@ -13,6 +13,7 @@
 #include "GitHubMgr.h"
 #include "HomeServices.h"
 #include "ShelfName.h"
+#include "HomeFooter.h"
 #include <WiFi.h>
 #include <LittleFS.h>
 #include <ArduinoJson.h>
@@ -1339,21 +1340,6 @@ static void drawPlank(Book32Display& display, int x, int y, int w) {
     display.fillRect(x, y + Bookcase::PLANK_H - 2, w, 2, GxEPD_BLACK);
 }
 
-// A compact battery: four upright bars, one filled per quarter of charge,
-// with the percentage to their right. `baseline` is the text's baseline.
-static void drawBattery(Book32Display& display, int x, int baseline) {
-    const BatteryStatus bat = BatteryMgr::getInstance().getStatus();
-    const int filled = constrain((bat.percentage + 24) / 25, 0, 4);
-    for (int bar = 0; bar < 4; ++bar) {
-        const int bx = x + bar * 7;
-        if (bar < filled) display.fillRect(bx, baseline - 13, 4, 13, GxEPD_BLACK);
-        else display.drawRect(bx, baseline - 13, 4, 13, GxEPD_BLACK);
-    }
-    char text[8];
-    snprintf(text, sizeof(text), "%d%%", bat.percentage);
-    FontMgr::getInstance().drawText(display, text, x + 33, baseline, FONT_SIZE_SMALL, GxEPD_BLACK);
-}
-
 void AppReader::drawLibrary() {
     const bool initialLoad = !_booksScanned;
     const unsigned long libraryStartedAt = millis();
@@ -1566,20 +1552,9 @@ void AppReader::drawLibrary() {
             fontMgr.drawTextCentered(display, pageText, buttonY + 20, FONT_SIZE_SMALL, GxEPD_BLACK);
         }
 #endif
-        // Two lines in each bottom corner, 22 px from the edges: InkDeck's
-        // version over the battery on the left, the web page's address under
-        // "Dashboard" on the right (at home; Wi-Fi notices stand alone).
-        const int bottomY = screenH - 10, upperY = bottomY - 24;
-        drawBattery(display, 22, bottomY);
-        if (_home) {
-            char version[24];
-            snprintf(version, sizeof(version), "InkDeck v%s", SYSTEM_VERSION);
-            fontMgr.drawText(display, version, 22, upperY, FONT_SIZE_SMALL, GxEPD_BLACK);
-            const String status = HomeServices::getInstance().footerText();
-            if (!status.startsWith("WiFi "))  // an address, not "WiFi offline" or "WiFi starting"
-                fontMgr.drawTextRight(display, "Dashboard", screenW - 22, upperY, FONT_SIZE_SMALL, GxEPD_BLACK);
-            fontMgr.drawTextRight(display, status.c_str(), screenW - 22, bottomY, FONT_SIZE_SMALL, GxEPD_BLACK);
-        }
+        // The home footer; inside the app menu just the battery, as the
+        // menu shows the version and address.
+        HomeFooter::draw(display, _home);
 
     } while (display.nextPage());
 }

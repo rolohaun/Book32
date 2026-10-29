@@ -277,15 +277,16 @@ struct Bookcase {
     static constexpr int COLS = 3, ROWS = 3, PER_PAGE = COLS * ROWS;
     static constexpr int HEADER_H = 92, FOOTER_H = 72;
     static constexpr int SIDE = 22;                    // inside the case's posts
-    static constexpr int PLANK_H = 12, CAPTION_H = 44; // two caption lines
+    static constexpr int PLANK_H = 12;
     int w, h;
     Bookcase(int width, int height) : w(width), h(height) {}
     int top() const { return HEADER_H + 6; }
     int rowH() const { return (h - FOOTER_H - top()) / ROWS; }
     int cellW() const { return (w - 2 * SIDE) / COLS; }
-    // The plank a row's books stand on.
-    int plankY(int row) const { return top() + (row + 1) * rowH() - CAPTION_H - PLANK_H; }
-    // One book's whole place: its cover space, plank and caption.
+    // The plank a row's books stand on, at the bottom of the row; titles
+    // go above the books, so each reads as the book under it.
+    int plankY(int row) const { return top() + (row + 1) * rowH() - PLANK_H; }
+    // One book's whole place: its caption, cover space and plank.
     LibraryRect cell(int slot) const {
         return {SIDE + (slot % COLS) * cellW(), top() + (slot / COLS) * rowH(), cellW(), rowH()};
     }
@@ -790,8 +791,10 @@ void AppReader::handleInput(InputAction action) {
             _needsRedraw = true;
         } else if (action == INPUT_SELECT) {
             const int book = bookOfItem(_selectedBookIndex);
-            if (_selectedBookIndex == -1 || book == -1) {
-                pressLibraryButton();
+            if (_selectedBookIndex == -1) {
+                pressLibraryButton(LibraryButton::MENU);
+            } else if (book == -1) {
+                pressLibraryButton(libraryButton());
             } else if (book >= 0 && book < static_cast<int>(_books.size())) {
                 openBook(_books[book].path.c_str());
             }
@@ -819,7 +822,6 @@ void AppReader::backToLibrary() {
 }
 
 AppReader::LibraryButton AppReader::libraryButton() const {
-    if (!_home) return LibraryButton::MENU;
 #if BOOK32_HAS_TOUCH
     return LibraryButton::SETTINGS;
 #else
@@ -827,9 +829,9 @@ AppReader::LibraryButton AppReader::libraryButton() const {
 #endif
 }
 
-void AppReader::pressLibraryButton() {
+void AppReader::pressLibraryButton(LibraryButton action) {
     SoundMgr::getInstance().beep();
-    switch (libraryButton()) {
+    switch (action) {
     case LibraryButton::MENU:
         markProgressInactive();
         AppMgr::getInstance().switchTo(0);
@@ -862,7 +864,7 @@ void AppReader::handleTouch(uint16_t x, uint16_t y) {
 
     const Bookcase shelf(SCREEN_WIDTH, SCREEN_HEIGHT);
     if (!_home && shelf.button(false).contains(x, y)) {
-        pressLibraryButton();
+        pressLibraryButton(LibraryButton::MENU);
         return;
     }
     if (shelf.footer().contains(x, y)) {  // Prev and Next
@@ -876,7 +878,7 @@ void AppReader::handleTouch(uint16_t x, uint16_t y) {
     const int book = bookOfItem(item);
     if (book == -2) return;
     _selectedBookIndex = item;
-    if (book < 0) { pressLibraryButton(); return; }
+    if (book < 0) { pressLibraryButton(libraryButton()); return; }
     SoundMgr::getInstance().beep();
     openBook(_books[book].path);
 }
@@ -1442,7 +1444,7 @@ void AppReader::drawLibrary() {
         char countText[24];
         snprintf(countText, sizeof(countText), _books.size() == 1 ? "%d book" : "%d books", (int)_books.size());
         fontMgr.drawText(display, countText, 22, 78, FONT_SIZE_SMALL, GxEPD_BLACK);
-        if (button == LibraryButton::MENU) {
+        if (!_home) {
             const LibraryRect r = shelf.button(false);
             const bool selected = _selectedBookIndex == -1 && !BOOK32_HAS_TOUCH;
             const char* label = "<  Menu";
@@ -1470,7 +1472,9 @@ void AppReader::drawLibrary() {
             fontMgr.drawTextCentered(display, "Upload EPUB books from the web page.", y + 34, FONT_SIZE_SMALL, GxEPD_BLACK);
         }
 
-        // === Books standing on the shelves, titles on the plank's edge ===
+        // === Books standing on the shelves, each title just above its book,
+        // clear of the selection frame ===
+        constexpr int CAPTION_GAP = 14;  // the last line's baseline above the book
         for (int item = _scrollOffset; item < lastVisibleItem; item++) {
             const int slot = item - _scrollOffset;
             const LibraryRect cell = shelf.cell(slot), box = shelf.cover(slot);
@@ -1491,7 +1495,7 @@ void AppReader::drawLibrary() {
                 const GFXfont* font = &FreeSansBold9pt7b;
                 const int captionW = textWidthForFont(display, caption.c_str(), font);
                 drawTextWithFont(display, caption.c_str(), cell.x + (cell.w - captionW) / 2,
-                                 plankY + Bookcase::PLANK_H + 17, font, GxEPD_BLACK);
+                                 plankY - box.h - CAPTION_GAP, font, GxEPD_BLACK);
                 continue;
             }
             const BookEntry& book = _books[index];
@@ -1515,7 +1519,7 @@ void AppReader::drawLibrary() {
 
             const GFXfont* captionFont = selected ? &FreeSansBold9pt7b : &FreeSans9pt7b;
             std::vector<String> lines = wrapLibraryTitle(display, book.title, captionFont, cell.w - 12, 2);
-            int baseline = plankY + Bookcase::PLANK_H + 17;
+            int baseline = by - CAPTION_GAP - (int(lines.size()) - 1) * 19;
             for (const String& line : lines) {
                 const int lineW = textWidthForFont(display, line.c_str(), captionFont);
                 drawTextWithFont(display, line.c_str(), cell.x + (cell.w - lineW) / 2, baseline, captionFont, GxEPD_BLACK);
@@ -1656,7 +1660,7 @@ void AppReader::update() {
     syncHome();
     if (_homeShown) {
         // Wi-Fi and update notices in the footer; a new update adds the
-        // Book32's header button.
+        // Book32's Update book.
         if (HomeServices::getInstance().poll()) {
             // A new Update book moves every book along: repaint them all.
             if (libraryButton() == _drawnButton) _libraryFooterOnly = true;

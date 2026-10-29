@@ -86,13 +86,13 @@ private:
     int _shownBattery = -1;
     void powerDownRadio();
     void backToLibrary();
-    // The library's own action: "< Menu" in the header (index -1) inside the
-    // app menu; at home a book on the shelf, first in the list: Settings on
-    // touch boards, Update on the Book32 when one is ready.
+    // The library's actions: "< Menu" in the header (index -1) when there is
+    // an app menu, and a book of its own on the shelf: Settings on touch
+    // boards, Update on the Book32 when one is ready.
     enum class LibraryButton : uint8_t { NONE, MENU, SETTINGS, UPDATE };
-    LibraryButton libraryButton() const;
+    LibraryButton libraryButton() const;  // the shelf's action book
     void drawActionBook(Book32Display& display, int x, int y, int w, int h, LibraryButton action);
-    bool shelfAction() const { return _home && libraryButton() != LibraryButton::NONE; }
+    bool shelfAction() const { return libraryButton() != LibraryButton::NONE; }
     // Shelf items are numbered page * LIBRARY_PER_PAGE + slot. With an action
     // book, each page holds up to eight books and then the action's book, so
     // it ends every page: bottom right when the page is full.
@@ -102,7 +102,7 @@ private:
     int bookOfItem(int item) const;  // the book, -1 for the action's book, -2 an empty place
     int lastItem() const;            // the last item, -1 when the shelf is empty
     LibraryButton _drawnButton = LibraryButton::NONE;
-    void pressLibraryButton();
+    void pressLibraryButton(LibraryButton action);
     void loadBookCover(BookEntry& book, int width, int height);
     // Decoded covers persist in /.covers so a book is only decoded once per
     // upload instead of after every restart.

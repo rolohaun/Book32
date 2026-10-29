@@ -12,12 +12,13 @@
 #include "HomeServices.h"
 #include "HomeFooter.h"
 
+// No title: the tiles start near the top; the footer names InkDeck.
 #if defined(BOARD_SEEED_STICKY)
 // With Inkade the Sticky and Book32 have five tiles: three tighter rows end above the
 // footer on its 800 px screen.
-static constexpr int MENU_START_Y = 120, MENU_ROW_HEIGHT = 200;
+static constexpr int MENU_START_Y = 40, MENU_ROW_HEIGHT = 200;
 #else
-static constexpr int MENU_START_Y = 180, MENU_ROW_HEIGHT = 240;
+static constexpr int MENU_START_Y = 40, MENU_ROW_HEIGHT = 240;
 #endif
 // The footer's partial refresh: the Book32's hint line over the home footer.
 static constexpr int FOOTER_H = BOOK32_HAS_TOUCH ? HomeFooter::HEIGHT + 6 : HomeFooter::HEIGHT + 34;
@@ -236,9 +237,6 @@ void AppMainMenu::draw() {
     do {
         display.fillScreen(GxEPD_WHITE);
         display.setTextColor(GxEPD_BLACK);
-
-        // === Title; the version and battery are in the footer ===
-        fontMgr.drawText(display, "InkDeck", 15, 35, FONT_SIZE_SUBTITLE, GxEPD_BLACK);
 
         // === App Icons Grid ===
         int colWidth = screenW / COLS;

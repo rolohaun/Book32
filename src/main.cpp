@@ -153,6 +153,11 @@ void setup() {
         }
     }
 #endif
+#if defined(BOARD_LILYGO_T5S3_PRO)
+    // Release the touch, LoRa and SD pins held through deep sleep (the
+    // display releases the frontlight's own hold).
+    for (int pin : {TOUCH_RST, 1, 46, SD_CS}) gpio_hold_dis(static_cast<gpio_num_t>(pin));
+#endif
 #if defined(BOARD_SEEED_STICKY)
     const bool wokeFromPowerButton =
         esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_EXT1;

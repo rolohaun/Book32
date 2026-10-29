@@ -18,6 +18,7 @@
 #include <driver/rtc_io.h>
 #if defined(BOARD_LILYGO_T5S3_PRO)
 #include <Wire.h>
+#include <SPI.h>
 static bool lilygoGaugeWord(uint8_t reg, uint16_t& value) {
     Wire.beginTransmission(0x55);
     Wire.write(reg);
@@ -45,7 +46,6 @@ static int voltageToPercentage(float voltage) {
                  (BATTERY_FULL_VOLTAGE - BATTERY_EMPTY_VOLTAGE)) * 100.0f + 0.5f);
 }
 
-#if !defined(BOARD_LILYGO_T5S3_PRO)
 // Drive a pin to a fixed level and keep it there through deep sleep.
 static void holdSleepPin(int pin, uint8_t level) {
     const gpio_num_t gpio = static_cast<gpio_num_t>(pin);
@@ -53,6 +53,37 @@ static void holdSleepPin(int pin, uint8_t level) {
     pinMode(pin, OUTPUT);
     digitalWrite(pin, level);
     gpio_hold_en(gpio);
+}
+
+#if defined(BOARD_LILYGO_T5S3_PRO)
+// LILYGO's own deep sleep puts the SX1262 LoRa radio to sleep: out of reset it
+// idles in standby (about 0.6 mA) for as long as the battery lasts. Boards
+// without the radio just see an ignored SPI write.
+static void sleepLoraRadio() {
+    constexpr int LORA_CS = 46, LORA_BUSY = 47;
+    pinMode(LORA_BUSY, INPUT);
+    for (int i = 0; i < 20 && digitalRead(LORA_BUSY) == HIGH; ++i) delay(1);
+    SPI.beginTransaction(SPISettings(1000000, MSBFIRST, SPI_MODE0));
+    digitalWrite(LORA_CS, LOW);
+    SPI.transfer(0x84);  // SetSleep, cold start: the radio needs no state
+    SPI.transfer(0x00);
+    digitalWrite(LORA_CS, HIGH);
+    SPI.endTransaction();
+    delay(2);
+}
+
+// The BQ25896 charger: leave its ADC in one-shot mode (REG02 bit 6) so it
+// does not convert every second while the board sleeps.
+static void stopChargerAdc() {
+    Wire.beginTransmission(0x6B);
+    Wire.write(0x02);
+    if (Wire.endTransmission(false) != 0 || Wire.requestFrom(0x6B, 1) != 1) return;
+    const uint8_t reg = Wire.read();
+    if (!(reg & 0xC0)) return;
+    Wire.beginTransmission(0x6B);
+    Wire.write(0x02);
+    Wire.write(reg & ~0xC0);
+    Wire.endTransmission();
 }
 #endif
 
@@ -505,10 +536,20 @@ void BatteryMgr::enterIdleSleep() {
 
 #if defined(BOARD_LILYGO_T5S3_PRO)
     display.hibernate();
+    sleepLoraRadio();
+    stopChargerAdc();
     endEbookStorageForSleep();
     pinMode(PIN_BUTTON, INPUT_PULLUP);
     while (digitalRead(PIN_BUTTON) == LOW) delay(20);
     esp_sleep_enable_ext0_wakeup((gpio_num_t)PIN_BUTTON, 0);
+    // Without holds these float in deep sleep: the GT911 would leave reset
+    // and scan for touches all night, and the SD card and radio would see
+    // their chip selects drift. LILYGO holds both resets low too.
+    holdSleepPin(TOUCH_RST, LOW);
+    holdSleepPin(1, LOW);   // LoRa reset
+    holdSleepPin(46, HIGH); // LoRa chip select
+    holdSleepPin(SD_CS, HIGH);
+    gpio_deep_sleep_hold_en();
 #elif defined(BOARD_SEEED_STICKY)
     display.hibernate();
     endEbookStorageForSleep();

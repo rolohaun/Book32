@@ -59,6 +59,14 @@ bool StickyTouch::begin() {
 void StickyTouch::stop() {
     // Stop all I2C traffic before the touch rail is removed. Holding reset low
     // also prevents the unpowered GT911 from being back-fed through a signal.
+#if defined(BOARD_LILYGO_T5S3_PRO)
+    // The LILYGO cannot cut the touch rail: put the GT911 to sleep first (INT
+    // low, then command 5), as LILYGO's own firmware does before deep sleep.
+    pinMode(TOUCH_INT, OUTPUT);
+    digitalWrite(TOUCH_INT, LOW);
+    writeRegister(0x8040, 0x05);
+    delay(5);
+#endif
     _address = 0;
 #if defined(BOARD_SEEED_STICKY)
     Wire.end();

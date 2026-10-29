@@ -1,6 +1,6 @@
 {
     "name":  "InkDeck for LILYGO T5 S3 Pro H752-01 (experimental)",
-    "version":  "1.4.6",
+    "version":  "1.4.7",
     "new_install_prompt_erase":  true,
     "new_install_improv_wait_time":  0,
     "builds":  [
@@ -9,23 +9,23 @@
                        "parts":  [
                                      {
                                          "offset":  0,
-                                         "path":  "firmware/inkdeck-lilygo-bootloader-v1.4.6.bin"
+                                         "path":  "firmware/inkdeck-lilygo-bootloader-v1.4.7.bin"
                                      },
                                      {
                                          "offset":  32768,
-                                         "path":  "firmware/inkdeck-lilygo-partitions-v1.4.6.bin"
+                                         "path":  "firmware/inkdeck-lilygo-partitions-v1.4.7.bin"
                                      },
                                      {
                                          "offset":  57344,
-                                         "path":  "firmware/inkdeck-lilygo-boot-app-v1.4.6.bin"
+                                         "path":  "firmware/inkdeck-lilygo-boot-app-v1.4.7.bin"
                                      },
                                      {
                                          "offset":  65536,
-                                         "path":  "firmware/inkdeck-lilygo-firmware-v1.4.6.bin"
+                                         "path":  "firmware/inkdeck-lilygo-firmware-v1.4.7.bin"
                                      },
                                      {
                                          "offset":  8454144,
-                                         "path":  "firmware/inkdeck-lilygo-littlefs-v1.4.6.bin"
+                                         "path":  "firmware/inkdeck-lilygo-littlefs-v1.4.7.bin"
                                      }
                                  ],
                        "improv":  false

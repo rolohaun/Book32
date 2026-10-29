@@ -1,5 +1,5 @@
 const ESPTOOL_MODULE_URL = 'https://unpkg.com/esptool-js@0.6.1/bundle.js';
-const RELEASE_VERSION = '1.4.6';
+const RELEASE_VERSION = '1.4.7';
 // Only USB serial chips found on ESP32 boards appear in the port picker:
 // Espressif native USB (Book32, LILYGO), WCH CH34x (the Sticky), Silicon
 // Labs CP210x and FTDI. Without filters Linux lists every /dev/ttyS* port.

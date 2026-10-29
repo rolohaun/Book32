@@ -277,7 +277,7 @@ static LibraryRect unionLibraryRect(LibraryRect a, LibraryRect b) {
 // refreshes and touch alike.
 struct Bookcase {
     static constexpr int COLS = 3, ROWS = 3, PER_PAGE = COLS * ROWS;
-    static constexpr int HEADER_H = 92, FOOTER_H = 84;
+    static constexpr int HEADER_H = 92, FOOTER_H = 96;
     static constexpr int SIDE = 22;                    // inside the case's posts
     static constexpr int PLANK_H = 12;
     int w, h;

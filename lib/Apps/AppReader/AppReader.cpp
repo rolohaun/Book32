@@ -275,7 +275,7 @@ static LibraryRect unionLibraryRect(LibraryRect a, LibraryRect b) {
 // refreshes and touch alike.
 struct Bookcase {
     static constexpr int COLS = 3, ROWS = 3, PER_PAGE = COLS * ROWS;
-    static constexpr int HEADER_H = 92, FOOTER_H = 72;
+    static constexpr int HEADER_H = 92, FOOTER_H = 84;
     static constexpr int SIDE = 22;                    // inside the case's posts
     static constexpr int PLANK_H = 12;
     int w, h;
@@ -1338,17 +1338,19 @@ static void drawPlank(Book32Display& display, int x, int y, int w) {
     display.fillRect(x, y + Bookcase::PLANK_H - 2, w, 2, GxEPD_BLACK);
 }
 
-static void drawBattery(Book32Display& display, int x, int y) {
+// A compact battery: four upright bars, one filled per quarter of charge,
+// with the percentage to their right. `baseline` is the text's baseline.
+static void drawBattery(Book32Display& display, int x, int baseline) {
     const BatteryStatus bat = BatteryMgr::getInstance().getStatus();
-    display.drawRect(x, y, 40, 20, GxEPD_BLACK);
-    display.fillRect(x + 40, y + 5, 3, 10, GxEPD_BLACK);
-    const int fillWidth = constrain((bat.percentage * 36) / 100, 0, 36);
-    if (bat.percentage > 0) display.fillRect(x + 2, y + 2, fillWidth, 16, GxEPD_BLACK);
-    if (bat.charging) {
-        display.drawLine(x + 20, y + 2, x + 14, y + 10, GxEPD_WHITE);
-        display.drawLine(x + 14, y + 10, x + 24, y + 10, GxEPD_WHITE);
-        display.drawLine(x + 24, y + 10, x + 18, y + 18, GxEPD_WHITE);
+    const int filled = constrain((bat.percentage + 24) / 25, 0, 4);
+    for (int bar = 0; bar < 4; ++bar) {
+        const int bx = x + bar * 7;
+        if (bar < filled) display.fillRect(bx, baseline - 13, 4, 13, GxEPD_BLACK);
+        else display.drawRect(bx, baseline - 13, 4, 13, GxEPD_BLACK);
     }
+    char text[8];
+    snprintf(text, sizeof(text), "%d%%", bat.percentage);
+    FontMgr::getInstance().drawText(display, text, x + 33, baseline, FONT_SIZE_SMALL, GxEPD_BLACK);
 }
 
 void AppReader::drawLibrary() {
@@ -1550,15 +1552,19 @@ void AppReader::drawLibrary() {
             fontMgr.drawTextCentered(display, pageText, buttonY + 20, FONT_SIZE_SMALL, GxEPD_BLACK);
         }
 #endif
-        const int bottomY = screenH - 13;
-        drawBattery(display, screenW - 62, screenH - 31);
+        // Two lines in each bottom corner, 22 px from the edges: InkDeck's
+        // version over the battery on the left, the web page's address under
+        // "Dashboard" on the right (at home; Wi-Fi notices stand alone).
+        const int bottomY = screenH - 10, upperY = bottomY - 24;
+        drawBattery(display, 22, bottomY);
         if (_home) {
-            // With no app menu, this is where InkDeck names itself.
             char version[24];
             snprintf(version, sizeof(version), "InkDeck v%s", SYSTEM_VERSION);
-            fontMgr.drawText(display, version, 22, bottomY, FONT_SIZE_SMALL, GxEPD_BLACK);
+            fontMgr.drawText(display, version, 22, upperY, FONT_SIZE_SMALL, GxEPD_BLACK);
             const String status = HomeServices::getInstance().footerText();
-            fontMgr.drawTextRight(display, status.c_str(), screenW - 74, bottomY, FONT_SIZE_SMALL, GxEPD_BLACK);
+            if (!status.startsWith("WiFi "))  // an address, not "WiFi offline" or "WiFi starting"
+                fontMgr.drawTextRight(display, "Dashboard", screenW - 22, upperY, FONT_SIZE_SMALL, GxEPD_BLACK);
+            fontMgr.drawTextRight(display, status.c_str(), screenW - 22, bottomY, FONT_SIZE_SMALL, GxEPD_BLACK);
         }
 
     } while (display.nextPage());

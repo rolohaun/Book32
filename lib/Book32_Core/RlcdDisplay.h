@@ -54,6 +54,9 @@ public:
     // 0 or 2: the landscape rotation the game is played in.
     void setGameRotation(uint8_t rotation) { _gameRotation = rotation == 2 ? 2 : 0; }
     bool refreshGame(bool clean = false, bool smooth = true);
+    // A controller command straight from the serial console ("lcd B2 12"),
+    // for tuning contrast and frame rate by eye; then the picture is resent.
+    void tune(uint8_t cmd, const uint8_t* data, size_t length) { command(cmd, data, length); flush(); }
 
 private:
     SPIClass _spi;

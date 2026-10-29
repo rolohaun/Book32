@@ -143,6 +143,22 @@ void InputMgr::pollSerialCommands() {
             if (a != INPUT_NONE) enqueueAction(a);
             Serial.printf("Serial: key %s\n", k);
         }
+#if defined(BOARD_WAVESHARE_RLCD42)
+        else if (!strncmp(line, "lcd ", 4)) {
+            // lcd CMD [DATA...], hex bytes: a raw ST7305 command.
+            uint8_t bytes[12];
+            size_t count = 0;
+            for (char* p = const_cast<char*>(line + 4); *p && count < sizeof(bytes);) {
+                char* end;
+                const unsigned long v = strtoul(p, &end, 16);
+                if (end == p) break;
+                bytes[count++] = uint8_t(v);
+                p = end;
+            }
+            if (count) DisplayMgr::getInstance().getDisplay().tune(bytes[0], bytes + 1, count - 1);
+            Serial.printf("Serial: %s\n", line);
+        }
+#endif
         else if (!strcmp(line, "cover")) {
             _serialLine = "";
             Serial.printf("Serial: cover %s\n", BatteryMgr::getInstance().previewSleepCover() ? "drawn" : "unavailable");

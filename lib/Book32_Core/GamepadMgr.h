@@ -51,6 +51,8 @@ public:
     // Raw HID button bits of the last report (for diagnostics and mapping).
     uint32_t rawButtons() const { return _raw.load(); }
     unsigned long lastInputAt() const { return _lastInputAt.load(); }
+    // Bluetooth is running: Wi-Fi must then keep modem sleep.
+    bool radioOn() const { return _radioOn; }
 
     // Games read raw buttons; menus get key actions (with auto-repeat).
     void setRawMode(bool raw) { _rawMode = raw; }
@@ -87,7 +89,7 @@ private:
     std::atomic<bool> _stopping{false};
     uint32_t _scanSeconds = 8;
     bool _rawMode = false;
-    bool _radioOn = false;
+    volatile bool _radioOn = false;
     TaskHandle_t _task = nullptr;
     SemaphoreHandle_t _lock = nullptr;
     std::vector<Found> _found;

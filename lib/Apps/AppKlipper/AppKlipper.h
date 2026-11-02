@@ -88,7 +88,8 @@ private:
     void addFoundPrinter(const String& ip, uint16_t port);
     // Printers found before are tried first, so reopening the app is instant.
     std::vector<String> loadKnownPrinters();
-    void saveKnownPrinters(const std::vector<PrinterInfo>& printers);
+    void saveKnownPrinters(const std::vector<String>& ips);
+    volatile bool _knownReady = false;  // Known printers answered; the sweep goes on
     volatile bool _waitingForWifi = false;  // Scan starts once Wi-Fi connects
     bool _restoreWifiSleep = false;
     void drawScanning();

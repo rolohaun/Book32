@@ -2,6 +2,7 @@
 
 #include <NimBLEDevice.h>
 #include <Preferences.h>
+#include <WiFi.h>
 
 namespace {
 const NimBLEUUID HID_SERVICE(static_cast<uint16_t>(0x1812));
@@ -113,6 +114,9 @@ void GamepadMgr::shutdown() {
 
 bool GamepadMgr::startRadio() {
     if (_radioOn) return true;
+    // Wi-Fi and Bluetooth share the radio: with modem sleep off (Klipper
+    // turns it off for faster scans) the Wi-Fi driver aborts.
+    if (!WiFi.getSleep()) WiFi.setSleep(true);
     NimBLEDevice::init("InkDeck");
     NimBLEDevice::setPower(ESP_PWR_LVL_P6);
     // Bond without a passkey: gamepads have no display or keypad.

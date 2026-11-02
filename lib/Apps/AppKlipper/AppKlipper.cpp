@@ -3,6 +3,7 @@
 #include "AppMgr.h"
 #include "FontMgr.h"
 #include "Book32FS.h"
+#include "GamepadMgr.h"
 #include "icon_klipper.h"
 #include <WiFi.h>
 #include <HTTPClient.h>
@@ -16,6 +17,7 @@
 #include <lwip/netif.h>
 #include <lwip/tcpip.h>
 #include <errno.h>
+#include <algorithm>
 
 // Scan interval (30 seconds)
 static const unsigned long SCAN_INTERVAL = 30000;
@@ -86,10 +88,14 @@ void AppKlipper::start() {
     // here left it subscribed while idle and rebooted the device ~5s later.
 
     // Modem sleep only wakes the radio every beacon interval, which makes the
-    // first contact with each host slow enough to miss. Keep it awake here.
+    // first contact with each host slow enough to miss. Keep it awake here,
+    // unless Bluetooth is on: the Wi-Fi driver aborts without modem sleep then.
     _waitingForWifi = false;
-    _restoreWifiSleep = WiFi.getSleep();
-    WiFi.setSleep(false);
+    _restoreWifiSleep = false;
+    if (!GamepadMgr::getInstance().radioOn() && WiFi.getSleep()) {
+        _restoreWifiSleep = true;
+        WiFi.setSleep(false);
+    }
 
     // Reload settings in case they changed
     loadSettings();
@@ -114,6 +120,7 @@ void AppKlipper::stop() {
         _scanTaskHandle = NULL;
     }
     _scanning = false;
+    _knownReady = false;
     _waitingForWifi = false;
     _printers.clear();
     _foundPrinters.clear();
@@ -148,12 +155,26 @@ void AppKlipper::update() {
 
     if (_waitingForWifi && WiFi.status() == WL_CONNECTED) startScan();
 
+    // Printers known from before answered: list them while the sweep goes on.
+    if (_knownReady) {
+        _printers = _foundPrinters;
+        _knownReady = false;
+        Serial.printf("Known printers: %d, still sweeping\n", (int)_printers.size());
+        _state = KLIPPER_LIST;
+        _firstDraw = true;
+        for (auto& printer : _printers) fetchPrinterStatus(printer);
+        _lastUpdateTime = now;
+        _needsRedraw = true;
+    }
+
     // Check if background scan completed
     if (_scanComplete) {
         _scanComplete = false;
         _scanning = false;
 
-        // Transfer found printers to main list
+        // Transfer found printers to main list (the known ones may already be
+        // listed: only a new printer needs a repaint).
+        const bool changed = _state != KLIPPER_LIST || _printers.size() != _foundPrinters.size();
         _printers = _foundPrinters;
         _foundPrinters.clear();
 
@@ -163,21 +184,22 @@ void AppKlipper::update() {
         Serial.printf("Scan complete: found %d printers\n", (int)_printers.size());
 
         // Transition to list view if we found printers
-        if (!_printers.empty()) {
+        if (!_printers.empty() && changed) {
             _state = KLIPPER_LIST;
             _firstDraw = true;
             // Fetch initial status for all printers
             for (auto& printer : _printers) {
                 fetchPrinterStatus(printer);
             }
+            _lastUpdateTime = now;
         }
 
-        _needsRedraw = true;
+        if (changed) _needsRedraw = true;
     }
 
     // E-ink progress updates are intentionally coarse: repaint only after
     // another ten addresses have completed instead of flashing for every IP.
-    if (_scanning && (_scannedIPs / 10) > _lastDisplayedScanChunk) {
+    if (_scanning && _state == KLIPPER_SCANNING && (_scannedIPs / 10) > _lastDisplayedScanChunk) {
         _lastDisplayedScanChunk = _scannedIPs / 10;
         _needsRedraw = true;
     }
@@ -280,19 +302,31 @@ void AppKlipper::scanTask() {
     Serial.println("Scan task started on core " + String(xPortGetCoreID()));
     const unsigned long startedAt = millis();
 
-    // Printers found before answer first, so reopening the app skips the sweep.
-    for (const String& ip : loadKnownPrinters()) {
+    // Printers found before answer first and show at once; the sweep still
+    // runs so a printer switched on since then joins the list.
+    const std::vector<String> known = loadKnownPrinters();
+    for (const String& ip : known) {
         if (probeMoonraker(ip, MOONRAKER_PORT)) addFoundPrinter(ip, MOONRAKER_PORT);
     }
-
-    if (_foundPrinters.empty()) {
-        Serial.printf("Local IP: %s, sweeping subnet for Moonraker...\n", WiFi.localIP().toString().c_str());
-        for (const String& ip : sweepForMoonraker(MOONRAKER_PORT)) {
-            if ((int)_foundPrinters.size() >= MAX_PRINTERS) break;
-            addFoundPrinter(ip, MOONRAKER_PORT);
-        }
-        if (!_foundPrinters.empty()) saveKnownPrinters(_foundPrinters);
+    if (!_foundPrinters.empty()) {
+        _knownReady = true;
+        // update() copies _foundPrinters; leave it alone until then.
+        while (_knownReady) vTaskDelay(pdMS_TO_TICKS(20));
     }
+
+    Serial.printf("Local IP: %s, sweeping subnet for Moonraker...\n", WiFi.localIP().toString().c_str());
+    for (const String& ip : sweepForMoonraker(MOONRAKER_PORT)) {
+        if ((int)_foundPrinters.size() >= MAX_PRINTERS) break;
+        addFoundPrinter(ip, MOONRAKER_PORT);
+    }
+    // Keep known printers that are only switched off for now.
+    std::vector<String> remembered = known;
+    for (const auto& printer : _foundPrinters) {
+        if (std::find(remembered.begin(), remembered.end(), printer.ip) == remembered.end()) {
+            remembered.push_back(printer.ip);
+        }
+    }
+    if (remembered != known) saveKnownPrinters(remembered);
 
     Serial.printf("Scan task complete in %lums: %d printers found\n",
                   millis() - startedAt, (int)_foundPrinters.size());
@@ -514,10 +548,10 @@ std::vector<String> AppKlipper::loadKnownPrinters() {
     return known;
 }
 
-void AppKlipper::saveKnownPrinters(const std::vector<PrinterInfo>& printers) {
+void AppKlipper::saveKnownPrinters(const std::vector<String>& ips) {
     DynamicJsonDocument doc(1024);
     JsonArray list = doc.createNestedArray("printers");
-    for (const auto& printer : printers) list.add(printer.ip);
+    for (const String& ip : ips) list.add(ip);
     File file = EbookFS.open(KNOWN_PRINTERS_PATH, FILE_WRITE);
     if (!file) return;
     serializeJson(doc, file);

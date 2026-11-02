@@ -50,6 +50,10 @@ first-time setup page has closed.
 - LILYGO: sleep used more battery than on the Sticky. The touch controller and
   LoRa radio are now put to sleep, their reset lines are held, and the
   charger's ADC is stopped before deep sleep.
+- Klipper: opening it restarted InkDeck when a Bluetooth keyboard or gamepad
+  was paired; it now opens normally.
+- Klipper: printers found before still show at once, but the network search
+  now always runs too, so a printer switched on since the last scan is found.
 - Sleep screen: "Book cover only" is a third choice beside cover with message
   and message only.
 

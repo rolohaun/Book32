@@ -4,6 +4,9 @@
 #include <WiFi.h>
 #include <LittleFS.h>
 #include <esp_partition.h>
+#include <lwip/sockets.h>
+#include <lwip/priv/tcp_priv.h>
+#include <lwip/priv/tcpip_priv.h>
 #include "../Book32_Core/Book32FS.h"
 #include "../Book32_Update/GitHubMgr.h"
 #include "../Book32_Core/BatteryMgr.h"
@@ -16,6 +19,8 @@
 #include "RomUpload.h"
 #include "LilygoControls.h"
 #include "../Book32_Core/GamepadMgr.h"
+#include "../Book32_Core/AppSelection.h"
+#include "../Book32_Core/ShelfName.h"
 
 static const char* READER_PROGRESS_PATH = "/reader_progress.json";
 
@@ -165,6 +170,36 @@ void WebMgr::mountFilesystems() {
     Serial.println("============================\n");
 }
 
+// The Wi-Fi setup page closes its connections first, so they wait in TIME_WAIT
+// on port 80 for up to two minutes and block our bind. Those belong to a page
+// that is gone, so drop them (on the lwIP thread, which owns the list).
+struct DropTimeWait {
+    tcpip_api_call_data call;
+    uint16_t port;
+};
+
+static err_t dropTimeWaitOnLwip(tcpip_api_call_data* call) {
+    const uint16_t port = reinterpret_cast<DropTimeWait*>(call)->port;
+    for (tcp_pcb* pcb = tcp_tw_pcbs; pcb;) {
+        tcp_pcb* next = pcb->next;
+        if (pcb->local_port == port) tcp_abort(pcb);
+        pcb = next;
+    }
+    return ERR_OK;
+}
+
+static bool portFree(uint16_t port) {
+    const int s = lwip_socket(AF_INET, SOCK_STREAM, 0);
+    if (s < 0) return true;  // Let the server try
+    sockaddr_in addr = {};
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(port);
+    addr.sin_addr.s_addr = htonl(INADDR_ANY);
+    const bool bound = lwip_bind(s, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == 0;
+    lwip_close(s);
+    return bound;
+}
+
 void WebMgr::init() {
     if (_initialized) return;
     if (!_endpointsConfigured) {
@@ -174,6 +209,20 @@ void WebMgr::init() {
 #endif
         setupEndpoints();
         _endpointsConfigured = true;
+    }
+    // AsyncTCP keeps a freed connection after a failed bind and frees it again
+    // in end(), so only start when port 80 can be had.
+    DropTimeWait drop = {};
+    drop.port = 80;
+    tcpip_api_call(dropTimeWaitOnLwip, &drop.call);
+    bool available = portFree(80);
+    for (int tries = 0; !available && tries < 20; ++tries) {
+        delay(250);
+        available = portFree(80);
+    }
+    if (!available) {
+        Serial.println("Web Server not started: port 80 is busy");
+        return;
     }
     server->begin();
     _initialized = true;
@@ -433,8 +482,15 @@ void WebMgr::setupEndpoints() {
         doc["voltage"] = BatteryMgr::getInstance().getVoltage();
         doc["charging"] = BatteryMgr::getInstance().isCharging();
         doc["version"] = SYSTEM_VERSION;
+        {
+            AppSelection& apps = AppSelection::getInstance();
+            JsonObject enabled = doc.createNestedObject("apps");
+            enabled["todo"] = apps.enabled(AppSelection::TODO);
+            enabled["klipper"] = apps.enabled(AppSelection::KLIPPER);
+            enabled["inkade"] = BOOK32_HAS_INKBOY && apps.enabled(AppSelection::INKADE);
+        }
 #if BOOK32_HAS_INKBOY
-        doc["romUpload"] = true;
+        doc["romUpload"] = AppSelection::getInstance().enabled(AppSelection::INKADE);
         doc["romMaxBytes"] = INK_ROM_MAX_BYTES;
 #endif
 #if defined(BOARD_LILYGO_T5S3_PRO)
@@ -687,7 +743,7 @@ void WebMgr::setupEndpoints() {
             if (!deserializeJson(savedDoc, file)) {
                 doc["refreshFrequency"] = savedDoc["refreshFrequency"] | READER_FULL_REFRESH_INTERVAL_DEFAULT;
                 doc["fontSize"] = savedDoc["fontSize"] | READER_FONT_SIZE_DEFAULT;
-                doc["fontFamily"] = savedDoc["fontFamily"] | "native";
+                doc["fontFamily"] = savedDoc["fontFamily"] | READER_FONT_FAMILY_DEFAULT;
                 doc["showChapter"] = savedDoc["showChapter"] | true;
                 doc["showPageNumber"] = savedDoc["showPageNumber"] | true;
                 doc["showReadingPercentage"] = savedDoc["showReadingPercentage"] | true;
@@ -697,7 +753,7 @@ void WebMgr::setupEndpoints() {
             } else {
                 doc["refreshFrequency"] = READER_FULL_REFRESH_INTERVAL_DEFAULT;
                 doc["fontSize"] = READER_FONT_SIZE_DEFAULT;
-                doc["fontFamily"] = "native";
+                doc["fontFamily"] = READER_FONT_FAMILY_DEFAULT;
                 doc["showChapter"] = true;
                 doc["showPageNumber"] = true;
                 doc["showReadingPercentage"] = true;
@@ -706,7 +762,7 @@ void WebMgr::setupEndpoints() {
         } else {
             doc["refreshFrequency"] = READER_FULL_REFRESH_INTERVAL_DEFAULT;
             doc["fontSize"] = READER_FONT_SIZE_DEFAULT;
-            doc["fontFamily"] = "native";
+            doc["fontFamily"] = READER_FONT_FAMILY_DEFAULT;
             doc["showChapter"] = true;
             doc["showPageNumber"] = true;
             doc["showReadingPercentage"] = true;
@@ -723,7 +779,7 @@ void WebMgr::setupEndpoints() {
             DynamicJsonDocument doc(512);
             doc["refreshFrequency"] = READER_FULL_REFRESH_INTERVAL_DEFAULT;
             doc["fontSize"] = READER_FONT_SIZE_DEFAULT;
-            doc["fontFamily"] = "native";
+            doc["fontFamily"] = READER_FONT_FAMILY_DEFAULT;
             doc["showChapter"] = true;
             doc["showPageNumber"] = true;
             doc["showReadingPercentage"] = true;
@@ -734,7 +790,7 @@ void WebMgr::setupEndpoints() {
                     if (!deserializeJson(savedDoc, existing)) {
                         doc["refreshFrequency"] = savedDoc["refreshFrequency"] | READER_FULL_REFRESH_INTERVAL_DEFAULT;
                         doc["fontSize"] = savedDoc["fontSize"] | READER_FONT_SIZE_DEFAULT;
-                        doc["fontFamily"] = savedDoc["fontFamily"] | "native";
+                        doc["fontFamily"] = savedDoc["fontFamily"] | READER_FONT_FAMILY_DEFAULT;
                         doc["showChapter"] = savedDoc["showChapter"] | true;
                         doc["showPageNumber"] = savedDoc["showPageNumber"] | true;
                         doc["showReadingPercentage"] = savedDoc["showReadingPercentage"] | true;
@@ -757,7 +813,7 @@ void WebMgr::setupEndpoints() {
                 WebMgr::getInstance()._pendingReaderFontSize = pt;
             }
             if (json.containsKey("fontFamily")) {
-                const char* requestedFamily = json["fontFamily"] | "native";
+                const char* requestedFamily = json["fontFamily"] | READER_FONT_FAMILY_DEFAULT;
                 bool useOpenSans = strcmp(requestedFamily, "openSans") == 0;
                 doc["fontFamily"] = useOpenSans ? "openSans" : "native";
                 WebMgr::getInstance()._pendingReaderFontFamily = useOpenSans ? 1 : 0;
@@ -843,6 +899,61 @@ void WebMgr::setupEndpoints() {
         }
     );
     server->addHandler(displaySettingsHandler);
+
+    // API: Optional apps. Saving restarts InkDeck, which registers its apps at
+    // boot; with none the library becomes the home screen.
+    server->on("/api/apps", HTTP_GET, [](AsyncWebServerRequest *request) {
+        AsyncResponseStream *response = request->beginResponseStream("application/json");
+        DynamicJsonDocument doc(256);
+        AppSelection& apps = AppSelection::getInstance();
+        doc["todo"] = apps.enabled(AppSelection::TODO);
+        doc["klipper"] = apps.enabled(AppSelection::KLIPPER);
+        doc["inkade"] = BOOK32_HAS_INKBOY && apps.enabled(AppSelection::INKADE);
+        doc["inkadeAvailable"] = bool(BOOK32_HAS_INKBOY);
+        serializeJson(doc, *response);
+        request->send(response);
+    });
+
+    AsyncCallbackJsonWebHandler* appsHandler = new AsyncCallbackJsonWebHandler("/api/apps",
+        [](AsyncWebServerRequest *request, JsonVariant &json) {
+            uint8_t mask = 0;
+            if (json["todo"] | false) mask |= AppSelection::TODO;
+            if (json["klipper"] | false) mask |= AppSelection::KLIPPER;
+            if (json["inkade"] | false) mask |= AppSelection::INKADE;
+            if (!AppSelection::getInstance().save(mask)) {
+                request->send(500, "application/json", "{\"status\":\"error\"}");
+                return;
+            }
+            request->send(200, "application/json", "{\"status\":\"ok\"}");
+            Serial.printf("Apps: saved 0x%02X from the web page; restarting\n", mask);
+            xTaskCreate([](void*) {
+                vTaskDelay(pdMS_TO_TICKS(1500));  // Let the reply reach the browser
+                ESP.restart();
+            }, "AppsRestart", 2048, nullptr, 1, nullptr);
+        }
+    );
+    server->addHandler(appsHandler);
+
+    // API: The owner's name on the bookshelf ("Ron's Bookshelf").
+    server->on("/api/settings/shelf", HTTP_GET, [](AsyncWebServerRequest *request) {
+        AsyncResponseStream *response = request->beginResponseStream("application/json");
+        DynamicJsonDocument doc(128);
+        doc["name"] = ShelfName::name();
+        doc["maxLength"] = ShelfName::MAX_LENGTH;
+        serializeJson(doc, *response);
+        request->send(response);
+    });
+
+    AsyncCallbackJsonWebHandler* shelfHandler = new AsyncCallbackJsonWebHandler("/api/settings/shelf",
+        [](AsyncWebServerRequest *request, JsonVariant &json) {
+            if (!ShelfName::save(json["name"] | "")) {
+                request->send(500, "application/json", "{\"status\":\"error\"}");
+                return;
+            }
+            request->send(200, "application/json", "{\"status\":\"ok\"}");
+        }
+    );
+    server->addHandler(shelfHandler);
 
     // API: Touch sounds. Unsupported hardware reports itself so the web UI can
     // hide the control instead of presenting a setting that cannot take effect.
@@ -1018,7 +1129,7 @@ void WebMgr::setupEndpoints() {
                     const char* savedMessage = savedDoc["sleepMessage"] | SLEEP_MESSAGE_DEFAULT;
                     doc["sleepMessage"] = sleepMessageNeedsMigration(savedDoc["configVersion"] | 1, savedMessage)
                                                ? SLEEP_MESSAGE_DEFAULT : savedMessage;
-                    doc["sleepScreen"] = savedDoc["sleepScreen"] | "cover";
+                    doc["sleepScreen"] = sleepScreenName(sleepScreenFromName(savedDoc["sleepScreen"] | "cover"));
                 } else {
                     doc["sleepTimeout"] = SLEEP_TIMEOUT_DEFAULT_MINUTES;
                     doc["sleepMessage"] = SLEEP_MESSAGE_DEFAULT;
@@ -1050,7 +1161,7 @@ void WebMgr::setupEndpoints() {
             doc["configVersion"] = SLEEP_CONFIG_VERSION;
 
             if (json.containsKey("sleepScreen")) {
-                doc["sleepScreen"] = strcmp(json["sleepScreen"] | "cover", "message") == 0 ? "message" : "cover";
+                doc["sleepScreen"] = sleepScreenName(sleepScreenFromName(json["sleepScreen"] | "cover"));
             }
             if (json.containsKey("sleepTimeout")) {
                 doc["sleepTimeout"] = json["sleepTimeout"].as<int>();

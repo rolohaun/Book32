@@ -19,12 +19,12 @@
                     <li><button class="active" data-tab="dashboard" onclick="showTab('dashboard')"><span>⌂</span>Dashboard</button></li>
                     <li><button data-tab="ereader" onclick="showTab('ereader')"><span>▤</span>Ereader</button></li>
                     <li id="games-nav" class="hidden"><button data-tab="games" onclick="showTab('games')"><span>⊞</span>Game ROMs</button></li>
-                    <li><button data-tab="klipper" onclick="showTab('klipper')"><span>◫</span>Klipper</button></li>
-                    <li><button data-tab="todo" onclick="showTab('todo')"><span>✓</span>Todo</button></li>
+                    <li id="klipper-nav"><button data-tab="klipper" onclick="showTab('klipper')"><span>◫</span>Klipper</button></li>
+                    <li id="todo-nav"><button data-tab="todo" onclick="showTab('todo')"><span>✓</span>Todo</button></li>
                     <li><button data-tab="settings" onclick="showTab('settings')"><span>⚙</span>Settings</button></li>
                 </ul>
             </nav>
-            <div class="version">InkDeck v<span id="version-display">1.4.4</span></div>
+            <div class="version">InkDeck v<span id="version-display">1.4.7</span></div>
         </aside>
 
         <main class="content">
@@ -49,8 +49,8 @@
                     <fieldset class="choice-fieldset">
                         <legend>Reading font</legend>
                         <div class="choice-grid two-up">
-                            <label class="choice-card font-choice" for="font-native"><input type="radio" id="font-native" name="font-family" value="native" checked><span class="choice-check">✓</span><span class="font-preview native-preview">Ag</span><strong>Native</strong><small>Built-in FreeSans</small></label>
-                            <label class="choice-card font-choice" for="font-open-sans"><input type="radio" id="font-open-sans" name="font-family" value="openSans"><span class="choice-check">✓</span><span class="font-preview open-sans-preview">Ag</span><strong>Open Sans</strong><small>Clean and highly readable</small></label>
+                            <label class="choice-card font-choice" for="font-native"><input type="radio" id="font-native" name="font-family" value="native"><span class="choice-check">✓</span><span class="font-preview native-preview">Ag</span><strong>Native</strong><small>Built-in FreeSans</small></label>
+                            <label class="choice-card font-choice" for="font-open-sans"><input type="radio" id="font-open-sans" name="font-family" value="openSans" checked><span class="choice-check">✓</span><span class="font-preview open-sans-preview">Ag</span><strong>Open Sans</strong><small>Clean and highly readable</small></label>
                         </div>
                     </fieldset>
                     <fieldset class="choice-fieldset">
@@ -106,7 +106,7 @@
                         <div id="rom-status" class="status-msg" role="status" aria-live="polite"></div>
                     </article>
                     <article class="card section-card">
-                        <div class="card-heading"><div><h2>Your games</h2><p>Open Inkade on the device after uploading. Wi-Fi is paused while that app is open; return to the home screen to upload more.</p><p>InkDeck is open-source software. Game Boy/GBC and NES support save slots and automatic resume. <a href="https://github.com/rolohaun/Book32/tree/v1.4.4" target="_blank" rel="noopener noreferrer">Complete source and license notices</a>.</p></div></div>
+                        <div class="card-heading"><div><h2>Your games</h2><p>Open Inkade on the device after uploading. Wi-Fi is paused while that app is open; return to the home screen to upload more.</p><p>InkDeck is open-source software. Game Boy/GBC and NES support save slots and automatic resume. <a href="https://github.com/rolohaun/Book32/tree/v1.4.7" target="_blank" rel="noopener noreferrer">Complete source and license notices</a>.</p></div></div>
                         <button id="rom-refresh-button" class="btn secondary" onclick="fetchRoms()">Refresh list</button>
                         <p class="hint">Deleting a ROM keeps its saved games. Upload the same filename again to reuse them.</p>
                         <div id="rom-list"><p class="hint">Choose this tab to load your games.</p></div>
@@ -132,15 +132,38 @@
 
             <section id="settings" class="tab-content">
                 <div class="page-heading"><p class="eyebrow">InkDeck</p><h1>Device settings</h1><p>Adjust sleep behavior, touch feedback, orientation, and software updates.</p></div>
+                <article id="wifi-card" class="card section-card">
+                    <div class="card-heading"><div><h2>Wi-Fi network</h2><p>Join your home Wi-Fi. InkDeck remembers it and connects on its own from then on.</p></div></div>
+                    <p id="wifi-status" class="status-msg" role="status">Loading...</p>
+                    <div class="action-row"><button class="btn primary" onclick="scanWifi()">Scan for networks</button></div>
+                    <ul id="wifi-found" class="gamepad-list"></ul>
+                    <label class="text-field" for="wifi-ssid"><span>Network name</span><input type="text" id="wifi-ssid" maxlength="32" placeholder="Pick one above or type it"></label>
+                    <label class="text-field" for="wifi-password"><span>Password</span><input type="password" id="wifi-password" maxlength="63" placeholder="Leave empty for an open network"></label>
+                    <div class="action-row"><button class="btn primary" onclick="connectWifi()">Connect</button></div>
+                </article>
+                <article class="card section-card">
+                    <div class="card-heading"><div><h2>Your bookshelf</h2><p>Your name goes on the library's title, as in "Ron's Bookshelf". Leave it empty for "My Bookshelf".</p></div></div>
+                    <label class="text-field" for="shelf-name"><span>Your name</span><input type="text" id="shelf-name" maxlength="20" placeholder="Ron"></label>
+                    <div class="action-row"><button class="btn primary" onclick="saveShelfName()">Save name</button><div id="shelf-name-status" class="status-msg" role="status"></div></div>
+                </article>
                 <article class="card section-card">
                     <div class="card-heading"><div><h2>Sleep settings</h2><p>Save battery when InkDeck is left idle.</p></div></div>
                     <div class="inline-setting"><div><label for="sleep-timeout">Idle sleep timeout</label><p>Defaults to 10 minutes. Use 0 to disable automatic sleep.</p></div><div class="number-control"><input type="number" id="sleep-timeout" min="0" max="60" value="10"><span>minutes</span></div></div>
-                    <label class="text-field" for="sleep-screen"><span>While asleep, show</span><select id="sleep-screen"><option value="cover">Cover of the book you're reading</option><option value="message">Sleep message only</option></select></label>
+                    <label class="text-field" for="sleep-screen"><span>While asleep, show</span><select id="sleep-screen"><option value="cover">Book cover and sleep message</option><option value="coverOnly">Book cover only</option><option value="message">Sleep message only</option></select></label>
                     <label class="text-field" for="sleep-message"><span>Sleep message</span><input type="text" id="sleep-message" maxlength="100" placeholder="Shown under the cover, or on its own"></label>
                     <div class="action-row"><button class="btn primary" onclick="saveSleepSettings()">Save sleep settings</button><div id="sleep-settings-status" class="status-msg" role="status"></div></div>
                 </article>
+                <article id="apps-card" class="card section-card">
+                    <div class="card-heading"><div><h2>Apps</h2><p>Choose the apps beside the eReader. With none, InkDeck opens straight to your bookshelf; with any, it opens to the app menu. Saving restarts InkDeck.</p></div></div>
+                    <fieldset class="choice-fieldset"><legend class="sr-only">Apps</legend><div class="choice-grid three-up">
+                        <label class="choice-card" for="app-todo"><input type="checkbox" id="app-todo"><span class="choice-check">✓</span><strong>Todo</strong><small>A task list on the device</small></label>
+                        <label class="choice-card" for="app-klipper"><input type="checkbox" id="app-klipper"><span class="choice-check">✓</span><strong>Klipper</strong><small>3D printer status</small></label>
+                        <label class="choice-card" id="app-inkade-choice" for="app-inkade"><input type="checkbox" id="app-inkade"><span class="choice-check">✓</span><strong>Inkade</strong><small>Game Boy, NES and Arduboy games</small></label>
+                    </div></fieldset>
+                    <div class="action-row"><button class="btn primary" onclick="saveApps()">Save and restart</button><div id="apps-status" class="status-msg" role="status"></div></div>
+                </article>
                 <article id="gamepad-card" class="card section-card">
-                    <div class="card-heading"><div><h2>Bluetooth gamepad</h2><p>Pair a Bluetooth LE gamepad for menus, the eReader and Inkade games. Put the pad in pairing mode (BLE / Android mode), then scan. Classic-only pads cannot connect.</p></div></div>
+                    <div class="card-heading"><div><h2>Bluetooth gamepad or keyboard</h2><p>Pair a Bluetooth LE gamepad or keyboard for menus, the eReader and Inkade games. Put it in pairing mode (BLE / Android mode for pads), then scan. Classic-only devices cannot connect. On a keyboard: arrows move, Enter selects (Start in games), Backspace goes back, X / Space are A, Z is B, Esc pauses, Page Up / Down turn pages.</p></div></div>
                     <p id="gamepad-status" class="status-msg" role="status">Loading...</p>
                     <div class="action-row"><button class="btn primary" onclick="scanGamepads()">Scan for gamepads</button><button class="btn" id="gamepad-forget" onclick="forgetGamepad()" hidden>Forget gamepad</button></div>
                     <ul id="gamepad-found" class="gamepad-list"></ul>
@@ -180,13 +203,13 @@
                     <div class="action-row"><button id="lilygo-settings-save" class="btn secondary" onclick="saveLilygoControls()">Save light &amp; buttons</button><div id="lilygo-settings-status" class="status-msg" role="status"></div></div>
                 </article>
                 <article class="card section-card update-card">
-                    <div class="card-heading"><div><h2>Software update</h2><p>Currently running InkDeck <span id="current-ver">1.4.4</span>.</p></div><span class="version-badge">InkDeck</span></div>
+                    <div class="card-heading"><div><h2>Software update</h2><p>Currently running InkDeck <span id="current-ver">1.4.7</span>.</p></div><span class="version-badge">InkDeck</span></div>
                     <div id="update-status" class="status-msg" role="status"></div>
                     <div id="update-buttons"><button id="check-update-btn" class="btn secondary" onclick="checkUpdate()">Check for updates</button><button id="update-btn" class="btn primary hidden" onclick="performUpdate()">Install update</button></div>
                 </article>
             </section>
         </main>
-        <footer class="section-card"><a href="https://github.com/rolohaun/Book32/releases/tag/v1.4.4" target="_blank" rel="noopener noreferrer">InkDeck 1.4.4 — source code &amp; licenses (AGPLv3+)</a></footer>
+        <footer class="section-card"><a href="https://github.com/rolohaun/Book32/releases/tag/v1.4.7" target="_blank" rel="noopener noreferrer">InkDeck 1.4.7 — source code &amp; licenses (AGPLv3+)</a></footer>
     </div>
     <script src="pages.js"></script>
     <script src="script.js"></script>

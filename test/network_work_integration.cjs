@@ -12,9 +12,10 @@ assert(check.indexOf('WiFiClientSecure client')<check.indexOf('HTTPClient http')
 assert(check.includes('if (!network) return info;'));
 assert(check.includes('setHandshakeTimeout(5)')&&check.includes('setConnectTimeout(5000)'));
 const main=fs.readFileSync('src/main.cpp','utf8');
-const menu=fs.readFileSync('lib/Book32_Apps/AppMainMenu.cpp','utf8');
+// The home screen's Wi-Fi wake (main menu or library) lives in HomeServices.
+const menu=fs.readFileSync('lib/Book32_Apps/HomeServices.cpp','utf8');
 const startup=main.slice(main.indexOf('static void networkStartupWork'),main.indexOf('static void networkStartupTask'));
-const wake=menu.slice(menu.indexOf('void AppMainMenu::wifiWakeWork'),menu.indexOf('String AppMainMenu::getWifiFooterText'));
+const wake=menu.slice(menu.indexOf('void HomeServices::wifiWakeWork'),menu.indexOf('String HomeServices::footerText'));
 assert(!startup.includes('vTaskDelete')&&!wake.includes('vTaskDelete'));
 assert(startup.includes('"Inkade"')&&!main.includes('"Paperboy"'));
 assert.match(main,/NetworkWork::Lease network;\s*if \(network\) networkStartupWork/);

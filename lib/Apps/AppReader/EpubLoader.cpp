@@ -100,6 +100,29 @@ void appendUtf8(String& out, uint32_t codepoint) {
     }
 }
 
+struct NamedEntity {
+    const char* name;
+    uint16_t codepoint;
+};
+
+// Latin letters and punctuation the reader fonts can draw.
+const NamedEntity NAMED_ENTITIES[] = {
+    {"auml", 0xE4}, {"ouml", 0xF6}, {"uuml", 0xFC}, {"Auml", 0xC4}, {"Ouml", 0xD6},
+    {"Uuml", 0xDC}, {"szlig", 0xDF}, {"euml", 0xEB}, {"iuml", 0xEF}, {"yuml", 0xFF},
+    {"aacute", 0xE1}, {"eacute", 0xE9}, {"iacute", 0xED}, {"oacute", 0xF3}, {"uacute", 0xFA},
+    {"Aacute", 0xC1}, {"Eacute", 0xC9}, {"Iacute", 0xCD}, {"Oacute", 0xD3}, {"Uacute", 0xDA},
+    {"agrave", 0xE0}, {"egrave", 0xE8}, {"igrave", 0xEC}, {"ograve", 0xF2}, {"ugrave", 0xF9},
+    {"Agrave", 0xC0}, {"Egrave", 0xC8}, {"acirc", 0xE2}, {"ecirc", 0xEA}, {"icirc", 0xEE},
+    {"ocirc", 0xF4}, {"ucirc", 0xFB}, {"atilde", 0xE3}, {"ntilde", 0xF1}, {"otilde", 0xF5},
+    {"Ntilde", 0xD1}, {"ccedil", 0xE7}, {"Ccedil", 0xC7}, {"aring", 0xE5}, {"Aring", 0xC5},
+    {"aelig", 0xE6}, {"AElig", 0xC6}, {"oslash", 0xF8}, {"Oslash", 0xD8}, {"oelig", 0x153},
+    {"OElig", 0x152}, {"laquo", 0xAB}, {"raquo", 0xBB}, {"bdquo", 0x201E}, {"sbquo", 0x201A},
+    {"lsaquo", 0x2039}, {"rsaquo", 0x203A}, {"iexcl", 0xA1}, {"iquest", 0xBF}, {"deg", 0xB0},
+    {"copy", 0xA9}, {"reg", 0xAE}, {"trade", 0x2122}, {"euro", 0x20AC}, {"pound", 0xA3},
+    {"sect", 0xA7}, {"para", 0xB6}, {"middot", 0xB7}, {"bull", 0x2022}, {"times", 0xD7},
+    {"shy", 0xAD},
+};
+
 String decodeHtmlEntities(const String& input) {
     String output;
     output.reserve(input.length());
@@ -127,15 +150,23 @@ String decodeHtmlEntities(const String& input) {
         else if (entity == "hellip") output += "...";
         else if (entity == "lsquo" || entity == "rsquo") output += '\'';
         else if (entity == "ldquo" || entity == "rdquo") output += '"';
-        else if (entity.startsWith("#")) {
+        else if (!entity.startsWith("#")) {
+            bool known = false;
+            for (const NamedEntity& named : NAMED_ENTITIES) {
+                if (entity == named.name) {
+                    appendUtf8(output, named.codepoint);
+                    known = true;
+                    break;
+                }
+            }
+            if (!known) output += input.substring(i, end + 1);
+        } else {
             bool hex = entity.length() > 2 && (entity[1] == 'x' || entity[1] == 'X');
             const char* digits = entity.c_str() + (hex ? 2 : 1);
             char* parseEnd = nullptr;
             uint32_t value = strtoul(digits, &parseEnd, hex ? 16 : 10);
             if (parseEnd && *parseEnd == '\0' && value > 0 && value <= 0x10FFFF) appendUtf8(output, value);
             else output += input.substring(i, end + 1);
-        } else {
-            output += input.substring(i, end + 1);
         }
         i = end;
     }

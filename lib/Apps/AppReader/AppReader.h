@@ -72,7 +72,41 @@ private:
     void scanBooks();
     void drawLibrary();
     void drawLoadingScreen(const char* title, const char* status, uint8_t progress, bool fullRefresh);
-    void drawBookTile(Book32Display& display, int x, int y, int w, int h, bool selected);
+    // A book without a cover picture: a cloth binding with its title.
+    void drawPlainCover(Book32Display& display, int x, int y, int w, int h, const String& title);
+    // The library is the home screen when no optional app is installed: it
+    // keeps Wi-Fi up for the web page until a book opens (HomeServices).
+    bool _home = false;        // no main menu: the library is home
+    bool _homeShown = false;   // HomeServices currently runs for the library
+    bool _libraryFooterOnly = false;
+    void syncHome();
+    void leaveHome();
+    bool _libraryHeaderOnly = false;
+    // The header's title, from ShelfName, reread when the web page changes it.
+    String _shelfTitle;
+    uint32_t _shelfTitleRevision = UINT32_MAX;
+    unsigned long _lastBatteryPoll = 0;
+    int _shownBattery = -1;
+    void powerDownRadio();
+    void backToLibrary();
+    // The library's actions: "< Menu" in the header (index -1) when there is
+    // an app menu, which has Settings and Update; at home a book of its own on
+    // the shelf instead: Settings on touch boards, Update on the Book32 when
+    // one is ready.
+    enum class LibraryButton : uint8_t { NONE, MENU, SETTINGS, UPDATE };
+    LibraryButton libraryButton() const;  // the shelf's action book
+    void drawActionBook(Book32Display& display, int x, int y, int w, int h, LibraryButton action);
+    bool shelfAction() const { return _home && libraryButton() != LibraryButton::NONE; }
+    // Shelf items are numbered page * LIBRARY_PER_PAGE + slot. With an action
+    // book, each page holds up to eight books and then the action's book, so
+    // it ends every page: bottom right when the page is full.
+    static constexpr int LIBRARY_PER_PAGE = 9;
+    int booksPerPage() const { return LIBRARY_PER_PAGE - (shelfAction() ? 1 : 0); }
+    int libraryPages() const;
+    int bookOfItem(int item) const;  // the book, -1 for the action's book, -2 an empty place
+    int lastItem() const;            // the last item, -1 when the shelf is empty
+    LibraryButton _drawnButton = LibraryButton::NONE;
+    void pressLibraryButton(LibraryButton action);
     void loadBookCover(BookEntry& book, int width, int height);
     // Decoded covers persist in /.covers so a book is only decoded once per
     // upload instead of after every restart.

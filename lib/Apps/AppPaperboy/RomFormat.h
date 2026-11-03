@@ -4,7 +4,8 @@
 #include <stdbool.h>
 #include <string.h>
 // Preserve GB/NES IDs for existing save files; retired ID 3 is unsupported.
-typedef enum { INK_SYSTEM_NONE=0, INK_SYSTEM_GB=1, INK_SYSTEM_NES=2 } InkSystem;
+// Arduboy games are built into the firmware, never ROM files.
+typedef enum { INK_SYSTEM_NONE=0, INK_SYSTEM_GB=1, INK_SYSTEM_NES=2, INK_SYSTEM_ARDUBOY=4 } InkSystem;
 static inline bool inkExtension(const char* ext, const char* expected) {
     if (!ext) return false;
     while (*ext && *expected) {
@@ -17,10 +18,12 @@ static inline InkSystem inkRomSystem(const char* name) {
     const char* ext=name ? strrchr(name,'.') : NULL;
     if (inkExtension(ext,".gb") || inkExtension(ext,".gbc")) return INK_SYSTEM_GB;
     if (inkExtension(ext,".nes")) return INK_SYSTEM_NES;
+    if (inkExtension(ext,".arduboy")) return INK_SYSTEM_ARDUBOY;
     return INK_SYSTEM_NONE;
 }
 static inline const char* inkSystemName(InkSystem system) {
-    return system==INK_SYSTEM_GB ? "Game Boy" : system==INK_SYSTEM_NES ? "NES" : "Unknown";
+    return system==INK_SYSTEM_GB ? "Game Boy" : system==INK_SYSTEM_NES ? "NES" :
+           system==INK_SYSTEM_ARDUBOY ? "Arduboy" : "Unknown";
 }
 static inline size_t inkRomLimit(InkSystem system) {
     return system==INK_SYSTEM_GB ? 8U*1024U*1024U : system==INK_SYSTEM_NES ? 2U*1024U*1024U : 0;

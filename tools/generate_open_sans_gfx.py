@@ -10,7 +10,17 @@ FONT_DIR = ROOT / "Open_Sans" / "static"
 OUTPUT = ROOT / "lib" / "Apps" / "AppReader" / "fonts" / "OpenSansGFXFonts.h"
 DPI = 141
 FIRST_CHAR = 0x20
-LAST_CHAR = 0x7E
+LAST_CHAR = 0xFF
+# Fonts are indexed by Windows-1252 byte so Adafruit GFX's 8-bit write() can
+# reach Latin-1 letters (umlauts, accents) and the 0x80-0x9F typographic
+# punctuation. Undefined slots, controls and the soft hyphen stay blank.
+BLANK_CODES = {0x7F, 0x81, 0x8D, 0x8F, 0x90, 0x9D, 0xAD}
+
+
+def font_character(code: int) -> str:
+    if code in BLANK_CODES:
+        return ""
+    return bytes([code]).decode("cp1252")
 
 
 def pack_bitmap(image: Image.Image) -> list[int]:
@@ -36,7 +46,10 @@ def convert_font(ttf_path: Path, name: str, point_size: int) -> str:
     glyphs = []
 
     for codepoint in range(FIRST_CHAR, LAST_CHAR + 1):
-        character = chr(codepoint)
+        character = font_character(codepoint)
+        if not character:
+            glyphs.append((len(bitmap), 0, 0, 1, 0, 0, codepoint, ""))
+            continue
         left, top, right, bottom = font.getbbox(character, anchor="ls")
         width = max(1, right - left)
         height = max(1, bottom - top)
@@ -74,6 +87,7 @@ def convert_font(ttf_path: Path, name: str, point_size: int) -> str:
     glyph_lines = []
     for offset, width, height, advance, x_offset, y_offset, codepoint, character in glyphs:
         printable = character if character not in {"\\", "'"} else f"\\{character}"
+        printable = printable.encode("ascii", "backslashreplace").decode("ascii")
         glyph_lines.append(
             f"  {{ {offset:5d}, {width:3d}, {height:3d}, {advance:3d}, "
             f"{x_offset:4d}, {y_offset:4d} }},  // 0x{codepoint:02X} '{printable}'"
@@ -102,7 +116,7 @@ def main() -> None:
         ("Bold", "OpenSans-Bold.ttf"),
     ):
         for point_size in (9, 12, 18, 24):
-            name = f"OpenSans{weight}{point_size}pt7b"
+            name = f"OpenSans{weight}{point_size}pt8b"
             fonts.append(convert_font(FONT_DIR / filename, name, point_size))
 
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)

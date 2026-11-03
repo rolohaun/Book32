@@ -18,6 +18,7 @@
 #include <driver/rtc_io.h>
 #if defined(BOARD_LILYGO_T5S3_PRO) && !LILYGO_T5S3_PLAIN
 #include <Wire.h>
+#include <SPI.h>
 static bool lilygoGaugeWord(uint8_t reg, uint16_t& value) {
     Wire.beginTransmission(0x55);
     Wire.write(reg);
@@ -45,7 +46,6 @@ static int voltageToPercentage(float voltage) {
                  (BATTERY_FULL_VOLTAGE - BATTERY_EMPTY_VOLTAGE)) * 100.0f + 0.5f);
 }
 
-#if !defined(BOARD_LILYGO_T5S3_PRO)
 // Drive a pin to a fixed level and keep it there through deep sleep.
 static void holdSleepPin(int pin, uint8_t level) {
     const gpio_num_t gpio = static_cast<gpio_num_t>(pin);
@@ -53,6 +53,37 @@ static void holdSleepPin(int pin, uint8_t level) {
     pinMode(pin, OUTPUT);
     digitalWrite(pin, level);
     gpio_hold_en(gpio);
+}
+
+#if defined(BOARD_LILYGO_T5S3_PRO) && !LILYGO_T5S3_PLAIN
+// LILYGO's own deep sleep puts the SX1262 LoRa radio to sleep: out of reset it
+// idles in standby (about 0.6 mA) for as long as the battery lasts. Boards
+// without the radio just see an ignored SPI write.
+static void sleepLoraRadio() {
+    constexpr int LORA_CS = 46, LORA_BUSY = 47;
+    pinMode(LORA_BUSY, INPUT);
+    for (int i = 0; i < 20 && digitalRead(LORA_BUSY) == HIGH; ++i) delay(1);
+    SPI.beginTransaction(SPISettings(1000000, MSBFIRST, SPI_MODE0));
+    digitalWrite(LORA_CS, LOW);
+    SPI.transfer(0x84);  // SetSleep, cold start: the radio needs no state
+    SPI.transfer(0x00);
+    digitalWrite(LORA_CS, HIGH);
+    SPI.endTransaction();
+    delay(2);
+}
+
+// The BQ25896 charger: leave its ADC in one-shot mode (REG02 bit 6) so it
+// does not convert every second while the board sleeps.
+static void stopChargerAdc() {
+    Wire.beginTransmission(0x6B);
+    Wire.write(0x02);
+    if (Wire.endTransmission(false) != 0 || Wire.requestFrom(0x6B, 1) != 1) return;
+    const uint8_t reg = Wire.read();
+    if (!(reg & 0xC0)) return;
+    Wire.beginTransmission(0x6B);
+    Wire.write(0x02);
+    Wire.write(reg & ~0xC0);
+    Wire.endTransmission();
 }
 #endif
 
@@ -373,7 +404,7 @@ bool BatteryMgr::isCharging() {
 void BatteryMgr::loadSleepSettings() {
     _sleepTimeoutMinutes = SLEEP_TIMEOUT_DEFAULT_MINUTES;
     _sleepMessage = SLEEP_MESSAGE_DEFAULT;
-    _sleepShowCover = true;
+    _sleepScreen = SleepScreen::COVER_AND_MESSAGE;
     bool saveMigratedSettings = false;
 
     // Load from EbookFS partition. Sticky versions before 1.2.13 wrote an
@@ -391,7 +422,7 @@ void BatteryMgr::loadSleepSettings() {
                 _sleepMessage = doc["sleepMessage"] | SLEEP_MESSAGE_DEFAULT;
                 const bool messageMigrated = sleepMessageNeedsMigration(configVersion, _sleepMessage.c_str());
                 if (messageMigrated) _sleepMessage = SLEEP_MESSAGE_DEFAULT;
-                _sleepShowCover = strcmp(doc["sleepScreen"] | "cover", "message") != 0;
+                _sleepScreen = sleepScreenFromName(doc["sleepScreen"] | "cover");
 #if !defined(BOARD_LILYGO_T5S3_PRO)
                 // Sticky (v2) and Book32 (v3) once stored an implicit 0 because
                 // idle sleep was off by default; give them the 10-minute default
@@ -416,7 +447,7 @@ void BatteryMgr::loadSleepSettings() {
         doc["configVersion"] = SLEEP_CONFIG_VERSION;
         doc["sleepTimeout"] = _sleepTimeoutMinutes;
         doc["sleepMessage"] = _sleepMessage;
-        doc["sleepScreen"] = _sleepShowCover ? "cover" : "message";
+        doc["sleepScreen"] = sleepScreenName(_sleepScreen);
         File file = EbookFS.open("/sleep_config.json", FILE_WRITE);
         if (file) {
             serializeJson(doc, file);
@@ -472,12 +503,12 @@ void BatteryMgr::enterIdleSleep() {
     WiFi.disconnect(true, false);
     WiFi.mode(WIFI_OFF);
 
-    // Sleep screen: the cover of the book being read (default), with the
-    // message under it, or the message alone. Low battery always shows its
-    // warning.
+    // Sleep screen: the cover of the book being read with the message under
+    // it (default), the cover alone, or the message alone. Low battery always
+    // shows its warning.
     Book32Display& display = DisplayMgr::getInstance().getDisplay();
-    const bool drewCover = _sleepShowCover && !_lowBatterySleep && _coverRenderer &&
-                           _coverRenderer(_sleepMessage);
+    const bool drewCover = _sleepScreen != SleepScreen::MESSAGE_ONLY && !_lowBatterySleep && _coverRenderer &&
+                           _coverRenderer(_sleepScreen == SleepScreen::COVER_ONLY ? String() : _sleepMessage);
     Serial.printf("Sleep screen: %s\n", drewCover ? "book cover" : "message");
     if (!drewCover) {
     display.setFullWindow();
@@ -506,6 +537,10 @@ void BatteryMgr::enterIdleSleep() {
 
 #if defined(BOARD_LILYGO_T5S3_PRO)
     display.hibernate();
+#if !LILYGO_T5S3_PLAIN
+    sleepLoraRadio();
+    stopChargerAdc();
+#endif
     endEbookStorageForSleep();
     pinMode(PIN_BUTTON, INPUT_PULLUP);
     while (digitalRead(PIN_BUTTON) == LOW) delay(20);
@@ -514,7 +549,19 @@ void BatteryMgr::enterIdleSleep() {
     // GPIO21 is an RTC pin; keep its pull-up while the digital domain is off.
     rtc_gpio_pullup_en((gpio_num_t)PIN_BUTTON);
     rtc_gpio_pulldown_dis((gpio_num_t)PIN_BUTTON);
+    // No LoRa radio and no touch reset line here, and GPIO1 is display data:
+    // only the SD chip select needs holding.
+    holdSleepPin(SD_CS, HIGH);
+#else
+    // Without holds these float in deep sleep: the GT911 would leave reset
+    // and scan for touches all night, and the SD card and radio would see
+    // their chip selects drift. LILYGO holds both resets low too.
+    holdSleepPin(TOUCH_RST, LOW);
+    holdSleepPin(1, LOW);   // LoRa reset
+    holdSleepPin(46, HIGH); // LoRa chip select
+    holdSleepPin(SD_CS, HIGH);
 #endif
+    gpio_deep_sleep_hold_en();
 #elif defined(BOARD_SEEED_STICKY)
     display.hibernate();
     endEbookStorageForSleep();

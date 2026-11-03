@@ -9,19 +9,19 @@
 #endif
 
 #if defined(BOARD_LILYGO_T5S3_PRO) && LILYGO_T5S3_PLAIN
-#define SYSTEM_VERSION "1.4.4"
+#define SYSTEM_VERSION "1.4.7"
 #define DEVICE_NAME "LILYGO T5-4.7 E-Paper S3 (V2.3/V2.4)"
 #define SLEEP_TIMEOUT_DEFAULT_MINUTES 10
 #elif defined(BOARD_LILYGO_T5S3_PRO)
-#define SYSTEM_VERSION "1.4.4"
+#define SYSTEM_VERSION "1.4.7"
 #define DEVICE_NAME "LILYGO T5 E-Paper S3 Pro Lite (H752-01)"
 #define SLEEP_TIMEOUT_DEFAULT_MINUTES 10
 #elif defined(BOARD_SEEED_STICKY)
-#define SYSTEM_VERSION "1.4.4"
+#define SYSTEM_VERSION "1.4.7"
 #define DEVICE_NAME "Seeed Studio Sticky"
 #define SLEEP_TIMEOUT_DEFAULT_MINUTES 10
 #else
-#define SYSTEM_VERSION "1.4.4"
+#define SYSTEM_VERSION "1.4.7"
 #define DEVICE_NAME "Book32"
 #define SLEEP_TIMEOUT_DEFAULT_MINUTES 10
 #endif
@@ -69,6 +69,7 @@
 #else
 #define READER_FONT_SIZE_DEFAULT 9
 #endif
+#define READER_FONT_FAMILY_DEFAULT "openSans"
 
 #if defined(BOARD_LILYGO_T5S3_PRO) && LILYGO_T5S3_PLAIN
 // Plain T5-4.7 E-Paper S3 V2.3/V2.4 (LilyGo-EPD47 esp32s3 branch, schematic
@@ -168,6 +169,8 @@
 #define PIN_VBAT_SWITCH 6
 #define VBAT_SWITCH_LEVEL HIGH
 #define PIN_BUTTON   5  // "KEY3" button
+#define PIN_BUTTON_PREV 2 // "KEY1": previous page
+#define PIN_BUTTON_HOME 3 // "KEY2": InkDeck main menu
 
 // Display Pins (TRMNL 7.5" OG DIY Kit)
 #define EPD_SCK     7

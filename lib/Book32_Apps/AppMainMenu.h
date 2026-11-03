@@ -16,11 +16,6 @@ public:
     void handleInput(InputAction action);
     void handleTouch(uint16_t x, uint16_t y);
 
-    // Offline management hotspot (SoftAP). Public so the WiFi wake task can
-    // trigger it when a station connection can't be established.
-    void startHotspot();
-    void stopHotspot();
-    
 private:
     int selectedIndex = 0;
     bool _needsRedraw = false;
@@ -31,23 +26,11 @@ private:
     static const int MENU_FULL_REFRESH_INTERVAL = 20;
     int _partialRefreshes = 0;
     int _previousSelectedIndex = 1;
-    bool _lastWifiConnected = false;
-    bool _wifiStarting = false;
-    String _lastIp = "";
+    // Wi-Fi, hotspot and update checks: HomeServices. These track what the
+    // screen last showed of them.
     String _lastWifiFooterText = "";
-    bool _hotspotActive = false;
-    unsigned long _lastNetworkPoll = 0;
+    bool _shownUpdate = false;
     unsigned long _lastBatteryPoll = 0;
     BatteryStatus _lastBatteryStatus = {0.0f, -1, false};
-    
-    // Update Notification
-    bool _updateAvailable = false;
-    String _updateVersion = "";
-    TaskHandle_t _updateTaskHandle = nullptr;
-    TaskHandle_t _wifiTaskHandle = nullptr;
-    static void updateCheckTask(void* parameter);
-    static void wifiWakeTask(void* parameter);
-    static void wifiWakeWork(void* parameter);
-    void ensureWifiAwake();
-    String getWifiFooterText() const;
+    bool updateAvailable() const;
 };

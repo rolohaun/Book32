@@ -8,6 +8,8 @@ public:
 
     void init();
     void beep();
+    // A held note for game sound (0 stops it); repeats of the same note are free.
+    void tone(unsigned hz);
     void setEnabled(bool enabled, bool persist = true);
     bool isEnabled() const { return _enabled; }
     bool isSupported() const;
@@ -18,4 +20,5 @@ private:
 
     bool _enabled = true;
     bool _initialized = false;
+    unsigned _tone = 0;
 };

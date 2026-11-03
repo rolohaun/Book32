@@ -1,4 +1,5 @@
 #pragma once
+#include "SleepDefaults.h"
 #include <Arduino.h>
 
 // Combined battery status to avoid multiple ADC reads
@@ -85,7 +86,7 @@ private:
     // Idle sleep settings
     int _sleepTimeoutMinutes;          // 0 = disabled
     String _sleepMessage;
-    bool _sleepShowCover = true;       // sleep screen: book cover (default) or message
+    SleepScreen _sleepScreen = SleepScreen::COVER_AND_MESSAGE;
     bool _lowBatterySleep = false;     // low-battery sleep always shows its warning
     SleepCoverRenderer _coverRenderer = nullptr;
     volatile unsigned long _lastActivityTime;   // Last user interaction (any task)

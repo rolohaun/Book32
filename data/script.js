@@ -38,6 +38,8 @@ function showTab(tabId) {
     } else if (tabId === 'settings') {
         getDisplaySettings();
         getSoundSettings();
+        getApps();
+        getShelfName();
         getLilygoControls();
     }
 }
@@ -74,6 +76,72 @@ async function saveLilygoControls() {
 }
 
 // === Touch Sounds ===
+function getShelfName() {
+    fetch('/api/settings/shelf')
+        .then(response => response.json())
+        .then(data => { document.getElementById('shelf-name').value = data.name || ''; })
+        .catch(error => console.error('Error loading the bookshelf name:', error));
+}
+
+function saveShelfName() {
+    const statusDiv = document.getElementById('shelf-name-status');
+    const name = document.getElementById('shelf-name').value.trim();
+    statusDiv.textContent = 'Saving…';
+    statusDiv.style.color = 'var(--muted)';
+    fetch('/api/settings/shelf', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }),
+    })
+        .then(response => response.json())
+        .then(data => {
+            const ok = data.status === 'ok';
+            statusDiv.textContent = ok ? `Saved: ${name ? name + "'s" : 'My'} Bookshelf.` : 'Could not save the name.';
+            statusDiv.style.color = ok ? 'var(--accent)' : 'var(--danger)';
+        })
+        .catch(() => {
+            statusDiv.textContent = 'Connection error.';
+            statusDiv.style.color = 'var(--danger)';
+        });
+}
+
+function getApps() {
+    fetch('/api/apps')
+        .then(response => response.json())
+        .then(data => {
+            document.getElementById('app-todo').checked = data.todo === true;
+            document.getElementById('app-klipper').checked = data.klipper === true;
+            document.getElementById('app-inkade').checked = data.inkade === true;
+            document.getElementById('app-inkade-choice').classList.toggle('hidden', data.inkadeAvailable !== true);
+        })
+        .catch(error => console.error('Error loading apps:', error));
+}
+
+function saveApps() {
+    const statusDiv = document.getElementById('apps-status');
+    statusDiv.textContent = 'Saving…';
+    statusDiv.style.color = 'var(--muted)';
+    fetch('/api/apps', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            todo: document.getElementById('app-todo').checked,
+            klipper: document.getElementById('app-klipper').checked,
+            inkade: document.getElementById('app-inkade').checked,
+        }),
+    })
+        .then(response => response.json())
+        .then(data => {
+            const ok = data.status === 'ok';
+            statusDiv.textContent = ok ? 'Saved. InkDeck is restarting; reload this page in a minute.' : 'Could not save the apps.';
+            statusDiv.style.color = ok ? 'var(--accent)' : 'var(--danger)';
+        })
+        .catch(() => {
+            statusDiv.textContent = 'Connection error.';
+            statusDiv.style.color = 'var(--danger)';
+        });
+}
+
 function getSoundSettings() {
     fetch('/api/settings/sound')
         .then(response => response.json())
@@ -136,6 +204,11 @@ async function fetchStatus() {
         if (newlySupported) getLilygoControls();
         romMaxBytes = Number(data.romMaxBytes) || 0;
         document.getElementById('games-nav').classList.toggle('hidden', !romUploadsSupported);
+        // Tabs for apps that are not installed.
+        if (data.apps) {
+            document.getElementById('klipper-nav').classList.toggle('hidden', data.apps.klipper !== true);
+            document.getElementById('todo-nav').classList.toggle('hidden', data.apps.todo !== true);
+        }
         document.getElementById('games').classList.toggle('hidden', !romUploadsSupported);
         document.getElementById('rom-limit').textContent = romUploadsSupported ? `Maximum ROM size: ${formatStorage(romMaxBytes)}. MicroSD required.` : '';
         document.getElementById('battery-val').innerText = data.battery + '%' + (data.charging ? ' (Charging)' : '');
@@ -513,6 +586,78 @@ getKlipperSettings();
 getSleepSettings();
 getGamepad();
 getDisplaySettings();
+getWifiStatus();
+
+// === Wi-Fi ===
+let wifiPoll = null;
+
+function getWifiStatus(waitingFor, tries = 0) {
+    fetch('/api/wifi/status')
+        .then(response => response.json())
+        .then(data => {
+            const status = document.getElementById('wifi-status');
+            if (data.sta_connected) {
+                status.textContent = `Connected to ${data.sta_ssid} at ${data.sta_ip}.` +
+                    (data.ap_active ? ` Join ${data.sta_ssid} again and open http://${data.sta_ip}` : '');
+            } else if (waitingFor && tries >= 15) {
+                status.textContent = `Could not join ${waitingFor}. Check the password and try again.`;
+            } else if (waitingFor) {
+                status.textContent = `Connecting to ${waitingFor}...`;
+                clearTimeout(wifiPoll);
+                wifiPoll = setTimeout(() => getWifiStatus(waitingFor, tries + 1), 2000);
+            } else {
+                status.textContent = data.ap_active ? `Not connected. InkDeck is running its own hotspot, ${data.ap_ssid}.` : 'Not connected.';
+            }
+        })
+        .catch(() => {
+            // Joining a network on another channel can briefly drop the hotspot.
+            if (waitingFor && tries < 15) { clearTimeout(wifiPoll); wifiPoll = setTimeout(() => getWifiStatus(waitingFor, tries + 1), 3000); }
+        });
+}
+
+function scanWifi() {
+    document.getElementById('wifi-status').textContent = 'Scanning...';
+    fetch('/api/wifi/scan')
+        .then(response => response.json().then(data => ({ code: response.status, data })))
+        .then(({ code, data }) => {
+            if (code === 202) { clearTimeout(wifiPoll); wifiPoll = setTimeout(scanWifi, 1500); return; }
+            const list = document.getElementById('wifi-found');
+            list.innerHTML = '';
+            const seen = new Set();
+            (data.networks || []).filter(n => n.ssid && !seen.has(n.ssid) && seen.add(n.ssid)).sort((a, b) => b.rssi - a.rssi).forEach(n => {
+                const item = document.createElement('li');
+                const label = document.createElement('span');
+                label.textContent = n.ssid + (n.secure ? '' : ' (open)');
+                const button = document.createElement('button');
+                button.className = 'btn';
+                button.textContent = 'Choose';
+                button.onclick = () => {
+                    document.getElementById('wifi-ssid').value = n.ssid;
+                    document.getElementById('wifi-password').focus();
+                };
+                item.append(label, button);
+                list.append(item);
+            });
+            document.getElementById('wifi-status').textContent = seen.size ? 'Choose your network.' : 'No networks found. Scan again.';
+        })
+        .catch(() => { document.getElementById('wifi-status').textContent = 'Connection error.'; });
+}
+
+function connectWifi() {
+    const ssid = document.getElementById('wifi-ssid').value.trim();
+    const password = document.getElementById('wifi-password').value;
+    const status = document.getElementById('wifi-status');
+    if (!ssid) { status.textContent = 'Choose or type a network name.'; return; }
+    if (password && (password.length < 8 || password.length > 63)) { status.textContent = 'Wi-Fi passwords are 8 to 63 characters.'; return; }
+    status.textContent = `Connecting to ${ssid}...`;
+    fetch('/api/wifi/connect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ssid, password }),
+    })
+        .then(() => { clearTimeout(wifiPoll); wifiPoll = setTimeout(() => getWifiStatus(ssid), 3000); })
+        .catch(() => { status.textContent = 'Connection error.'; });
+}
 
 function setRadioValue(name, value) {
     const option = document.querySelector(`input[name="${name}"][value="${value}"]`);
@@ -556,7 +701,7 @@ function getReaderSettings() {
             if (data.fontSize) {
                 setRadioValue('font-size', String(data.fontSize));
             }
-            setRadioValue('font-family', data.fontFamily || 'native');
+            setRadioValue('font-family', data.fontFamily || 'openSans');
             document.getElementById('show-chapter').checked = data.showChapter !== false;
             document.getElementById('show-page-number').checked = data.showPageNumber !== false;
             document.getElementById('show-reading-percentage').checked = data.showReadingPercentage !== false;
@@ -570,7 +715,7 @@ function getReaderSettings() {
 function saveReaderSettings() {
     const refreshRate = parseInt(document.getElementById('refresh-rate').value);
     const fontSize = parseInt(getRadioValue('font-size', '12'));
-    const fontFamily = getRadioValue('font-family', 'native');
+    const fontFamily = getRadioValue('font-family', 'openSans');
     const showChapter = document.getElementById('show-chapter').checked;
     const showPageNumber = document.getElementById('show-page-number').checked;
     const showReadingPercentage = document.getElementById('show-reading-percentage').checked;
@@ -773,7 +918,7 @@ function getSleepSettings() {
             if (data.sleepMessage !== undefined) {
                 document.getElementById('sleep-message').value = data.sleepMessage;
             }
-            document.getElementById('sleep-screen').value = data.sleepScreen === 'message' ? 'message' : 'cover';
+            document.getElementById('sleep-screen').value = ['message', 'coverOnly'].includes(data.sleepScreen) ? data.sleepScreen : 'cover';
             if (data.defaultSleepMessage) document.getElementById('sleep-message').placeholder = data.defaultSleepMessage;
         })
         .catch(error => console.error('Error loading sleep settings:', error));

@@ -77,6 +77,11 @@ private:
     float _lastValidVoltage;              // Last plausible voltage reading
     int _criticalCount;                   // Consecutive critical readings counter
     unsigned long _lastChargingTime;      // Last time charging was detected
+#if defined(BOARD_WAVESHARE_RLCD42)
+    // Shown while charging: rises at a cell's pace, not with the voltage jump.
+    int _chargePercent = -1;
+    unsigned long _chargePercentAt = 0;
+#endif
     static const int CRITICAL_CONFIRM_COUNT = 3;     // Require N consecutive critical readings
     static const float SPIKE_REJECT_THRESHOLD;       // Max plausible V change per read (0.5V)
     static const unsigned long CHARGING_GRACE_MS = 60000;  // 60s grace after charging detected

@@ -45,6 +45,41 @@ static int voltageToPercentage(float voltage) {
                  (BATTERY_FULL_VOLTAGE - BATTERY_EMPTY_VOLTAGE)) * 100.0f + 0.5f);
 }
 
+#if defined(BOARD_WAVESHARE_RLCD42)
+// An 18650's resting voltage against charge. A straight line from 3.0 to
+// 4.2 V read a nearly flat cell (3.6 V) as half full.
+static int cellPercentage(float voltage) {
+    static const float CURVE[][2] = {
+        {4.20f, 100}, {4.15f, 95}, {4.11f, 90}, {4.08f, 85}, {4.02f, 80},
+        {3.98f, 75},  {3.95f, 70}, {3.91f, 65}, {3.87f, 60}, {3.85f, 55},
+        {3.84f, 50},  {3.82f, 45}, {3.80f, 40}, {3.79f, 35}, {3.77f, 30},
+        {3.75f, 25},  {3.73f, 20}, {3.71f, 15}, {3.69f, 10}, {3.61f, 5},
+        {3.30f, 0},
+    };
+    constexpr int POINTS = sizeof(CURVE) / sizeof(CURVE[0]);
+    if (voltage >= CURVE[0][0]) return 100;
+    for (int i = 1; i < POINTS; ++i) {
+        if (voltage >= CURVE[i][0]) {
+            const float t = (voltage - CURVE[i][0]) / (CURVE[i - 1][0] - CURVE[i][0]);
+            return (int)(CURVE[i][1] + t * (CURVE[i - 1][1] - CURVE[i][1]) + 0.5f);
+        }
+    }
+    return 0;
+}
+
+// While charging the cell reads up to ~0.15 V above its resting voltage, so a
+// flat cell showed ~80% within minutes. The board has no charge-status pin:
+// USB from a computer marks charging, the rise in update() covers a wall
+// charger. The offset fades out at the 4.2 V the charger finishes at.
+static constexpr float CHARGING_OFFSET = 0.15f;
+static constexpr unsigned long CHARGE_PERCENT_STEP_MS = 60000;  // 1% a minute at most
+
+static float restingEstimate(float voltage) {
+    const float fade = constrain((BATTERY_FULL_VOLTAGE - voltage) / 0.10f, 0.0f, 1.0f);
+    return voltage - CHARGING_OFFSET * fade;
+}
+#endif
+
 #if !defined(BOARD_LILYGO_T5S3_PRO)
 // Drive a pin to a fixed level and keep it there through deep sleep.
 static void holdSleepPin(int pin, uint8_t level) {
@@ -287,8 +322,37 @@ void BatteryMgr::updateCache(bool clearStaleCharging) {
         _lastValidVoltage = voltage;  // Accept as valid
     }
 
+#if defined(BOARD_WAVESHARE_RLCD42)
+    // A computer's USB powers the charger: count it as charging at once.
+    static bool usbPower = false;
+    if (HWCDC::isPlugged()) {
+        usbPower = true;
+        _cachedStatus.charging = true;
+        _lastChargingTime = millis();
+    } else if (usbPower) {
+        usbPower = false;  // unplugged: the voltage reads true again
+        _cachedStatus.charging = false;
+    }
+    int percentage = cellPercentage(voltage);
+    if (_cachedStatus.charging) {
+        const int target = cellPercentage(restingEstimate(voltage));
+        const unsigned long now = millis();
+        if (_chargePercent < 0) {
+            // Start below the plug-in jump; never above the last reading.
+            _chargePercent = _cachedStatus.percentage > 0 ? min(target, _cachedStatus.percentage) : target;
+            _chargePercentAt = now;
+        } else if (target > _chargePercent && now - _chargePercentAt >= CHARGE_PERCENT_STEP_MS) {
+            _chargePercent++;
+            _chargePercentAt = now;
+        }
+        percentage = _chargePercent;
+    } else {
+        _chargePercent = -1;
+    }
+#else
     // Calculate percentage (LiPo: 3.0V = 0%, 4.2V = 100%)
     int percentage = voltageToPercentage(voltage);
+#endif
 
     // Charging is decided only by the 90s trend analysis in update(). The ADC
     // wobbles by more than 20mV between single reads, so read-to-read

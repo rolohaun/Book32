@@ -90,6 +90,13 @@ private:
     void pollFrontlightButton();
     void mappedButton(bool front);
 #endif
+#if LILYGO_T5S3_PLAIN
+    // BOOT key on the display register's strobe line (see Config.h).
+    bool _bootRaw = false, _bootStable = false, _bootLongFired = false;
+    uint32_t _bootChangedAt = 0, _bootDownAt = 0, _bootUpAt = 0;
+    uint8_t _bootClicks = 0;
+    void pollBootKey();
+#endif
     InputCallback callback;
     TouchCallback touchCallback;
     TaskHandle_t _taskHandle = nullptr;

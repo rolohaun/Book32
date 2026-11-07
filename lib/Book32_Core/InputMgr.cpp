@@ -45,6 +45,10 @@ void InputMgr::init() {
 #endif
     btn.attachClick(staticClick, this);
     btn.attachLongPressStart(staticLongPress, this);
+#if LILYGO_T5S3_PLAIN
+    // One key only: a double click takes the "side" action (light by default).
+    btn.attachDoubleClick(staticDoubleClick, this);
+#endif
 
 #if defined(BOARD_SEEED_STICKY)
     btnUp.setDebounceMs(30);
@@ -194,7 +198,11 @@ void InputMgr::update() {
     });
 #if defined(BOARD_LILYGO_T5S3_PRO)
     LilygoControls::instance().apply();
+#if LILYGO_T5S3_PLAIN
+    pollBootKey();
+#else
     pollFrontlightButton();
+#endif
 #endif
     if (!_taskRunning) {
         btn.tick();
@@ -314,8 +322,12 @@ void InputMgr::onClick() {
 }
 
 void InputMgr::onDoubleClick() {
+#if LILYGO_T5S3_PLAIN
+    mappedButton(false);
+#else
     BatteryMgr::getInstance().resetIdleTimer();
     enqueueAction(INPUT_PREV);
+#endif
 }
 
 void InputMgr::onLongPress() {
@@ -407,6 +419,7 @@ void InputMgr::pollTouch() {
 }
 
 #if defined(BOARD_LILYGO_T5S3_PRO)
+#if !LILYGO_T5S3_PLAIN
 void InputMgr::pollFrontlightButton() {
     const uint32_t now = millis();
     if (uint32_t(now - _frontlightPolledAt) < 20) return;
@@ -426,6 +439,7 @@ void InputMgr::pollFrontlightButton() {
         mappedButton(false);
     }
 }
+#endif
 
 void InputMgr::mappedButton(bool front) {
     const auto action = front ? LilygoControls::instance().frontAction() : LilygoControls::instance().sideAction();
@@ -435,10 +449,37 @@ void InputMgr::mappedButton(bool front) {
     else if (action == LilygoControls::LIGHT) {
         auto& display = DisplayMgr::getInstance().getDisplay();
         display.setFrontlight(!display.frontlightOn());
-        Serial.printf("Frontlight: %s (%s)\n", display.frontlightOn() ? "on" : "off", front ? "front touch key" : "S3 switch");
+        Serial.printf("Frontlight: %s (%s)\n", display.frontlightOn() ? "on" : "off",
+                      front ? "front touch key" : LILYGO_T5S3_PLAIN ? "top key double click" : "S3 switch");
     }
 }
 
+#endif
+
+#if LILYGO_T5S3_PLAIN
+#include <driver/gpio.h>
+void InputMgr::pollBootKey() {
+    // GPIO0 is open-drain for the display register strobe; FastEPD pulls it
+    // low for a few microseconds per register write, so a press only counts
+    // once the line has read low for 30 ms straight (a glitch never does).
+    const uint32_t now = millis();
+    const bool raw = gpio_get_level((gpio_num_t)PIN_BOOT_KEY) == 0;
+    if (raw != _bootRaw) { _bootRaw = raw; _bootChangedAt = now; }
+    if (_bootRaw != _bootStable && uint32_t(now - _bootChangedAt) >= 30) {
+        _bootStable = _bootRaw;
+        if (_bootStable) { _bootDownAt = now; _bootLongFired = false; }
+        else if (!_bootLongFired) { ++_bootClicks; _bootUpAt = now; }
+        BatteryMgr::getInstance().resetIdleTimer();
+    }
+    if (_bootStable && !_bootLongFired && uint32_t(now - _bootDownAt) >= 1000) {
+        _bootLongFired = true; _bootClicks = 0;
+        enqueueAction(INPUT_HOME);
+    }
+    if (!_bootStable && _bootClicks && uint32_t(now - _bootUpAt) > 350) {
+        enqueueAction(_bootClicks >= 2 ? INPUT_PREV : INPUT_NEXT);
+        _bootClicks = 0;
+    }
+}
 #endif
 
 #if BOOK32_HAS_INKBOY

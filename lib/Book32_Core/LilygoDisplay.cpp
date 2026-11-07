@@ -10,9 +10,16 @@
 namespace { constexpr uint8_t FRONTLIGHT_CHANNEL = 7; }
 
 void LilygoDisplay::init(uint32_t, bool, uint16_t, bool) {
+#if LILYGO_T5S3_PLAIN
+    // The queued video transport latches rows from the I80 DMA callback by
+    // toggling LE as a GPIO. On this board LE is a bit of the 74HCT4094 control
+    // register, so Inkade keeps to the four-pass partial updates.
+    _videoAvailable = false;
+#else
     _videoAvailable = gameVideoSelfTest();
     Serial.printf("Game video self-test (GB 3x, NES 2x, pulses, clipping, queued DMA, frame timing): %s\n",
                   _videoAvailable ? "PASS" : "FAIL");
+#endif
     // Restore a known off level before releasing the deep-sleep pin hold.
     pinMode(PIN_FRONTLIGHT, OUTPUT);
     digitalWrite(PIN_FRONTLIGHT, LOW);
@@ -23,6 +30,15 @@ void LilygoDisplay::init(uint32_t, bool, uint16_t, bool) {
     setFrontlight(false);
     Wire.begin(TOUCH_SDA, TOUCH_SCL, 400000);
     Wire.setTimeOut(20);
+#if LILYGO_T5S3_PLAIN
+    // Plain T5-4.7 S3: panel power and control lines through the 74HCT4094
+    // shift register (the vendor ed047tc1.c protocol, as FastEPD's LilyGo*
+    // callbacks implement it).
+    // The predefined panel carries its size, and initPanel() allocates the
+    // buffers; a second setPanelSize() would be refused (buffers exist).
+    _ready = _panel.initPanel(BB_PANEL_LILYGO_T5S3, 10000000) == BBEP_SUCCESS;
+    if (!_ready) Serial.println("LILYGO T5S3: panel init failed");
+#else
     // Do not energize a panel using the older H752's incompatible pinout.
     Wire.beginTransmission(0x20);
     if (Wire.endTransmission() != 0) {
@@ -32,6 +48,7 @@ void LilygoDisplay::init(uint32_t, bool, uint16_t, bool) {
     // Official H752-01 examples use the EPDiy V7 parallel/power mapping.
     _ready = _panel.initPanel(BB_PANEL_EPDIY_V7, 20000000) == BBEP_SUCCESS;
     if (_ready) _ready = _panel.setPanelSize(960, 540) == BBEP_SUCCESS;
+#endif
     if (_ready) _ready = _panel.setMode(BB_MODE_1BPP) == BBEP_SUCCESS;
     setGrayPulses(StickyGrayImage::LILYGO_BLACKS, StickyGrayImage::LILYGO_WHITES);
     if (_ready) clearScreen();

@@ -16,7 +16,7 @@
 #include <WiFi.h>
 #include <driver/gpio.h>
 #include <driver/rtc_io.h>
-#if defined(BOARD_LILYGO_T5S3_PRO)
+#if defined(BOARD_LILYGO_T5S3_PRO) && !LILYGO_T5S3_PLAIN
 #include <Wire.h>
 #include <SPI.h>
 static bool lilygoGaugeWord(uint8_t reg, uint16_t& value) {
@@ -55,7 +55,7 @@ static void holdSleepPin(int pin, uint8_t level) {
     gpio_hold_en(gpio);
 }
 
-#if defined(BOARD_LILYGO_T5S3_PRO)
+#if defined(BOARD_LILYGO_T5S3_PRO) && !LILYGO_T5S3_PLAIN
 // LILYGO's own deep sleep puts the SX1262 LoRa radio to sleep: out of reset it
 // idles in standby (about 0.6 mA) for as long as the battery lasts. Boards
 // without the radio just see an ignored SPI write.
@@ -122,7 +122,7 @@ BatteryMgr& BatteryMgr::getInstance() {
 }
 
 void BatteryMgr::init() {
-#if defined(BOARD_LILYGO_T5S3_PRO)
+#if defined(BOARD_LILYGO_T5S3_PRO) && !LILYGO_T5S3_PLAIN
     _cachedStatus = {3.7f, 50, false};
 #elif defined(BOARD_SEEED_STICKY)
     pinMode(PIN_CHARGE_STATUS, INPUT_PULLUP);
@@ -170,8 +170,9 @@ void BatteryMgr::update() {
     }
 
     // Update voltage history periodically for trend analysis on the XIAO
-    // hardware. Sticky reports charge state directly through its gauge/charger.
-#if !BOOK32_HAS_TOUCH
+    // hardware and the plain T5-4.7 S3 (battery divider on an ADC pin, no
+    // gauge). Sticky and the Pro report charge state through their gauge.
+#if !BOOK32_HAS_TOUCH || LILYGO_T5S3_PLAIN
     if (now - _lastHistoryUpdate >= HISTORY_INTERVAL_MS) {
         // Make sure cache is fresh
         if (now - _lastReadTime >= CACHE_DURATION_MS) {
@@ -237,7 +238,7 @@ void BatteryMgr::update() {
 }
 
 void BatteryMgr::updateCache(bool clearStaleCharging) {
-#if defined(BOARD_LILYGO_T5S3_PRO)
+#if defined(BOARD_LILYGO_T5S3_PRO) && !LILYGO_T5S3_PLAIN
     uint16_t mv = 0, soc = 0, current = 0;
     if (lilygoGaugeWord(0x08, mv) && mv >= 2500 && mv <= 5000) {
         const int percent = lilygoGaugeWord(0x2C, soc) ? constrain((int)soc, 0, 100) : voltageToPercentage(mv / 1000.f);
@@ -536,12 +537,22 @@ void BatteryMgr::enterIdleSleep() {
 
 #if defined(BOARD_LILYGO_T5S3_PRO)
     display.hibernate();
+#if !LILYGO_T5S3_PLAIN
     sleepLoraRadio();
     stopChargerAdc();
+#endif
     endEbookStorageForSleep();
     pinMode(PIN_BUTTON, INPUT_PULLUP);
     while (digitalRead(PIN_BUTTON) == LOW) delay(20);
     esp_sleep_enable_ext0_wakeup((gpio_num_t)PIN_BUTTON, 0);
+#if LILYGO_T5S3_PLAIN
+    // GPIO21 is an RTC pin; keep its pull-up while the digital domain is off.
+    rtc_gpio_pullup_en((gpio_num_t)PIN_BUTTON);
+    rtc_gpio_pulldown_dis((gpio_num_t)PIN_BUTTON);
+    // No LoRa radio and no touch reset line here, and GPIO1 is display data:
+    // only the SD chip select needs holding.
+    holdSleepPin(SD_CS, HIGH);
+#else
     // Without holds these float in deep sleep: the GT911 would leave reset
     // and scan for touches all night, and the SD card and radio would see
     // their chip selects drift. LILYGO holds both resets low too.
@@ -549,6 +560,7 @@ void BatteryMgr::enterIdleSleep() {
     holdSleepPin(1, LOW);   // LoRa reset
     holdSleepPin(46, HIGH); // LoRa chip select
     holdSleepPin(SD_CS, HIGH);
+#endif
     gpio_deep_sleep_hold_en();
 #elif defined(BOARD_SEEED_STICKY)
     display.hibernate();

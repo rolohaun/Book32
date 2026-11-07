@@ -14,8 +14,10 @@ bool beginEbookStorage(bool internalPartitionBlank) {
 #if BOOK32_HAS_SD
 #if defined(BOARD_LILYGO_T5S3_PRO)
     SPI.begin(SD_SCK, SD_MISO, SD_MOSI, SD_CS);
+#if !LILYGO_T5S3_PLAIN
     pinMode(46, OUTPUT); // Deselect LoRa on the shared SPI bus.
     digitalWrite(46, HIGH);
+#endif
 #else
     pinMode(SD_POWER_ENABLE, OUTPUT);
     digitalWrite(SD_POWER_ENABLE, HIGH);

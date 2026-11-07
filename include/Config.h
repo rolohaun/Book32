@@ -1,6 +1,18 @@
 #pragma once
 
-#if defined(BOARD_LILYGO_T5S3_PRO)
+// LILYGO T5 S3 family: BOARD_LILYGO_T5S3_PRO selects the shared T5 S3 code
+// (960x540 ED047TC1 panel, GT911 touch, FastEPD). LILYGO_T5S3_PLAIN=1 on top of
+// it selects the plain T5-4.7 E-Paper S3 V2.3/V2.4 (LilyGo-EPD47 esp32s3)
+// pinout instead of the Pro / Pro Lite H752-01.
+#ifndef LILYGO_T5S3_PLAIN
+#define LILYGO_T5S3_PLAIN 0
+#endif
+
+#if defined(BOARD_LILYGO_T5S3_PRO) && LILYGO_T5S3_PLAIN
+#define SYSTEM_VERSION "1.4.7"
+#define DEVICE_NAME "LILYGO T5-4.7 E-Paper S3 (V2.3/V2.4)"
+#define SLEEP_TIMEOUT_DEFAULT_MINUTES 10
+#elif defined(BOARD_LILYGO_T5S3_PRO)
 #define SYSTEM_VERSION "1.4.7"
 #define DEVICE_NAME "LILYGO T5 E-Paper S3 Pro Lite (H752-01)"
 #define SLEEP_TIMEOUT_DEFAULT_MINUTES 10
@@ -14,7 +26,10 @@
 #define SLEEP_TIMEOUT_DEFAULT_MINUTES 10
 #endif
 
-#if defined(BOARD_LILYGO_T5S3_PRO)
+#if defined(BOARD_LILYGO_T5S3_PRO) && LILYGO_T5S3_PLAIN
+#define SLEEP_CONFIG_VERSION 3
+#define SLEEP_MESSAGE_DEFAULT "Press the top key to wake"
+#elif defined(BOARD_LILYGO_T5S3_PRO)
 #define SLEEP_CONFIG_VERSION 3
 #define SLEEP_MESSAGE_DEFAULT "Press BOOT to wake"
 #elif defined(BOARD_SEEED_STICKY)
@@ -56,7 +71,36 @@
 #endif
 #define READER_FONT_FAMILY_DEFAULT "openSans"
 
-#if defined(BOARD_LILYGO_T5S3_PRO)
+#if defined(BOARD_LILYGO_T5S3_PRO) && LILYGO_T5S3_PLAIN
+// Plain T5-4.7 E-Paper S3 V2.3/V2.4 (LilyGo-EPD47 esp32s3 branch, schematic
+// "Screen-4.7-S3 V2.4 24-12-03"). The panel's control register is a 74HCT4094
+// shift register on GPIO13 (data) / GPIO12 (clock) / GPIO0 (store), see
+// FastEPD's BB_PANEL_LILYGO_T5S3, so BOOT cannot double as the user button.
+#define PIN_BUTTON 21 // top key (SENSOP_VN): back; hold 2s to sleep, press to wake
+// Middle key = BOOT, GPIO0, shared with the display register strobe (read as
+// open-drain between writes): click next, double click previous, hold = home.
+// Not a wake source: GPIO0 is sampled as a strapping pin on wake-up.
+#define PIN_BOOT_KEY 0
+// No frontlight at the factory. An add-on LED driver's enable/PWM input goes on
+// GPIO10, the otherwise unused MOSI pad of the 40-pin header (any free GPIO
+// works; change this define to match the wiring).
+#define PIN_FRONTLIGHT 10
+#define SD_CS 42
+#define SD_MISO 16
+#define SD_SCK 11
+#define SD_MOSI 15
+#define TOUCH_SDA 18
+#define TOUCH_SCL 17
+#define TOUCH_INT 47
+#define TOUCH_RST -1 // GT911 reset is not wired to the ESP32-S3
+#define PIN_BAT_VOLT 14 // VBAT through a 100k/100k divider
+#define BATTERY_VOLTAGE_CALIBRATION 1.0f
+#define BOOK32_HAS_TOUCH 1
+#define BOOK32_HAS_SD 1
+#define BOOK32_HAS_BUZZER 0
+#define OTA_FIRMWARE_ASSET "inkdeck-lilygo-t5s3-firmware.bin"
+#define OTA_FILESYSTEM_ASSET "inkdeck-lilygo-t5s3-littlefs.bin"
+#elif defined(BOARD_LILYGO_T5S3_PRO)
 // H752-01 ONLY. The older H752 has a different display and power pinout.
 #define PIN_BUTTON 0 // BOOT: back; hold 2s to sleep, release, then press to wake
 #define PIN_FRONTLIGHT 11 // PT4103 enable: LOW off, HIGH on
@@ -183,7 +227,9 @@
 // Battery calibration
 // Fully charged LiPo cells should read 4.20V. This board's ADC path reads a
 // known-full pack around 3.91V with the raw divider math, so compensate here.
+#ifndef BATTERY_VOLTAGE_CALIBRATION
 #define BATTERY_VOLTAGE_CALIBRATION 1.075f
+#endif
 #define BATTERY_EMPTY_VOLTAGE 3.00f
 #define BATTERY_FULL_VOLTAGE 4.20f
 

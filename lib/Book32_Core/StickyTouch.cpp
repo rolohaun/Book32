@@ -8,11 +8,15 @@
 
 void StickyTouch::resetWithInterruptLevel(uint8_t level) {
     pinMode(TOUCH_INT, OUTPUT);
-    pinMode(TOUCH_RST, OUTPUT);
-    digitalWrite(TOUCH_RST, LOW);
+    if (TOUCH_RST >= 0) {
+        pinMode(TOUCH_RST, OUTPUT);
+        digitalWrite(TOUCH_RST, LOW);
+    }
     digitalWrite(TOUCH_INT, level);
     delay(10);
-    digitalWrite(TOUCH_RST, HIGH);
+    // Without a reset line the GT911 keeps the address it chose at power-up;
+    // probe() tries both.
+    if (TOUCH_RST >= 0) digitalWrite(TOUCH_RST, HIGH);
     delay(10);
     digitalWrite(TOUCH_INT, level);
     delay(50);
@@ -71,8 +75,10 @@ void StickyTouch::stop() {
 #if defined(BOARD_SEEED_STICKY)
     Wire.end();
 #endif
-    pinMode(TOUCH_RST, OUTPUT);
-    digitalWrite(TOUCH_RST, LOW);
+    if (TOUCH_RST >= 0) {
+        pinMode(TOUCH_RST, OUTPUT);
+        digitalWrite(TOUCH_RST, LOW);
+    }
 }
 
 bool StickyTouch::readRegister(uint16_t reg, uint8_t* data, uint8_t length) {

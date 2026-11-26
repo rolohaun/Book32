@@ -1,6 +1,7 @@
 #pragma once
 #include "SleepDefaults.h"
 #include <Arduino.h>
+#include <atomic>
 
 // Combined battery status to avoid multiple ADC reads
 struct BatteryStatus {
@@ -47,6 +48,14 @@ public:
     bool previewSleepCover() { return _coverRenderer && _coverRenderer("Press BOOT to wake"); }
     void setReaderActive(bool active);    // Enables reader-only idle CPU scaling
 
+    // Keep the CPU at full speed while long network work runs on another task
+    // (an HTTPS handshake at 80 MHz can starve the idle task long enough to
+    // trip the task watchdog). Any task may call these; the clock itself is
+    // only changed from the main loop. holdFullSpeed() waits up to a second
+    // for the main loop to restore 240 MHz.
+    void holdFullSpeed();
+    void releaseFullSpeed();
+
     // Status indicator on e-ink display (partial update)
     void drawStatusIndicator();           // Draw charging indicator if state changed
 
@@ -91,7 +100,8 @@ private:
     SleepCoverRenderer _coverRenderer = nullptr;
     volatile unsigned long _lastActivityTime;   // Last user interaction (any task)
     bool _readerActive;
-    bool _cpuReduced;
+    volatile bool _cpuReduced;
+    std::atomic<int> _fullSpeedHolds{0};
     bool _sleeping;
 
     // Status indicator tracking
@@ -101,4 +111,12 @@ private:
     // T-Energy-S3 typical divider: Voltage * 2
     // Some boards use different dividers. We'll start with x2.
     // 18650 Range: 3.0V (0%) to 4.2V (100%)
+};
+
+// Scoped BatteryMgr::holdFullSpeed() / releaseFullSpeed().
+struct FullSpeedHold {
+    FullSpeedHold() { BatteryMgr::getInstance().holdFullSpeed(); }
+    ~FullSpeedHold() { BatteryMgr::getInstance().releaseFullSpeed(); }
+    FullSpeedHold(const FullSpeedHold&) = delete;
+    FullSpeedHold& operator=(const FullSpeedHold&) = delete;
 };

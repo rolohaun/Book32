@@ -208,7 +208,7 @@ void HomeServices::enter() {
     _lastFooter = footerText();
     ensureWifiAwake();
     if (!_updateTaskHandle && !_updateAvailable) {
-        xTaskCreatePinnedToCore(updateCheckTask, "UpdateCheck", 8192, this, 1, &_updateTaskHandle, 0);
+        xTaskCreatePinnedToCore(updateCheckTask, "UpdateCheck", 8192, this, 1, &_updateTaskHandle, tskNO_AFFINITY);
     }
 }
 

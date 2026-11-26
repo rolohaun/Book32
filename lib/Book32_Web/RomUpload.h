@@ -8,6 +8,8 @@
 #include "BatteryMgr.h"
 #include "../Apps/AppPaperboy/RomFormat.h"
 
+void invalidateStorageStats();  // WebMgr.cpp: re-measure free space
+
 namespace RomUpload {
 static const char* TEMP_PATH = "/roms/.inkdeck-upload.tmp";
 // POD: AsyncWebServer frees _tempObject; File belongs to _tempFile.
@@ -79,7 +81,7 @@ inline void finish(AsyncWebServerRequest* request) {
         if (!valid) error(s, 507, "SD verification failed");
         else if (EbookFS.exists(s->path)) error(s, 409, "ROM already exists");
         else if (!EbookFS.rename(TEMP_PATH, s->path)) error(s, 507, "Cannot finish ROM upload");
-        else s->staged = false;
+        else { s->staged = false; invalidateStorageStats(); }
     }
     DynamicJsonDocument doc(384);
     if (s->error) doc["error"] = s->error;
@@ -110,6 +112,7 @@ inline void configure(AsyncWebServer* server) {
             if (file) file.close();
             if (!regular) { status = 400; body = "{\"error\":\"Not a readable ROM file\"}"; }
             else if (!EbookFS.remove(path)) { status = 500; body = "{\"error\":\"Could not delete ROM from SD\"}"; }
+            else invalidateStorageStats();
         }
         // Deliberately never remove .inkdeck.sav, .bak or .rtc sidecars.
         BatteryMgr::getInstance().resetIdleTimer();

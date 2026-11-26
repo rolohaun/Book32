@@ -6,6 +6,7 @@
 #include "../../include/Config.h"
 #include "../Book32_Core/DisplayMgr.h"
 #include "../Book32_Core/FontMgr.h"
+#include "../Book32_Core/BatteryMgr.h"
 #if defined(BOARD_LILYGO_T5S3_PRO)
 #include "NetworkWork.h"
 #include <WiFiClientSecure.h>
@@ -69,6 +70,9 @@ void GitHubMgr::init() {
 
 UpdateInfo GitHubMgr::checkUpdate(const char* currentVersion) {
     UpdateInfo info = {false, "", "", "", "", false, false};
+    // The reader idles the CPU at 80 MHz; a TLS handshake that slow starves
+    // the idle task on this core and the task watchdog reboots the device.
+    FullSpeedHold fullSpeed;
 #if defined(BOARD_LILYGO_T5S3_PRO)
     // Declared before the client: its lease is released only AFTER TLS/socket
     // destruction on every return path. Inkade waits for these owners.

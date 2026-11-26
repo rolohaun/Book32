@@ -1,5 +1,7 @@
 #include "WebMgr.h"
 #include <ESPAsyncWebServer.h>
+#include <atomic>
+#include <memory>
 #include <AsyncJson.h>
 #include <WiFi.h>
 #include <LittleFS.h>
@@ -23,6 +25,77 @@
 #include "../Book32_Core/ShelfName.h"
 
 static const char* READER_PROGRESS_PATH = "/reader_progress.json";
+
+// Web "Check for updates": result of the latest check, made off async_tcp.
+static std::atomic<bool> s_webUpdateCheckRunning{false};
+static SemaphoreHandle_t s_webUpdateCheckMutex = xSemaphoreCreateMutex();
+static String s_webUpdateCheckJson;
+
+static void webUpdateCheckTask(void*) {
+    UpdateInfo info = GitHubMgr::getInstance().checkUpdate(SYSTEM_VERSION);
+
+    DynamicJsonDocument doc(1024);
+    doc["hasUpdate"] = info.available;
+    doc["latest"] = info.version;
+    doc["current"] = SYSTEM_VERSION;
+    doc["hasFirmware"] = info.hasFirmware;
+    doc["hasFilesystem"] = info.hasFilesystem;
+    doc["release_notes"] = info.notes;
+    String json;
+    serializeJson(doc, json);
+
+    if (info.available) {
+        Serial.printf("Update available: %s\n", info.version.c_str());
+    } else {
+        Serial.println("No update available");
+    }
+
+    xSemaphoreTake(s_webUpdateCheckMutex, portMAX_DELAY);
+    s_webUpdateCheckJson = json;
+    xSemaphoreGive(s_webUpdateCheckMutex);
+    s_webUpdateCheckRunning = false;
+    vTaskDelete(nullptr);
+}
+
+// Storage figures for /api/status. LittleFS usedBytes() walks every block of
+// every book, and flash reads stall the other core: ~1.7 s at the reader's
+// 80 MHz. The page polls status every 5 s, so measuring there froze the main
+// loop and, alongside the page's own downloads, held async_tcp past the task
+// watchdog. Measure once at startup and again in the background after books
+// change; status serves the cached figures.
+static std::atomic<uint64_t> s_ebookUsed{0};
+static std::atomic<uint64_t> s_ebookTotal{0};
+static std::atomic<size_t> s_systemFree{0};
+static std::atomic<bool> s_storageMeasured{false};
+static std::atomic<bool> s_storageMeasuring{false};
+static std::atomic<bool> s_storageStale{false};
+
+static void measureStorage() {
+    FullSpeedHold fullSpeed;
+    s_ebookTotal = ebookStorageTotalBytes();
+    s_ebookUsed = ebookStorageUsedBytes();
+    s_systemFree = SystemFS.totalBytes() - SystemFS.usedBytes();
+    s_storageMeasured = true;
+}
+
+static void storageMeasureTask(void*) {
+    do {
+        s_storageStale = false;
+        measureStorage();
+    } while (s_storageStale);  // Books changed again while measuring
+    s_storageMeasuring = false;
+    vTaskDelete(nullptr);
+}
+
+// Call after books (or ROMs) are added or removed, from any task.
+void invalidateStorageStats() {
+    s_storageStale = true;
+    if (s_storageMeasuring.exchange(true)) return;  // The running pass re-measures
+    if (xTaskCreatePinnedToCore(storageMeasureTask, "StorageStats", 4096, nullptr, 1,
+                                nullptr, tskNO_AFFINITY) != pdPASS) {
+        s_storageMeasuring = false;
+    }
+}
 
 WebMgr::WebMgr() {
     server = new AsyncWebServer(80);
@@ -224,6 +297,7 @@ void WebMgr::init() {
         Serial.println("Web Server not started: port 80 is busy");
         return;
     }
+    if (!s_storageMeasured) measureStorage();  // Before the first /api/status
     server->begin();
     _initialized = true;
     Serial.println("Web Server Started");
@@ -412,6 +486,7 @@ static size_t bookUploadBlockUsed = 0;
 // Ends the current upload: an unfinished one (the connection dropped) is
 // removed, so no cut-off book is left in the library.
 static void endBookUpload() {
+    invalidateStorageStats();
     if (bookUploadFile) {
         bookUploadFile.close();
         if (!bookUploadDone) {
@@ -503,11 +578,14 @@ void WebMgr::setupEndpoints() {
         doc["pageHeight"] = 2 * SCREEN_HEIGHT;
 #endif
 
-        doc["freeSpace"] = ebookStorageTotalBytes() - ebookStorageUsedBytes();
-        doc["totalSpace"] = ebookStorageTotalBytes();
-        doc["usedSpace"] = ebookStorageUsedBytes();
+        if (s_storageMeasured) {
+            const uint64_t total = s_ebookTotal, used = s_ebookUsed;
+            doc["freeSpace"] = total - used;
+            doc["totalSpace"] = total;
+            doc["usedSpace"] = used;
+            doc["systemFree"] = (size_t)s_systemFree;
+        }
         doc["ebookStorage"] = ebookStorageUsesSD() ? "sd" : "internal";
-        doc["systemFree"] = SystemFS.totalBytes() - SystemFS.usedBytes();
 
         serializeJson(doc, *response);
         request->send(response);
@@ -683,6 +761,7 @@ void WebMgr::setupEndpoints() {
                 cover2Path.replace(".epub", ".cover2");
                 cover2Path.replace(".EPUB", ".cover2");
                 if (EbookFS.exists(cover2Path)) EbookFS.remove(cover2Path);
+                invalidateStorageStats();
                 request->send(200, "text/plain", "Deleted");
             } else {
                 request->send(500, "text/plain", "Delete failed");
@@ -693,27 +772,33 @@ void WebMgr::setupEndpoints() {
     });
 
     // API: Check for Updates
+    // The HTTPS request to GitHub takes seconds, so it runs on its own task:
+    // blocking async_tcp that long trips the task watchdog. The response
+    // answers "try again" (re-polled by the server) until the result is in.
     server->on("/api/check_update", HTTP_GET, [](AsyncWebServerRequest *request) {
-        AsyncResponseStream *response = request->beginResponseStream("application/json");
-        DynamicJsonDocument doc(1024);
-
-        Serial.println("Checking for updates...");
-        UpdateInfo info = GitHubMgr::getInstance().checkUpdate(SYSTEM_VERSION);
-
-        doc["hasUpdate"] = info.available;
-        doc["latest"] = info.version;
-        doc["current"] = SYSTEM_VERSION;
-        doc["hasFirmware"] = info.hasFirmware;
-        doc["hasFilesystem"] = info.hasFilesystem;
-        doc["release_notes"] = info.notes;
-
-        if (info.available) {
-            Serial.printf("Update available: %s\n", info.version.c_str());
-        } else {
-            Serial.println("No update available");
+        if (!s_webUpdateCheckRunning.exchange(true)) {
+            Serial.println("Checking for updates...");
+            if (xTaskCreatePinnedToCore(webUpdateCheckTask, "WebUpdateCheck", 8192, nullptr, 1,
+                                        nullptr, tskNO_AFFINITY) != pdPASS) {
+                s_webUpdateCheckRunning = false;
+                request->send(503, "application/json", "{\"error\":\"Busy, try again\"}");
+                return;
+            }
         }
-
-        serializeJson(doc, *response);
+        std::shared_ptr<String> body = std::make_shared<String>();
+        AsyncWebServerResponse* response = request->beginChunkedResponse("application/json",
+            [body](uint8_t* buffer, size_t maxLen, size_t index) -> size_t {
+                if (index == 0 && body->isEmpty()) {
+                    if (s_webUpdateCheckRunning) return RESPONSE_TRY_AGAIN;
+                    xSemaphoreTake(s_webUpdateCheckMutex, portMAX_DELAY);
+                    *body = s_webUpdateCheckJson;
+                    xSemaphoreGive(s_webUpdateCheckMutex);
+                }
+                if (index >= body->length()) return 0;
+                size_t n = std::min(maxLen, body->length() - index);
+                memcpy(buffer, body->c_str() + index, n);
+                return n;
+            });
         request->send(response);
     });
 

@@ -162,7 +162,13 @@ void BatteryMgr::init() {
 void BatteryMgr::update() {
     unsigned long now = millis();
 
-    if (_readerActive && !_cpuReduced && now - _lastActivityTime >= 1500) {
+    if (_fullSpeedHolds.load() > 0) {
+        if (_cpuReduced) {
+            setCpuFrequencyMhz(240);
+            _cpuReduced = false;
+            Serial.println("CPU back to 240 MHz for network work");
+        }
+    } else if (_readerActive && !_cpuReduced && now - _lastActivityTime >= 1500) {
         if (setCpuFrequencyMhz(80)) {
             _cpuReduced = true;
             Serial.println("AppReader: CPU idling at 80 MHz");
@@ -464,6 +470,28 @@ void BatteryMgr::resetIdleTimer() {
     if (_cpuReduced) {
         setCpuFrequencyMhz(240);
         _cpuReduced = false;
+    }
+}
+
+void BatteryMgr::holdFullSpeed() {
+    _fullSpeedHolds.fetch_add(1);
+    // On the main loop itself, raise the clock now; from any other task, let
+    // the main loop do it on its next pass (BatteryMgr::update).
+    if (strcmp(pcTaskGetName(nullptr), "loopTask") == 0) {
+        if (_cpuReduced) {
+            setCpuFrequencyMhz(240);
+            _cpuReduced = false;
+        }
+        return;
+    }
+    for (int i = 0; i < 100 && _cpuReduced; i++) {
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+}
+
+void BatteryMgr::releaseFullSpeed() {
+    if (_fullSpeedHolds.fetch_sub(1) == 1) {
+        _lastActivityTime = millis();  // Idle again only 1.5 s after the work
     }
 }
 

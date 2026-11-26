@@ -68,6 +68,14 @@ https://github.com/h2zero/NimBLE-Arduino version 1.4.3, Apache-2.0; the
 complete license is included with the library in the release source archive.
 It contains Apache Mynewt NimBLE (Apache-2.0).
 
+## AsyncTCP-esphome
+
+Copyright (c) 2016 Hristo Gochkov. Source: https://github.com/esphome/AsyncTCP
+version 2.1.4. LGPL-3.0; the complete license is in
+`lib/AsyncTCP-esphome/LICENSE`. Local changes in `AsyncTCP.cpp` deepen the
+event queue and stop the lwIP thread blocking on poll events, which could
+deadlock it against `async_tcp` and trip the task watchdog.
+
 ## FastEPD (LILYGO target)
 
 Copyright (c) 2024 BitBank Software, Inc., written by Larry Bank.
